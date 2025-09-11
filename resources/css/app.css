@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+	.btn-primary { @apply rounded bg-brand-primary px-4 py-2 font-medium text-brand-tertiary transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-secondary; }
+	.btn-secondary { @apply rounded bg-brand-secondary px-4 py-2 font-medium text-black transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary; }
+	.card { @apply overflow-hidden rounded-xl bg-white p-6 shadow-md transition-transform duration-200 hover:shadow-lg hover:-translate-y-0.5; }
+	.navlink { @apply text-sm font-medium text-gray-100 hover:text-brand-secondary transition-colors duration-150; }
+	.page { @apply opacity-0; animation: fade-in 400ms ease-out forwards; }
+}
+
+@keyframes fade-in {
+	from { opacity: 0; transform: translateY(6px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+
+/* UPANG Theme Colors */
+:root {
+    --color-brand-primary: #3B4F26;  /* UPANG Dark Green */
+    --color-brand-secondary: #FFD000;  /* UPANG Gold */
+    --color-brand-tertiary: #FFFFFF;  /* White */
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--color-brand-primary);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #2c3b1c;
+}
