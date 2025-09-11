@@ -43,6 +43,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/interventions', [InterventionController::class, 'store'])->name('interventions.store');
         Route::patch('/interventions/{intervention}', [InterventionController::class, 'update'])->name('interventions.update');
         Route::delete('/interventions/{intervention}', [InterventionController::class, 'destroy'])->name('interventions.destroy');
+        Route::post('/interventions/bulk', [InterventionController::class, 'bulkAction'])->name('interventions.bulk');
 
         // Reports
         Route::get('/reports', [ReportController::class, 'index'])->name('reports');
@@ -51,6 +52,8 @@ Route::middleware('auth')->group(function () {
         // Sections
         Route::get('/sections', [SectionController::class, 'index'])->name('sections');
         Route::post('/sections', [SectionController::class, 'store'])->name('sections.store');
+        Route::get('/sections/import', [SectionController::class, 'importForm'])->name('sections.import');
+        Route::post('/sections/import', [SectionController::class, 'importStore'])->name('sections.import.store');
         Route::patch('/sections/{section}', [SectionController::class, 'update'])->name('sections.update');
         Route::delete('/sections/{section}', [SectionController::class, 'destroy'])->name('sections.destroy');
 

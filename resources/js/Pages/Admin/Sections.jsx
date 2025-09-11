@@ -1,13 +1,15 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, useForm, usePage } from '@inertiajs/react';
 import DataTable from '@/Components/DataTable';
+import { Link } from '@inertiajs/react';
 
-export default function Sections({ sections, programs, yearLevels, semesters }) {
+export default function Sections({ sections, programs, yearLevels, semesters, departments }) {
 	const { data, setData, post, processing } = useForm({
 		name: '',
 		year_level: '',
 		adviser_name: '',
 		program: '',
+		department: '',
 		semester: '',
 		academic_year: new Date().getFullYear().toString(),
 	});
@@ -15,14 +17,28 @@ export default function Sections({ sections, programs, yearLevels, semesters }) 
 
 	const submit = (e) => { e.preventDefault(); post(route('admin.sections')); };
 
+	// Get available programs based on selected department
+	const availablePrograms = data.department && programs[data.department] ? programs[data.department] : {};
+
+	// Reset program when department changes
+	const handleDepartmentChange = (department) => {
+		setData('department', department);
+		setData('program', ''); // Reset program selection
+	};
+
 	return (
-		<AuthenticatedLayout header={<h2 className="text-xl font-semibold leading-tight text-gray-800">Sections</h2>}>
+		<AuthenticatedLayout header={<h2 className="text-2xl font-bold leading-tight text-gray-800">Sections</h2>}>
 			<Head title="Sections" />
-			<div className="py-6">
-				<div className="mx-auto max-w-7xl space-y-6 sm:px-6 lg:px-8">
+			<div className="min-h-screen py-8">
+				<div className="mx-auto max-w-full space-y-10 px-4 sm:px-6 lg:px-8 xl:px-12">
 					{flash.success && (
 						<div className="pointer-events-none fixed right-6 top-6 z-50 rounded bg-green-600 px-4 py-2 text-sm text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">{flash.success}</div>
 					)}
+
+					<div className="flex items-center justify-between">
+						<div></div>
+						<Link href={route('admin.sections.import')} className="btn-secondary">Import Sections CSV</Link>
+					</div>
 
 					<div className="card">
 						<div className="mb-6">
@@ -30,16 +46,31 @@ export default function Sections({ sections, programs, yearLevels, semesters }) 
 							<p className="mt-1 text-sm text-gray-600">Create a new university section with program and year level information.</p>
 						</div>
 
-						<form onSubmit={submit} className="grid grid-cols-1 gap-6 md:grid-cols-3">
+						<form onSubmit={submit} className="grid grid-cols-1 gap-6 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+							<div>
+								<label className="block text-sm font-medium text-gray-700">Department</label>
+								<select
+									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+									value={data.department}
+									onChange={(e) => handleDepartmentChange(e.target.value)}
+								>
+									<option value="">Select Department</option>
+									{departments?.map((dept) => (
+										<option key={dept} value={dept}>{dept}</option>
+									))}
+								</select>
+							</div>
+
 							<div>
 								<label className="block text-sm font-medium text-gray-700">Program</label>
 								<select
-									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
 									value={data.program}
 									onChange={(e) => setData('program', e.target.value)}
+									disabled={!data.department}
 								>
-									<option value="">Select Program</option>
-									{Object.entries(programs).map(([code, name]) => (
+									<option value="">{data.department ? 'Select Program' : 'Select Department first'}</option>
+									{Object.entries(availablePrograms).map(([code, name]) => (
 										<option key={code} value={code}>{code} - {name}</option>
 									))}
 								</select>

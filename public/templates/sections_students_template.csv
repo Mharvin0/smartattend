@@ -1,0 +1,11 @@
+section_name,year_level,adviser_name,program,department,semester,academic_year,student_number,first_name,last_name,middle_name,birth_date,gender,guardian_name,guardian_contact
+BSIT-1A,1,Dr. Maria Santos,BSIT,College of Information Technology,1st,2024,2024-0001,Juan,Delacruz,Santos,2005-03-15,Male,Jose Delacruz,09123456789
+BSIT-1A,1,Dr. Maria Santos,BSIT,College of Information Technology,1st,2024,2024-0002,Ana,Garcia,Lopez,2005-07-22,Female,Carlos Garcia,09123456790
+BSIT-1A,1,Dr. Maria Santos,BSIT,College of Information Technology,1st,2024,2024-0003,Miguel,Rodriguez,Flores,2005-01-10,Male,Elena Rodriguez,09123456791
+BSA-2B,2,Prof. Roberto Cruz,BSA,College of Management and Accountancy,1st,2024,2024-0004,Sofia,Martinez,Jimenez,2004-11-08,Female,Isabel Martinez,09123456792
+BSA-2B,2,Prof. Roberto Cruz,BSA,College of Management and Accountancy,1st,2024,2024-0005,Carlos,Hernandez,Morales,2004-09-14,Male,Pedro Hernandez,09123456793
+BSED-3A,3,Dr. Carmen Reyes,BSED,College of Education and Liberal Arts,1st,2024,2024-0006,Lucia,Fernandez,Torres,2003-05-20,Female,María Fernandez,09123456794
+BSCRIM-1A,1,Col. Antonio Ramos,BSCRIM,College of Criminal Justice Education,1st,2024,2024-0007,Diego,Silva,Moreno,2005-12-03,Male,Ricardo Silva,09123456795
+BSCE-4B,4,Engr. Patricia Vega,BSCE,College of Engineering and Architechture,1st,2024,2024-0008,Valentina,Castro,Ruiz,2002-08-17,Female,Roberto Castro,09123456796
+BSN-2A,2,Dr. Elena Morales,BSN,College of Allied Health Sciences,1st,2024,2024-0009,Andres,Mendoza,Vargas,2004-04-25,Male,Carmen Mendoza,09123456797
+BSIT-2B,2,Dr. Luis Herrera,BSIT,College of Information Technology,1st,2024,2024-0010,Isabella,Guerrero,Peña,2004-10-12,Female,Fernando Guerrero,09123456798

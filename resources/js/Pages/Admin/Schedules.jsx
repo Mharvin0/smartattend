@@ -10,10 +10,10 @@ export default function Schedules({ schedules, sections, subjects }) {
 	const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 	return (
-		<AuthenticatedLayout header={<h2 className="text-xl font-semibold leading-tight text-gray-800">Schedules</h2>}>
+		<AuthenticatedLayout header={<h2 className="text-2xl font-bold leading-tight text-gray-800">Schedules</h2>}>
 			<Head title="Schedules" />
-			<div className="py-6">
-				<div className="mx-auto max-w-7xl space-y-6 sm:px-6 lg:px-8">
+			<div className="min-h-screen py-8">
+				<div className="mx-auto max-w-full space-y-10 px-4 sm:px-6 lg:px-8 xl:px-12">
 					{flash.success && (
 						<div className="pointer-events-none fixed right-6 top-6 z-50 rounded bg-green-600 px-4 py-2 text-sm text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">{flash.success}</div>
 					)}
@@ -24,7 +24,7 @@ export default function Schedules({ schedules, sections, subjects }) {
 							<p className="mt-1 text-sm text-gray-600">Create a new class schedule by selecting section, subject, and time.</p>
 						</div>
 
-						<form onSubmit={submit} className="grid grid-cols-1 gap-6 md:grid-cols-5">
+						<form onSubmit={submit} className="grid grid-cols-1 gap-6 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8">
 							<div>
 								<label className="block text-sm font-medium text-gray-700">Section</label>
 								<select

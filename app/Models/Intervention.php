@@ -10,7 +10,7 @@ class Intervention extends Model
 	use HasFactory;
 
 	protected $fillable = [
-		'student_id','date','type','details','action_taken','responsible_staff','follow_up_date','outcome','recorded_by'
+		'student_id','date','type','details','action_taken','responsible_staff','follow_up_date','outcome','recorded_by','status','priority','due_date'
 	];
 
 	public function student()

@@ -27,7 +27,37 @@ class AttendanceController extends Controller
 
 	public function index()
 	{
-		return Inertia::render('Admin/Attendance');
+		// Get recent attendance records with student and section info
+		$recentRecords = AttendanceRecord::with(['student.section', 'schedule.subject'])
+			->orderBy('date', 'desc')
+			->orderBy('created_at', 'desc')
+			->limit(50)
+			->get();
+
+		// Get today's attendance summary
+		$today = now()->toDateString();
+		$todayStats = AttendanceRecord::whereDate('date', $today)
+			->selectRaw('status, COUNT(*) as count')
+			->groupBy('status')
+			->pluck('count', 'status');
+
+		// Get sections for filtering
+		$sections = Section::orderBy('name')->get(['id', 'name']);
+
+		// Get weekly attendance trends (last 7 days)
+		$weeklyTrends = AttendanceRecord::whereDate('date', '>=', now()->subDays(7))
+			->selectRaw('DATE(date) as date, status, COUNT(*) as count')
+			->groupBy('date', 'status')
+			->orderBy('date')
+			->get()
+			->groupBy('date');
+
+		return Inertia::render('Admin/Attendance', [
+			'recentRecords' => $recentRecords,
+			'todayStats' => $todayStats,
+			'sections' => $sections,
+			'weeklyTrends' => $weeklyTrends,
+		]);
 	}
 
 	public function bySection(Request $request)
@@ -155,38 +185,80 @@ class AttendanceController extends Controller
 
 	public function importForm()
 	{
-		return Inertia::render('Admin/AttendanceImport');
+		$sections = Section::with('students')->orderBy('name')->get(['id', 'name', 'department', 'program', 'year_level']);
+		$departments = Section::getDepartments();
+		$programs = Section::getPrograms();
+		
+		return Inertia::render('Admin/AttendanceImport', [
+			'sections' => $sections,
+			'departments' => $departments,
+			'programs' => $programs,
+		]);
 	}
 
-	public function importStore(AttendanceImportRequest $request)
+	public function importStore(Request $request)
 	{
+		$request->validate([
+			'file' => ['required', 'file', 'mimes:csv,txt', 'max:2048'],
+		]);
+
 		$userId = Auth::id();
 		$file = $request->file('file');
 		$handle = fopen($file->getRealPath(), 'r');
 		$header = fgetcsv($handle);
-		$normalized = array_map(fn($h) => strtolower(trim($h)), $header ?: []);
-		$colIndex = [
-			'student_number' => array_search('student_number', $normalized, true),
-			'date' => array_search('date', $normalized, true),
-			'status' => array_search('status', $normalized, true),
-			'schedule_id' => array_search('schedule_id', $normalized, true),
-			'remarks' => array_search('remarks', $normalized, true),
-		];
+
+		// Required headers for attendance import
+		$requiredHeaders = ['student_number', 'date', 'status', 'department', 'program', 'year_level', 'section'];
+		$optionalHeaders = ['schedule_id', 'remarks'];
+		$normalizedHeader = array_map(fn($h) => strtolower(trim($h)), $header ?: []);
+
+		// Check if all required headers are present
+		foreach ($requiredHeaders as $required) {
+			if (!in_array($required, $normalizedHeader)) {
+				fclose($handle);
+				return back()->withErrors(['file' => "Missing required CSV column: {$required}"]);
+			}
+		}
+
+		$colIndex = array_flip($normalizedHeader);
 
 		DB::transaction(function () use ($handle, $colIndex, $userId) {
 			while (($row = fgetcsv($handle)) !== false) {
 				$studentNumber = $row[$colIndex['student_number']] ?? null;
 				$date = $row[$colIndex['date']] ?? null;
 				$status = $row[$colIndex['status']] ?? null;
+				$department = $row[$colIndex['department']] ?? null;
+				$program = $row[$colIndex['program']] ?? null;
+				$yearLevel = $row[$colIndex['year_level']] ?? null;
+				$sectionName = $row[$colIndex['section']] ?? null;
 				$scheduleId = $colIndex['schedule_id'] !== false ? ($row[$colIndex['schedule_id']] ?: null) : null;
 				$remarks = $colIndex['remarks'] !== false ? ($row[$colIndex['remarks']] ?: null) : null;
 
-				if (!$studentNumber || !$date || !in_array($status, ['present','late','absent','excused'])) {
+				if (!$studentNumber || !$date || !in_array($status, ['present','late','absent','excused']) || 
+					!$department || !$program || !$yearLevel || !$sectionName) {
 					continue;
 				}
+
+				// Find student by student number
 				$student = Student::where('student_number', $studentNumber)->first();
 				if (!$student) {
 					continue;
+				}
+
+				// Verify section exists and update student's section if needed
+				$section = Section::where('name', $sectionName)
+					->where('department', $department)
+					->where('program', $program)
+					->where('year_level', $yearLevel)
+					->first();
+				
+				if (!$section) {
+					continue; // Skip if section doesn't exist
+				}
+				
+				if ($student->section_id !== $section->id) {
+					// Update student's section if it doesn't match
+					$student->update(['section_id' => $section->id]);
 				}
 
 				$existing = AttendanceRecord::where('student_id', $student->id)
@@ -222,6 +294,6 @@ class AttendanceController extends Controller
 			fclose($handle);
 		});
 
-		return redirect()->route('admin.attendance')->with('success', 'CSV imported.');
+		return redirect()->route('admin.attendance')->with('success', 'Attendance records imported successfully!');
 	}
 }

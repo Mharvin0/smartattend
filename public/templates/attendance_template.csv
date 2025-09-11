@@ -1,0 +1,11 @@
+student_number,date,status,department,program,year_level,section,schedule_id,remarks
+2024-0001,2024-01-15,present,College of Information Technology,BSIT,1,BSIT-1A,,Present and on time
+2024-0002,2024-01-15,late,College of Information Technology,BSIT,1,BSIT-1A,,Late by 10 minutes
+2024-0003,2024-01-15,absent,College of Information Technology,BSIT,1,BSIT-1A,,No excuse provided
+2024-0004,2024-01-15,present,College of Management and Accountancy,BSA,2,BSA-2B,,Present and on time
+2024-0005,2024-01-15,excused,College of Management and Accountancy,BSA,2,BSA-2B,,Medical certificate provided
+2024-0006,2024-01-15,present,College of Education and Liberal Arts,BSED,3,BSED-3A,,Present and on time
+2024-0007,2024-01-15,late,College of Criminal Justice Education,BSCRIM,1,BSCRIM-1A,,Late by 15 minutes
+2024-0008,2024-01-15,present,College of Engineering and Architechture,BSCE,4,BSCE-4B,,Present and on time
+2024-0009,2024-01-15,absent,College of Allied Health Sciences,BSN,2,BSN-2A,,No excuse provided
+2024-0010,2024-01-15,excused,College of Information Technology,BSIT,2,BSIT-2B,,Family emergency

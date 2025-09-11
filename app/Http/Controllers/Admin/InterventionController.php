@@ -21,10 +21,14 @@ class InterventionController extends Controller
 		$filters = [
 			'date' => $request->input('date'),
 			'type' => $request->input('type'),
+			'status' => $request->input('status'),
+			'priority' => $request->input('priority'),
 		];
 		$interventions = Intervention::with('student:id,first_name,last_name')
 			->when($filters['date'], fn($q, $d) => $q->whereDate('date', $d))
 			->when($filters['type'], fn($q, $t) => $q->where('type', $t))
+			->when($filters['status'], fn($q, $s) => $q->where('status', $s))
+			->when($filters['priority'], fn($q, $p) => $q->where('priority', $p))
 			->orderByDesc('date')
 			->paginate(10)
 			->withQueryString();
@@ -43,7 +47,11 @@ class InterventionController extends Controller
 			'responsible_staff' => ['nullable','string','max:255'],
 			'follow_up_date' => ['nullable','date'],
 			'outcome' => ['nullable','string','max:255'],
+			'status' => ['nullable','in:open,in_progress,resolved,archived'],
+			'priority' => ['nullable','in:low,medium,high'],
+			'due_date' => ['nullable','date'],
 		]);
+		$validated['recorded_by'] = $request->user()->id ?? null;
 		Intervention::create($validated);
 		return back()->with('success','Intervention created');
 	}
@@ -59,6 +67,9 @@ class InterventionController extends Controller
 			'responsible_staff' => ['nullable','string','max:255'],
 			'follow_up_date' => ['nullable','date'],
 			'outcome' => ['nullable','string','max:255'],
+			'status' => ['nullable','in:open,in_progress,resolved,archived'],
+			'priority' => ['nullable','in:low,medium,high'],
+			'due_date' => ['nullable','date'],
 		]);
 		$intervention->update($validated);
 		return back()->with('success','Intervention updated');
@@ -68,5 +79,34 @@ class InterventionController extends Controller
 	{
 		$intervention->delete();
 		return back()->with('success','Intervention deleted');
+	}
+
+	public function bulkAction(Request $request)
+	{
+		$validated = $request->validate([
+			'action' => ['required', 'in:status,priority,delete'],
+			'value' => ['nullable', 'string'],
+			'ids' => ['required', 'array'],
+			'ids.*' => ['integer', 'exists:interventions,id'],
+		]);
+
+		$interventions = Intervention::whereIn('id', $validated['ids']);
+
+		switch ($validated['action']) {
+			case 'status':
+				$interventions->update(['status' => $validated['value']]);
+				$message = 'Status updated for ' . count($validated['ids']) . ' interventions';
+				break;
+			case 'priority':
+				$interventions->update(['priority' => $validated['value']]);
+				$message = 'Priority updated for ' . count($validated['ids']) . ' interventions';
+				break;
+			case 'delete':
+				$interventions->delete();
+				$message = count($validated['ids']) . ' interventions deleted';
+				break;
+		}
+
+		return back()->with('success', $message);
 	}
 }
