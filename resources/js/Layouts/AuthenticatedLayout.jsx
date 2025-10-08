@@ -162,25 +162,51 @@ export default function AuthenticatedLayout({ header, children }) {
 								<path d="M24 20.993V24H0v-2.996A14.977 14.977 0 0112.004 15c4.904 0 9.26 2.354 11.996 5.993zM16.002 8.999a4 4 0 11-8 0 4 4 0 018 0z" />
 							</svg>
 						</div>
-						{sidebarOpen && (
+						{sidebarOpen ? (
 							<div className="min-w-0 flex-1">
 								<div className="flex items-center justify-between">
 									<p className="truncate text-base font-semibold text-gray-900">{user.name}</p>
 									<Dropdown>
 										<Dropdown.Trigger>
-											<button className="rounded-full p-2 hover:bg-gray-100">
+											<button className="rounded-full p-2 hover:bg-gray-100" title="Open menu">
 												<svg className="h-6 w-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 													<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
 												</svg>
 											</button>
 										</Dropdown.Trigger>
-										<Dropdown.Content>
-											<Dropdown.Link href={route('profile.edit')}>Profile</Dropdown.Link>
-											<Dropdown.Link href={route('logout')} method="post" as="button">Log Out</Dropdown.Link>
+										<Dropdown.Content variant="side" sideClass="left-72" sideWidthClass="w-72" contentClasses="p-4">
+											<div className="space-y-2">
+												<p className="text-base font-semibold text-gray-900">{user.name}</p>
+												<p className="text-sm text-gray-500">{roles.join(', ')}</p>
+												<hr className="my-3" />
+												<Dropdown.Link href={route('profile.edit')}>Profile</Dropdown.Link>
+												<Dropdown.Link href={route('logout')} method="post" as="button">Log Out</Dropdown.Link>
+											</div>
 										</Dropdown.Content>
 									</Dropdown>
 								</div>
 								<p className="truncate text-base text-gray-500">{roles.join(', ')}</p>
+							</div>
+						) : (
+							<div className="ml-auto">
+								<Dropdown>
+									<Dropdown.Trigger>
+										<button className="rounded-lg p-2 hover:bg-gray-100" title="Open menu">
+											<svg className="h-6 w-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7" />
+											</svg>
+										</button>
+									</Dropdown.Trigger>
+									<Dropdown.Content variant="side" sideClass="left-24" sideWidthClass="w-72" contentClasses="p-4">
+										<div className="space-y-2">
+											<p className="text-base font-semibold text-gray-900">{user.name}</p>
+											<p className="text-sm text-gray-500">{roles.join(', ')}</p>
+											<hr className="my-3" />
+											<Dropdown.Link href={route('profile.edit')}>Profile</Dropdown.Link>
+											<Dropdown.Link href={route('logout')} method="post" as="button">Log Out</Dropdown.Link>
+										</div>
+									</Dropdown.Content>
+								</Dropdown>
 							</div>
 						)}
 					</div>

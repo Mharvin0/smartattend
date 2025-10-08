@@ -13,7 +13,7 @@ const Dropdown = ({ children }) => {
 
     return (
         <DropDownContext.Provider value={{ open, setOpen, toggleOpen }}>
-            <div className="relative">{children}</div>
+            <div className="relative z-50">{children}</div>
         </DropDownContext.Provider>
     );
 };
@@ -38,7 +38,10 @@ const Trigger = ({ children }) => {
 const Content = ({
     align = 'right',
     width = '48',
-    contentClasses = 'py-1 bg-white',
+    contentClasses = 'py-1 bg-white border border-gray-200',
+    variant = 'menu', // 'menu' | 'side'
+    sideClass = '', // e.g., 'left-72' or 'left-24'
+    sideWidthClass = 'w-64',
     children,
 }) => {
     const { open, setOpen } = useContext(DropDownContext);
@@ -59,29 +62,56 @@ const Content = ({
 
     return (
         <>
-            <Transition
-                show={open}
-                enter="transition ease-out duration-200"
-                enterFrom="opacity-0 scale-95"
-                enterTo="opacity-100 scale-100"
-                leave="transition ease-in duration-75"
-                leaveFrom="opacity-100 scale-100"
-                leaveTo="opacity-0 scale-95"
-            >
-                <div
-                    className={`absolute z-50 mt-2 rounded-md shadow-lg ${alignmentClasses} ${widthClasses}`}
-                    onClick={() => setOpen(false)}
+            {variant === 'side' ? (
+                <>
+                    {/* Backdrop is already handled by Trigger; keep this in case used standalone */}
+                    {open && (
+                        <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+                    )}
+                    <Transition
+                        show={open}
+                        enter="transform transition ease-out duration-200"
+                        enterFrom="translate-x-[-8px] opacity-0"
+                        enterTo="translate-x-0 opacity-100"
+                        leave="transform transition ease-in duration-150"
+                        leaveFrom="translate-x-0 opacity-100"
+                        leaveTo="translate-x-[-8px] opacity-0"
+                    >
+                        <div
+                            className={`fixed top-0 bottom-0 z-[60] ${sideClass} ${sideWidthClass}`}
+                            onClick={() => setOpen(false)}
+                        >
+                            <div className={`h-full overflow-y-auto bg-white shadow-xl ring-1 ring-black/5 ${contentClasses}`}>
+                                {children}
+                            </div>
+                        </div>
+                    </Transition>
+                </>
+            ) : (
+                <Transition
+                    show={open}
+                    enter="transition ease-out duration-200"
+                    enterFrom="opacity-0 scale-95"
+                    enterTo="opacity-100 scale-100"
+                    leave="transition ease-in duration-75"
+                    leaveFrom="opacity-100 scale-100"
+                    leaveTo="opacity-0 scale-95"
                 >
                     <div
-                        className={
-                            `rounded-md ring-1 ring-black ring-opacity-5 ` +
-                            contentClasses
-                        }
+                        className={`absolute z-[60] mt-2 rounded-md shadow-lg ${alignmentClasses} ${widthClasses}`}
+                        onClick={() => setOpen(false)}
                     >
-                        {children}
+                        <div
+                            className={
+                                `rounded-md ring-1 ring-black ring-opacity-5 ` +
+                                contentClasses
+                            }
+                        >
+                            {children}
+                        </div>
                     </div>
-                </div>
-            </Transition>
+                </Transition>
+            )}
         </>
     );
 };

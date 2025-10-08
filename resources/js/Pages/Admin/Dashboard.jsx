@@ -64,8 +64,8 @@ export default function Dashboard() {
 			<div className="min-h-screen py-8">
 				<div className="mx-auto max-w-full space-y-10 px-4 sm:px-6 lg:px-8 xl:px-12">
 					{/* Quick Actions */}
-					<div className="grid grid-cols-1 gap-8 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
-						<Link href={route('admin.attendance')} className="card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
+					<div className="grid grid-cols-12 gap-6">
+						<Link href={route('admin.attendance')} className="col-span-12 sm:col-span-6 lg:col-span-3 card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
 							<div className="flex items-center gap-6">
 								<div className="rounded-xl bg-brand-primary bg-opacity-10 p-4 group-hover:bg-brand-primary group-hover:text-white transition-colors duration-200">
 									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -79,7 +79,7 @@ export default function Dashboard() {
 							</div>
 						</Link>
 
-						<Link href={route('admin.interventions')} className="card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
+						<Link href={route('admin.interventions')} className="col-span-12 sm:col-span-6 lg:col-span-3 card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
 							<div className="flex items-center gap-6">
 								<div className="rounded-xl bg-brand-primary bg-opacity-10 p-4 group-hover:bg-brand-primary group-hover:text-white transition-colors duration-200">
 									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -93,7 +93,7 @@ export default function Dashboard() {
 							</div>
 						</Link>
 
-						<Link href={route('admin.reports')} className="card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
+						<Link href={route('admin.reports')} className="col-span-12 sm:col-span-6 lg:col-span-3 card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
 							<div className="flex items-center gap-6">
 								<div className="rounded-xl bg-brand-primary bg-opacity-10 p-4 group-hover:bg-brand-primary group-hover:text-white transition-colors duration-200">
 									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -107,7 +107,7 @@ export default function Dashboard() {
 							</div>
 						</Link>
 
-						<Link href={route('admin.sections')} className="card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
+						<Link href={route('admin.sections')} className="col-span-12 sm:col-span-6 lg:col-span-3 card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
 							<div className="flex items-center gap-6">
 								<div className="rounded-xl bg-brand-primary bg-opacity-10 p-4 group-hover:bg-brand-primary group-hover:text-white transition-colors duration-200">
 									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -121,7 +121,7 @@ export default function Dashboard() {
 							</div>
 						</Link>
 
-						<Link href={route('admin.attendance.import')} className="card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
+						<Link href={route('admin.attendance.import')} className="col-span-12 sm:col-span-6 lg:col-span-3 card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
 							<div className="flex items-center gap-6">
 								<div className="rounded-xl bg-brand-primary bg-opacity-10 p-4 group-hover:bg-brand-primary group-hover:text-white transition-colors duration-200">
 									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -135,7 +135,7 @@ export default function Dashboard() {
 							</div>
 						</Link>
 
-						<Link href={route('admin.sections.import')} className="card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
+						<Link href={route('admin.sections.import')} className="col-span-12 sm:col-span-6 lg:col-span-3 card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
 							<div className="flex items-center gap-6">
 								<div className="rounded-xl bg-brand-primary bg-opacity-10 p-4 group-hover:bg-brand-primary group-hover:text-white transition-colors duration-200">
 									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -149,7 +149,7 @@ export default function Dashboard() {
 							</div>
 						</Link>
 
-						<Link href="#" className="card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
+						<Link href="#" className="col-span-12 sm:col-span-6 lg:col-span-3 card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
 							<div className="flex items-center gap-6">
 								<div className="rounded-xl bg-brand-primary bg-opacity-10 p-4 group-hover:bg-brand-primary group-hover:text-white transition-colors duration-200">
 									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -166,7 +166,7 @@ export default function Dashboard() {
 					</div>
 
 					{/* Stats Overview */}
-					<div className="grid grid-cols-1 gap-8 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+					<div className="grid grid-cols-12 gap-6">
 						<StatsCard
 							icon={<svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -218,7 +218,7 @@ export default function Dashboard() {
 					</div>
 
 					{/* Additional Stats */}
-					<div className="grid grid-cols-1 gap-8 md:grid-cols-3 lg:grid-cols-6">
+					<div className="grid grid-cols-12 gap-6">
 						<StatsCard
 							icon={<svg className="h-6 w-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -268,8 +268,8 @@ export default function Dashboard() {
 					</div>
 
 					{/* Recent Activities */}
-					<div className="grid grid-cols-1 gap-8 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-						<div className="card p-6">
+					<div className="grid grid-cols-12 gap-6">
+						<div className="card p-6 col-span-12 lg:col-span-4">
 							<div className="mb-6 flex items-center justify-between">
 								<h3 className="text-xl font-bold text-gray-800">Recent Absences</h3>
 								<Link href={route('admin.attendance')} className="text-base font-medium text-brand-primary hover:text-brand-primary/80">
@@ -291,7 +291,7 @@ export default function Dashboard() {
 							</div>
 						</div>
 
-						<div className="card p-6">
+						<div className="card p-6 col-span-12 lg:col-span-4">
 							<div className="mb-6 flex items-center justify-between">
 								<h3 className="text-xl font-bold text-gray-800">Recent Interventions</h3>
 								<Link href={route('admin.interventions')} className="text-base font-medium text-brand-primary hover:text-brand-primary/80">
@@ -322,7 +322,7 @@ export default function Dashboard() {
 							</div>
 						</div>
 
-						<div className="card p-6">
+						<div className="card p-6 col-span-12 lg:col-span-4">
 							<div className="mb-6 flex items-center justify-between">
 								<h3 className="text-xl font-bold text-gray-800">At-Risk Students</h3>
 								<Link href={route('admin.interventions')} className="text-base font-medium text-brand-primary hover:text-brand-primary/80">
@@ -344,7 +344,7 @@ export default function Dashboard() {
 							</div>
 						</div>
 
-						<div className="card p-6">
+						<div className="card p-6 col-span-12 lg:col-span-4">
 							<div className="mb-6 flex items-center justify-between">
 								<h3 className="text-xl font-bold text-gray-800">System Status</h3>
 								<span className="text-base font-medium text-green-600">All Systems Operational</span>
