@@ -18,7 +18,8 @@ class SectionController extends Controller
 
     public function index()
     {
-        $sections = Section::orderBy('program')
+        $sections = Section::with(['department', 'program'])
+            ->orderBy('program')
             ->orderBy('year_level')
             ->orderBy('name')
             ->get();
@@ -42,6 +43,8 @@ class SectionController extends Controller
             'department' => ['nullable', 'string', 'max:255'],
             'semester' => ['required', 'string', 'max:255'],
             'academic_year' => ['required', 'string', 'max:255'],
+            'department_id' => ['nullable', 'integer', 'exists:departments,id'],
+            'program_id' => ['nullable', 'integer', 'exists:programs,id'],
         ]);
 
         Section::create($validated);
@@ -58,6 +61,8 @@ class SectionController extends Controller
             'department' => ['nullable', 'string', 'max:255'],
             'semester' => ['required', 'string', 'max:255'],
             'academic_year' => ['required', 'string', 'max:255'],
+            'department_id' => ['nullable', 'integer', 'exists:departments,id'],
+            'program_id' => ['nullable', 'integer', 'exists:programs,id'],
         ]);
 
         $section->update($validated);

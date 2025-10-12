@@ -11,6 +11,7 @@ use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\SectionController;
 use App\Http\Controllers\Admin\SubjectController;
 use App\Http\Controllers\Admin\ScheduleAdminController;
+use App\Http\Controllers\Admin\DepartmentController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -76,6 +77,17 @@ Route::middleware('auth')->group(function () {
         Route::post('/users', [UserController::class, 'store'])->name('users.store');
         Route::patch('/users/{user}', [UserController::class, 'update'])->name('users.update');
         Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+        
+        // Departments and Programs
+        Route::get('/departments', [DepartmentController::class, 'index'])->name('departments');
+        Route::post('/departments', [DepartmentController::class, 'store'])->name('departments.store');
+        Route::patch('/departments/{department}', [DepartmentController::class, 'update'])->name('departments.update');
+        Route::delete('/departments/{department}', [DepartmentController::class, 'destroy'])->name('departments.destroy');
+        
+        // Program management
+        Route::post('/programs', [DepartmentController::class, 'storeProgram'])->name('programs.store');
+        Route::patch('/programs/{program}', [DepartmentController::class, 'updateProgram'])->name('programs.update');
+        Route::delete('/programs/{program}', [DepartmentController::class, 'destroyProgram'])->name('programs.destroy');
     });
 });
 

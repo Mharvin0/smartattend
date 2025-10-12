@@ -3,20 +3,20 @@ import ApplicationLogo from '@/Components/ApplicationLogo';
 
 export default function Welcome({ auth, canLogin }) {
     return (
-        <div className="min-h-screen bg-brand-primary">
+        <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
             {canLogin && (
                 <div className="fixed right-0 top-0 p-6 text-right">
                     {auth.user ? (
                         <Link
                             href={route('admin.dashboard')}
-                            className="font-semibold text-brand-tertiary hover:text-brand-secondary focus:outline focus:outline-2 focus:rounded-sm focus:outline-brand-secondary"
+                            className="rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-secondary focus:outline-none focus:ring-2 focus:ring-brand-secondary focus:ring-offset-2"
                         >
-                            Dashboard
+                            Go to Dashboard
                         </Link>
                     ) : (
                         <Link
                             href={route('login')}
-                            className="font-semibold text-brand-tertiary hover:text-brand-secondary focus:outline focus:outline-2 focus:rounded-sm focus:outline-brand-secondary"
+                            className="rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-secondary focus:outline-none focus:ring-2 focus:ring-brand-secondary focus:ring-offset-2"
                         >
                             Log in
                         </Link>
@@ -24,14 +24,39 @@ export default function Welcome({ auth, canLogin }) {
                 </div>
             )}
 
-            <div className="flex min-h-screen items-center justify-center">
-                <div className="text-center">
-                    <ApplicationLogo className="mx-auto mb-8 h-48 w-48" />
-                    <h1 className="mb-4 text-4xl font-bold text-brand-tertiary">SmartAttend</h1>
-                    <p className="text-xl text-brand-tertiary/80">University of Pangasinan</p>
-                    <p className="mt-2 text-brand-tertiary/60">Attendance Management System</p>
+            <main className="mx-auto flex min-h-screen max-w-4xl flex-col items-center justify-center px-6 text-center">
+                <div className="mb-8">
+                    <ApplicationLogo className="mx-auto h-16 w-16" />
                 </div>
-            </div>
+                <h1 className="mb-3 text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl">
+                    SmartAttend
+                </h1>
+                <p className="text-base text-gray-600 sm:text-lg">
+                    University of Pangasinan • Attendance Management System
+                </p>
+
+                {canLogin && (
+                    <div className="mt-10">
+                        {auth.user ? (
+                            <Link
+                                href={route('admin.dashboard')}
+                                className="inline-flex items-center justify-center rounded-md bg-brand-primary px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-secondary focus:outline-none focus:ring-2 focus:ring-brand-secondary focus:ring-offset-2"
+                            >
+                                Open Dashboard
+                            </Link>
+                        ) : (
+                            <Link
+                                href={route('login')}
+                                className="inline-flex items-center justify-center rounded-md bg-brand-primary px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-secondary focus:outline-none focus:ring-2 focus:ring-brand-secondary focus:ring-offset-2"
+                            >
+                                Get Started
+                            </Link>
+                        )}
+                    </div>
+                )}
+
+                <p className="mt-14 text-xs text-gray-400">© {new Date().getFullYear()} SmartAttend</p>
+            </main>
         </div>
     );
 }

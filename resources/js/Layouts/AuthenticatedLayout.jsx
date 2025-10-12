@@ -66,15 +66,16 @@ export default function AuthenticatedLayout({ header, children }) {
 					{(roles.includes('Admin') || roles.includes('Super Admin')) && (
 						<>
 							<NavItem
-								href={route('admin.attendance')}
-								active={route().current('admin.attendance*')}
+								href={route('admin.dashboard')}
+								active={route().current('admin.dashboard*')}
 								icon={
 									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5a2 2 0 012-2h4a2 2 0 012 2v6H8V5z" />
 									</svg>
 								}
 							>
-								Attendance
+								Dashboard
 							</NavItem>
 
 							<NavItem
@@ -140,55 +141,93 @@ export default function AuthenticatedLayout({ header, children }) {
 					)}
 
 					{roles.includes('Super Admin') && (
-						<NavItem
-							href={route('super.users')}
-							active={route().current('super.users*')}
-							icon={
-								<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-								</svg>
-							}
-						>
-							Users
-						</NavItem>
+						<>
+							<NavItem
+								href={route('super.departments')}
+								active={route().current('super.departments*')}
+								icon={
+									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+									</svg>
+								}
+							>
+								Departments
+							</NavItem>
+							<NavItem
+								href={route('super.users')}
+								active={route().current('super.users*')}
+								icon={
+									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+									</svg>
+								}
+							>
+								Users
+							</NavItem>
+						</>
 					)}
 				</div>
 
-				{/* User Profile */}
-				<div className="border-t border-gray-200 p-6">
-					<div className="flex items-center gap-4">
-						<div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-full bg-brand-secondary">
-							<svg className="h-full w-full text-gray-800" fill="currentColor" viewBox="0 0 24 24">
-								<path d="M24 20.993V24H0v-2.996A14.977 14.977 0 0112.004 15c4.904 0 9.26 2.354 11.996 5.993zM16.002 8.999a4 4 0 11-8 0 4 4 0 018 0z" />
-							</svg>
-						</div>
-						{sidebarOpen && (
+				{/* User Info - Display only when sidebar is open */}
+				{sidebarOpen && (
+					<div className="border-t border-gray-200 p-6">
+						<div className="flex items-center gap-4">
+							<div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-full bg-brand-secondary">
+								<svg className="h-full w-full text-gray-800" fill="currentColor" viewBox="0 0 24 24">
+									<path d="M24 20.993V24H0v-2.996A14.977 14.977 0 0112.004 15c4.904 0 9.26 2.354 11.996 5.993zM16.002 8.999a4 4 0 11-8 0 4 4 0 018 0z" />
+								</svg>
+							</div>
 							<div className="min-w-0 flex-1">
-								<div className="flex items-center justify-between">
-									<p className="truncate text-base font-semibold text-gray-900">{user.name}</p>
-									<Dropdown>
-										<Dropdown.Trigger>
-											<button className="rounded-full p-2 hover:bg-gray-100">
-												<svg className="h-6 w-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-												</svg>
-											</button>
-										</Dropdown.Trigger>
-										<Dropdown.Content>
-											<Dropdown.Link href={route('profile.edit')}>Profile</Dropdown.Link>
-											<Dropdown.Link href={route('logout')} method="post" as="button">Log Out</Dropdown.Link>
-										</Dropdown.Content>
-									</Dropdown>
-								</div>
+								<p className="truncate text-base font-semibold text-gray-900">{user.name}</p>
 								<p className="truncate text-base text-gray-500">{roles.join(', ')}</p>
 							</div>
-						)}
+						</div>
 					</div>
+				)}
+			</div>
+
+			{/* Top Navigation Bar */}
+			<div className={`fixed top-0 right-0 z-40 flex h-20 items-center justify-end bg-white shadow-sm transition-all duration-300 ${
+				sidebarOpen ? 'left-72' : 'left-24'
+			} border-b border-gray-200`}>
+				<div className="flex items-center gap-4 px-6">
+					{/* Profile Button */}
+					<Dropdown>
+						<Dropdown.Trigger>
+							<button className="flex items-center gap-3 rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors">
+								<div className="h-8 w-8 flex-shrink-0 overflow-hidden rounded-full bg-brand-secondary">
+									<svg className="h-full w-full text-gray-800" fill="currentColor" viewBox="0 0 24 24">
+										<path d="M24 20.993V24H0v-2.996A14.977 14.977 0 0112.004 15c4.904 0 9.26 2.354 11.996 5.993zM16.002 8.999a4 4 0 11-8 0 4 4 0 018 0z" />
+									</svg>
+								</div>
+								<span className="hidden sm:block">{user.name}</span>
+								<svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+								</svg>
+							</button>
+						</Dropdown.Trigger>
+						<Dropdown.Content>
+							<Dropdown.Link href={route('profile.edit')}>Profile</Dropdown.Link>
+						</Dropdown.Content>
+					</Dropdown>
+
+					{/* Logout Button */}
+					<Link
+						href={route('logout')}
+						method="post"
+						as="button"
+						className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+					>
+						<svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+						</svg>
+						<span className="hidden sm:block">Logout</span>
+					</Link>
 				</div>
 			</div>
 
 			{/* Main Content */}
-			<div className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-72' : 'ml-24'}`}>
+			<div className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-72' : 'ml-24'} pt-20`}>
 				{header && (
 					<header className="bg-white shadow">
 						<div className="mx-auto px-6 py-8 sm:px-8 lg:px-10">

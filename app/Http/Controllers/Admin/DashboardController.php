@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AttendanceRecord;
 use App\Models\Intervention;
 use App\Models\WeeklySummary;
+use App\Models\Section;
 use Carbon\CarbonImmutable;
 use Inertia\Inertia;
 
@@ -37,6 +38,7 @@ class DashboardController extends Controller
 		$presentToday = $todayRecords->where('status', 'present')->count();
 		$lateToday = $todayRecords->where('status', 'late')->count();
 		$absentToday = $todayRecords->where('status', 'absent')->count();
+		$excusedToday = $todayRecords->where('status', 'excused')->count();
 		
 		$presentRate = $totalStudents > 0 ? round(($presentToday / $totalStudents) * 100, 1) : 0;
 		$lateRate = $totalStudents > 0 ? round(($lateToday / $totalStudents) * 100, 1) : 0;
@@ -70,6 +72,32 @@ class DashboardController extends Controller
 		// Open interventions count
 		$openInterventions = Intervention::whereIn('status', ['open', 'in_progress'])->count();
 
+		// Recent attendance records with full details
+		$recentRecords = AttendanceRecord::with(['student.section', 'schedule.subject'])
+			->orderByDesc('date')
+			->orderByDesc('created_at')
+			->limit(50)
+			->get();
+
+		// Today's stats for attendance cards
+		$todayStats = [
+			'present' => $presentToday,
+			'late' => $lateToday,
+			'absent' => $absentToday,
+			'excused' => $excusedToday,
+			'total_students' => $totalStudents,
+			'attendance_rate' => $presentRate,
+		];
+
+		// Sections for filtering
+		$sections = Section::orderBy('name')->get(['id', 'name']);
+
+		// Get total students count from database
+		$totalStudentsCount = \App\Models\Student::count();
+
+		// Calculate overall attendance rate for today
+		$overallAttendanceRate = $totalStudents > 0 ? round(($presentToday / $totalStudents) * 100, 1) : 0;
+
 		return Inertia::render('Admin/Dashboard', [
 			'chart' => [
 				'labels' => $labels,
@@ -96,6 +124,11 @@ class DashboardController extends Controller
 			'recentInterventions' => $recentInterventions,
 			'recentAbsences' => $recentAbsences,
 			'atRiskStudents' => $atRiskStudents,
+			'recentRecords' => $recentRecords,
+			'todayStats' => $todayStats,
+			'sections' => $sections,
+			'totalStudentsCount' => $totalStudentsCount,
+			'overallAttendanceRate' => $overallAttendanceRate,
 		]);
 	}
 

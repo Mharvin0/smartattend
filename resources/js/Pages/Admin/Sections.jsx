@@ -3,7 +3,7 @@ import { Head, useForm, usePage } from '@inertiajs/react';
 import DataTable from '@/Components/DataTable';
 import { Link } from '@inertiajs/react';
 
-export default function Sections({ sections, programs, yearLevels, semesters, departments }) {
+export default function Sections({ sections, programs, yearLevels, semesters, departments = [] }) {
 	const { data, setData, post, processing } = useForm({
 		name: '',
 		year_level: '',
@@ -55,8 +55,8 @@ export default function Sections({ sections, programs, yearLevels, semesters, de
 									onChange={(e) => handleDepartmentChange(e.target.value)}
 								>
 									<option value="">Select Department</option>
-									{departments?.map((dept) => (
-										<option key={dept} value={dept}>{dept}</option>
+									{Array.isArray(departments) && departments.map((dept, index) => (
+										<option key={index} value={dept}>{dept}</option>
 									))}
 								</select>
 							</div>
