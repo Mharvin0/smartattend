@@ -18,22 +18,7 @@ class InterventionController extends Controller
 
 	public function index(Request $request)
 	{
-		$filters = [
-			'date' => $request->input('date'),
-			'type' => $request->input('type'),
-			'status' => $request->input('status'),
-			'priority' => $request->input('priority'),
-		];
-		$interventions = Intervention::with('student:id,first_name,last_name')
-			->when($filters['date'], fn($q, $d) => $q->whereDate('date', $d))
-			->when($filters['type'], fn($q, $t) => $q->where('type', $t))
-			->when($filters['status'], fn($q, $s) => $q->where('status', $s))
-			->when($filters['priority'], fn($q, $p) => $q->where('priority', $p))
-			->orderByDesc('date')
-			->paginate(10)
-			->withQueryString();
-		$students = Student::orderBy('last_name')->get(['id','first_name','last_name']);
-		return Inertia::render('Admin/Interventions', compact('interventions','students','filters'));
+		return Inertia::render('Admin/Interventions');
 	}
 
 	public function store(Request $request)

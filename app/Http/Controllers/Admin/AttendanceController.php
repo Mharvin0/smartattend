@@ -27,37 +27,7 @@ class AttendanceController extends Controller
 
 	public function index()
 	{
-		// Get recent attendance records with student and section info
-		$recentRecords = AttendanceRecord::with(['student.section', 'schedule.subject'])
-			->orderBy('date', 'desc')
-			->orderBy('created_at', 'desc')
-			->limit(50)
-			->get();
-
-		// Get today's attendance summary
-		$today = now()->toDateString();
-		$todayStats = AttendanceRecord::whereDate('date', $today)
-			->selectRaw('status, COUNT(*) as count')
-			->groupBy('status')
-			->pluck('count', 'status');
-
-		// Get sections for filtering
-		$sections = Section::orderBy('name')->get(['id', 'name']);
-
-		// Get weekly attendance trends (last 7 days)
-		$weeklyTrends = AttendanceRecord::whereDate('date', '>=', now()->subDays(7))
-			->selectRaw('DATE(date) as date, status, COUNT(*) as count')
-			->groupBy('date', 'status')
-			->orderBy('date')
-			->get()
-			->groupBy('date');
-
-		return Inertia::render('Admin/Attendance', [
-			'recentRecords' => $recentRecords,
-			'todayStats' => $todayStats,
-			'sections' => $sections,
-			'weeklyTrends' => $weeklyTrends,
-		]);
+		return Inertia::render('Admin/Attendance');
 	}
 
 	public function bySection(Request $request)

@@ -18,6 +18,10 @@ class DashboardController extends Controller
 	}
 	public function index()
 	{
+		// Check if user is Admin (not Super Admin) and redirect to simplified page
+		if (auth()->user()->hasRole('Admin') && !auth()->user()->hasRole('Super Admin')) {
+			return redirect()->route('admin.admin-page');
+		}
 		$today = CarbonImmutable::today();
 		$weeks = collect(range(0, 7))->map(fn($i) => $today->startOfWeek()->subWeeks($i))->reverse()->values();
 		$labels = $weeks->map(fn($w) => $w->format('M d'))->all();

@@ -25,66 +25,63 @@ export default function Login({ status, canResetPassword }) {
             <Head title="Log in" />
             <div className="grid min-h-screen grid-cols-1 md:grid-cols-2">
                 {/* Left: Hero / Branding */}
-                <div className="relative hidden md:block bg-gradient-to-br from-brand-primary via-indigo-600 to-brand-tertiary">
+                <div className="relative hidden md:block bg-gradient-to-br from-brand-primary via-emerald-600 to-brand-primary">
                     <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(255,255,255,0.15),transparent_50%),radial-gradient(ellipse_at_bottom_right,rgba(255,255,255,0.08),transparent_50%)]" />
-                    <div className="relative flex h-full flex-col justify-between p-10 text-white">
-                        <div>
-                            <Link href="/" className="inline-flex items-center gap-3">
-                                <ApplicationLogo className="h-10 w-10 drop-shadow" />
-                                <span className="text-2xl font-semibold tracking-tight">SmartAttend</span>
-                            </Link>
+                    <div className="relative flex h-full flex-col justify-center items-center p-10 text-white">
+                        {/* Center Logo */}
+                        <div className="mb-12 text-center">
+                            <ApplicationLogo className="mx-auto h-96 w-96 drop-shadow-2xl mb-8" />
+                            <h1 className="text-8xl font-bold tracking-tight mb-6">SmartAttend</h1>
+                            <p className="text-5xl text-emerald-100 font-medium">PHINMA University of Pangasinan</p>
                         </div>
 
-                        <div className="mx-auto max-w-md text-center">
-                            <h2 className="text-3xl font-bold leading-tight md:text-4xl">Smarter attendance, simpler days</h2>
-                            <p className="mt-3 text-white/85">University of Pangasinan</p>
-                            <p className="mt-6 text-white/80">Automate tracking, monitor trends, and intervene early with clear insights.</p>
-                        </div>
-
-                        <div className="text-sm text-white/70">© {new Date().getFullYear()} SmartAttend</div>
+                        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 text-sm text-white/70">© {new Date().getFullYear()} SmartAttend</div>
                     </div>
                 </div>
 
                 {/* Right: Auth form */}
-                <div className="flex items-center justify-center bg-gray-50 p-6 md:p-10">
-                    <div className="w-full max-w-md">
-                        <div className="mb-8 flex items-center gap-3 md:hidden">
-                            <ApplicationLogo className="h-10 w-10" />
-                            <div>
-                                <h1 className="text-xl font-semibold text-gray-900">SmartAttend</h1>
-                                <p className="text-sm text-gray-500">University of Pangasinan</p>
+                <div className="flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 p-6 md:p-10">
+                    <div className="w-full max-w-lg">
+                        <div className="mb-10 flex items-center justify-center gap-8 md:hidden">
+                            <ApplicationLogo className="h-64 w-64" />
+                            <div className="text-center">
+                                <h1 className="text-6xl font-bold text-gray-900">SmartAttend</h1>
+                                <p className="text-3xl text-gray-600">University of Pangasinan</p>
                             </div>
                         </div>
 
                         {status && (
-                            <div className="mb-4 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-700">
+                            <div className="mb-6 rounded-xl border border-green-200 bg-green-50 px-6 py-4 text-base font-medium text-green-700 shadow-sm">
                                 {status}
                             </div>
                         )}
 
-                        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm md:p-8">
-                            <h2 className="mb-1 text-2xl font-bold text-gray-900">Welcome back</h2>
-                            <p className="mb-6 text-sm text-gray-500">Please sign in to continue</p>
+                        <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white p-10 shadow-xl md:p-12">
+                            <div className="text-center mb-8">
+                                <h2 className="mb-3 text-4xl font-bold text-gray-900">Welcome!</h2>
+                                <p className="text-lg text-gray-600">Please sign in to continue to your dashboard</p>
+                            </div>
 
-                            <form onSubmit={submit} className="space-y-5">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">Email</label>
+                            <form onSubmit={submit} className="space-y-8">
+                                <div className="space-y-2">
+                                    <label className="block text-lg font-semibold text-gray-700">Email Address</label>
                                     <input
                                         type="email"
-                                        className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm outline-none ring-0 transition focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 sm:text-sm"
+                                        className="mt-2 block w-full rounded-xl border-2 border-gray-200 bg-white px-5 py-4 text-gray-900 shadow-sm outline-none ring-0 transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10 text-lg"
+                                        placeholder="Enter your email"
                                         value={data.email}
                                         onChange={e => setData('email', e.target.value)}
                                     />
-                                    {errors.email && <div className="mt-1 text-sm text-red-600">{errors.email}</div>}
+                                    {errors.email && <div className="mt-2 text-base text-red-600 font-medium">{errors.email}</div>}
                                 </div>
 
-                                <div>
+                                <div className="space-y-2">
                                     <div className="flex items-center justify-between">
-                                        <label className="block text-sm font-medium text-gray-700">Password</label>
+                                        <label className="block text-lg font-semibold text-gray-700">Password</label>
                                         {canResetPassword && (
                                             <Link
                                                 href={route('password.request')}
-                                                className="text-xs font-medium text-brand-primary hover:text-brand-primary/90 focus:outline-none focus:ring-2 focus:ring-brand-primary focus:ring-offset-2"
+                                                className="text-base font-semibold text-brand-primary hover:text-brand-primary/90 focus:outline-none focus:ring-2 focus:ring-brand-primary focus:ring-offset-2 transition-colors"
                                             >
                                                 Forgot password?
                                             </Link>
@@ -92,30 +89,32 @@ export default function Login({ status, canResetPassword }) {
                                     </div>
                                     <input
                                         type="password"
-                                        className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm outline-none ring-0 transition focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 sm:text-sm"
+                                        className="mt-2 block w-full rounded-xl border-2 border-gray-200 bg-white px-5 py-4 text-gray-900 shadow-sm outline-none ring-0 transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10 text-lg"
+                                        placeholder="Enter your password"
                                         value={data.password}
                                         onChange={e => setData('password', e.target.value)}
                                     />
-                                    {errors.password && <div className="mt-1 text-sm text-red-600">{errors.password}</div>}
+                                    {errors.password && <div className="mt-2 text-base text-red-600 font-medium">{errors.password}</div>}
                                 </div>
 
-                                <div className="flex items-center justify-between">
-                                    <label className="flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
-                                            className="h-4 w-4 rounded border-gray-300 text-brand-primary shadow-sm focus:ring-brand-primary"
-                                            checked={data.remember}
-                                            onChange={e => setData('remember', e.target.checked)}
-                                        />
-                                        <span className="text-sm text-gray-600">Remember me</span>
-                                    </label>
-                                </div>
 
                                 <button
                                     disabled={processing}
-                                    className="inline-flex w-full items-center justify-center rounded-lg bg-brand-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-primary/90 focus:outline-none focus:ring-2 focus:ring-brand-primary focus:ring-offset-2 disabled:opacity-60"
+                                    className="inline-flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-brand-primary to-emerald-600 px-8 py-5 text-xl font-bold text-white shadow-lg transition-all duration-200 hover:from-brand-primary/90 hover:to-emerald-600/90 hover:shadow-xl hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-brand-primary/20 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
                                 >
-                                    Log in
+                                    {processing ? (
+                                        <div className="flex items-center gap-3">
+                                            <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                                            Signing in...
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-3">
+                                            <span>Sign In</span>
+                                            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                            </svg>
+                                        </div>
+                                    )}
                                 </button>
                             </form>
                         </div>

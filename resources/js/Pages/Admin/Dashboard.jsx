@@ -97,674 +97,421 @@ export default function Dashboard() {
 	}, [chart]);
 
 	return (
-		<AuthenticatedLayout header={<h2 className="text-2xl font-bold leading-tight text-gray-800">Dashboard</h2>}>
+		<AuthenticatedLayout>
 			<Head title="Dashboard" />
-			<div className="min-h-screen py-8">
-				<div className="mx-auto max-w-full space-y-10 px-4 sm:px-6 lg:px-8 xl:px-12">
-					{/* Attendance Management Header */}
-					<div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 p-10 text-white">
-						<div className="absolute inset-0 bg-black/10"></div>
-						<div className="relative">
-							<div className="flex items-center justify-between">
-								<div>
-									<h1 className="text-4xl font-bold mb-4">Dashboard</h1>
-									<p className="text-xl text-blue-100 mb-6">Monitor and manage student attendance across all departments and programs</p>
-									<div className="flex items-center gap-6">
-										<div className="flex items-center gap-3">
-											<div className="h-3 w-3 bg-green-400 rounded-full"></div>
-											<span className="text-blue-100">Real-time tracking</span>
-										</div>
-										<div className="flex items-center gap-3">
-											<div className="h-3 w-3 bg-yellow-400 rounded-full"></div>
-											<span className="text-blue-100">Automated reports</span>
-										</div>
-										<div className="flex items-center gap-3">
-											<div className="h-3 w-3 bg-purple-400 rounded-full"></div>
-											<span className="text-blue-100">Bulk operations</span>
-										</div>
-									</div>
-								</div>
-								<div className="hidden lg:block">
-									<div className="h-32 w-32 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-										<svg className="h-16 w-16 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-										</svg>
-									</div>
+			<div className="min-h-screen bg-gradient-to-br from-brand-primary/10 via-emerald-50/80 to-brand-secondary/5">
+				<div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+					{/* Hero Section */}
+					<div className="mb-16">
+						<div className="text-center">
+							<div className="mb-6">
+								<div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-brand-primary to-emerald-600 rounded-2xl shadow-lg">
+									<svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+									</svg>
 								</div>
 							</div>
+							<h1 className="text-5xl font-bold text-gray-900 mb-6">
+								Welcome to SmartAttend
+							</h1>
+							<p className="text-2xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
+								Streamline attendance management with intelligent insights and automated reporting for 
+								<span className="text-brand-primary font-semibold"> PHINMA University of Pangasinan</span>
+							</p>
 						</div>
 					</div>
 
-					{/* Today's Stats Cards */}
-					{todayStats && (
-						<div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-							<div className="rounded-xl bg-white p-8 shadow-sm border border-gray-200">
-								<div className="flex items-center">
-									<div className="flex-shrink-0">
-										<div className="h-16 w-16 rounded-lg bg-green-100 flex items-center justify-center">
-											<svg className="h-8 w-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-											</svg>
-										</div>
-									</div>
-									<div className="ml-6">
-										<p className="text-lg font-medium text-gray-500">Present Today</p>
-										<p className="text-4xl font-semibold text-gray-900">{todayStats.present || 0}</p>
-									</div>
-								</div>
-							</div>
-							<div className="rounded-xl bg-white p-8 shadow-sm border border-gray-200">
-								<div className="flex items-center">
-									<div className="flex-shrink-0">
-										<div className="h-16 w-16 rounded-lg bg-yellow-100 flex items-center justify-center">
-											<svg className="h-8 w-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-											</svg>
-										</div>
-									</div>
-									<div className="ml-6">
-										<p className="text-lg font-medium text-gray-500">Late Today</p>
-										<p className="text-4xl font-semibold text-gray-900">{todayStats.late || 0}</p>
-									</div>
-								</div>
-							</div>
-							<div className="rounded-xl bg-white p-8 shadow-sm border border-gray-200">
-								<div className="flex items-center">
-									<div className="flex-shrink-0">
-										<div className="h-16 w-16 rounded-lg bg-red-100 flex items-center justify-center">
-											<svg className="h-8 w-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-											</svg>
-										</div>
-									</div>
-									<div className="ml-6">
-										<p className="text-lg font-medium text-gray-500">Absent Today</p>
-										<p className="text-4xl font-semibold text-gray-900">{todayStats.absent || 0}</p>
-									</div>
-								</div>
-							</div>
-							<div className="rounded-xl bg-white p-8 shadow-sm border border-gray-200">
-								<div className="flex items-center">
-									<div className="flex-shrink-0">
-										<div className="h-16 w-16 rounded-lg bg-blue-100 flex items-center justify-center">
-											<svg className="h-8 w-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-											</svg>
-										</div>
-									</div>
-									<div className="ml-6">
-										<p className="text-lg font-medium text-gray-500">Excused Today</p>
-										<p className="text-4xl font-semibold text-gray-900">{todayStats.excused || 0}</p>
-									</div>
-								</div>
-							</div>
-							<div className="rounded-xl bg-white p-8 shadow-sm border border-gray-200">
-								<div className="flex items-center">
-									<div className="flex-shrink-0">
-										<div className="h-16 w-16 rounded-lg bg-purple-100 flex items-center justify-center">
-											<svg className="h-8 w-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
-											</svg>
-										</div>
-									</div>
-									<div className="ml-6">
-										<p className="text-lg font-medium text-gray-500">Total Students</p>
-										<p className="text-4xl font-semibold text-gray-900">{totalStudentsCount || 0}</p>
-									</div>
-								</div>
-							</div>
-							<div className="rounded-xl bg-white p-8 shadow-sm border border-gray-200">
-								<div className="flex items-center">
-									<div className="flex-shrink-0">
-										<div className="h-16 w-16 rounded-lg bg-indigo-100 flex items-center justify-center">
-											<svg className="h-8 w-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-											</svg>
-										</div>
-									</div>
-									<div className="ml-6">
-										<p className="text-lg font-medium text-gray-500">Attendance Rate</p>
-										<p className="text-4xl font-semibold text-gray-900">{overallAttendanceRate || 0}%</p>
-									</div>
-								</div>
-							</div>
-						</div>
-					)}
-
-					{/* Recent Records Section */}
-					{recentRecords && (
-						<div className="card p-10">
-							<div className="mb-10 flex items-center justify-between">
+					{/* Key Metrics */}
+					<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
+						<div className="bg-white rounded-3xl p-8 shadow-lg border border-gray-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
+							<div className="flex items-center justify-between">
 								<div>
-									<h3 className="text-3xl font-bold text-gray-900">Recent Attendance Records</h3>
-									<p className="text-lg text-gray-600 mt-2">Latest attendance entries across all departments</p>
+									<p className="text-base font-semibold text-gray-600 mb-2">Today's Attendance</p>
+									<p className="text-4xl font-bold text-gray-900 mb-2">{overallAttendanceRate || 0}%</p>
+									<p className="text-sm text-gray-500">{todayStats?.present || 0} of {totalStudentsCount || 0} students</p>
 								</div>
-								<div className="flex items-center gap-6">
-									<div className="relative">
-										<input 
-											type="text" 
-											className="rounded-lg border-gray-300 pl-12 pr-6 focus:border-brand-primary focus:ring-brand-primary text-lg py-4 w-80" 
-											placeholder="Search by student, department, program, or section..." 
-											value={searchTerm}
-											onChange={(e) => setSearchTerm(e.target.value)}
-										/>
-										<svg className="absolute left-4 top-1/2 h-7 w-7 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-										</svg>
-									</div>
-									<select 
-										className="rounded-lg border-gray-300 focus:border-brand-primary focus:ring-brand-primary text-lg py-4 px-4"
-										value={selectedSection}
-										onChange={(e) => setSelectedSection(e.target.value)}
-									>
-										<option value="">All Sections</option>
-										{sections?.map(section => (
-											<option key={section.id} value={section.id}>{section.name}</option>
-										))}
-									</select>
-									<select 
-										className="rounded-lg border-gray-300 focus:border-brand-primary focus:ring-brand-primary text-lg py-4 px-4"
-										value={selectedStatus}
-										onChange={(e) => setSelectedStatus(e.target.value)}
-									>
-										<option value="">All Status</option>
-										<option value="present">Present</option>
-										<option value="late">Late</option>
-										<option value="absent">Absent</option>
-										<option value="excused">Excused</option>
-									</select>
-								</div>
-							</div>
-
-							<DataTable
-								columns={[
-									{ key: 'date', label: 'Date', render: (date) => new Date(date).toLocaleDateString() },
-									{ key: 'department', label: 'Department', render: (_, row) => (
-										<div className="font-medium text-gray-900">
-											{row.student?.section?.department || '-'}
-										</div>
-									)},
-									{ key: 'program', label: 'Program', render: (_, row) => (
-										<div className="font-medium text-gray-900">
-											{row.student?.section?.program || '-'}
-										</div>
-									)},
-									{ key: 'year_level', label: 'Year Level', render: (_, row) => (
-										<div className="font-medium text-gray-900">
-											{row.student?.section?.year_level || '-'}
-										</div>
-									)},
-									{ key: 'section', label: 'Section', render: (_, row) => (
-										<div className="font-medium text-gray-900">
-											{row.student?.section?.name || '-'}
-										</div>
-									)},
-									{ key: 'student', label: 'Student', render: (_, row) => (
-										<div>
-											<div className="font-medium">{row.student?.first_name} {row.student?.last_name}</div>
-											<div className="text-sm text-gray-500">{row.student?.student_number}</div>
-										</div>
-									)},
-									{ key: 'status', label: 'Status', render: (status) => (
-										<span className={`inline-flex rounded-full px-3 py-1 text-sm font-semibold ${getStatusColor(status)}`}>
-											{status?.toUpperCase()}
-										</span>
-									)},
-									{ key: 'schedule', label: 'Subject', render: (_, row) => (
-										<div>
-											<div className="font-medium">{row.schedule?.subject?.name || 'General'}</div>
-											{row.schedule && (
-												<div className="text-sm text-gray-500">
-													{formatTime(row.schedule.time_start)} - {formatTime(row.schedule.time_end)}
-												</div>
-											)}
-										</div>
-									)},
-									{ key: 'remarks', label: 'Remarks', render: (remarks) => remarks || '-' },
-									{ key: 'created_at', label: 'Recorded', render: (created_at) => new Date(created_at).toLocaleString() },
-								]}
-								data={filteredRecords}
-							/>
-
-							<div className="mt-10 flex items-center justify-between border-t border-gray-200 pt-10">
-								<p className="text-xl text-gray-700">Showing {filteredRecords.length} of {recentRecords?.length || 0} entries</p>
-								<div className="flex gap-6">
-									<button className="rounded-xl border border-gray-300 px-8 py-4 text-lg hover:bg-gray-50 transition-colors">Previous</button>
-									<button className="rounded-xl border border-gray-300 px-8 py-4 text-lg hover:bg-gray-50 transition-colors">Next</button>
-								</div>
-							</div>
-						</div>
-					)}
-
-					{/* Quick Actions */}
-					<div className="grid grid-cols-1 gap-8 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
-						<Link href={route('admin.attendance.section')} className="card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
-							<div className="flex items-center gap-6">
-								<div className="rounded-xl bg-brand-primary bg-opacity-10 p-4 group-hover:bg-brand-primary group-hover:text-white transition-colors duration-200">
-									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+								<div className="h-16 w-16 bg-gradient-to-br from-green-100 to-green-200 rounded-2xl flex items-center justify-center group-hover:from-green-200 group-hover:to-green-300 transition-all duration-300">
+									<svg className="h-8 w-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
 									</svg>
 								</div>
+							</div>
+						</div>
+
+						<div className="bg-white rounded-3xl p-8 shadow-lg border border-gray-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
+							<div className="flex items-center justify-between">
 								<div>
-									<h3 className="text-lg font-semibold text-gray-900">Record Attendance</h3>
-									<p className="text-base text-gray-500">Take daily attendance</p>
+									<p className="text-base font-semibold text-gray-600 mb-2">Absent Today</p>
+									<p className="text-4xl font-bold text-red-600 mb-2">{todayStats?.absent || 0}</p>
+									<p className="text-sm text-gray-500">Students absent</p>
+								</div>
+								<div className="h-16 w-16 bg-gradient-to-br from-red-100 to-red-200 rounded-2xl flex items-center justify-center group-hover:from-red-200 group-hover:to-red-300 transition-all duration-300">
+									<svg className="h-8 w-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+									</svg>
 								</div>
 							</div>
-						</Link>
+						</div>
 
-						<Link href={route('admin.interventions')} className="card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
-							<div className="flex items-center gap-6">
-								<div className="rounded-xl bg-brand-primary bg-opacity-10 p-4 group-hover:bg-brand-primary group-hover:text-white transition-colors duration-200">
-									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<div className="bg-white rounded-3xl p-8 shadow-lg border border-gray-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
+							<div className="flex items-center justify-between">
+								<div>
+									<p className="text-base font-semibold text-gray-600 mb-2">At-Risk Students</p>
+									<p className="text-4xl font-bold text-orange-600 mb-2">{atRiskStudents?.length || 0}</p>
+									<p className="text-sm text-gray-500">Need attention</p>
+								</div>
+								<div className="h-16 w-16 bg-gradient-to-br from-orange-100 to-orange-200 rounded-2xl flex items-center justify-center group-hover:from-orange-200 group-hover:to-orange-300 transition-all duration-300">
+									<svg className="h-8 w-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
 									</svg>
 								</div>
-								<div>
-									<h3 className="text-lg font-semibold text-gray-900">Interventions</h3>
-									<p className="text-base text-gray-500">Manage student interventions</p>
-								</div>
 							</div>
-						</Link>
+						</div>
 
-						<Link href={route('admin.reports')} className="card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
-							<div className="flex items-center gap-6">
-								<div className="rounded-xl bg-brand-primary bg-opacity-10 p-4 group-hover:bg-brand-primary group-hover:text-white transition-colors duration-200">
-									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+						<div className="bg-white rounded-3xl p-8 shadow-lg border border-gray-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
+							<div className="flex items-center justify-between">
+								<div>
+									<p className="text-base font-semibold text-gray-600 mb-2">Total Students</p>
+									<p className="text-4xl font-bold text-gray-900 mb-2">{totalStudentsCount || 0}</p>
+									<p className="text-sm text-gray-500">Enrolled</p>
+								</div>
+								<div className="h-16 w-16 bg-gradient-to-br from-blue-100 to-blue-200 rounded-2xl flex items-center justify-center group-hover:from-blue-200 group-hover:to-blue-300 transition-all duration-300">
+									<svg className="h-8 w-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
 									</svg>
 								</div>
-								<div>
-									<h3 className="text-lg font-semibold text-gray-900">Reports</h3>
-									<p className="text-base text-gray-500">View attendance reports</p>
-								</div>
 							</div>
-						</Link>
-
-						<Link href={route('admin.sections')} className="card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
-							<div className="flex items-center gap-6">
-								<div className="rounded-xl bg-brand-primary bg-opacity-10 p-4 group-hover:bg-brand-primary group-hover:text-white transition-colors duration-200">
-									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-									</svg>
-								</div>
-								<div>
-									<h3 className="text-lg font-semibold text-gray-900">Sections</h3>
-									<p className="text-base text-gray-500">Manage class sections</p>
-								</div>
-							</div>
-						</Link>
-
-						<Link href={route('admin.attendance.import')} className="card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
-							<div className="flex items-center gap-6">
-								<div className="rounded-xl bg-brand-primary bg-opacity-10 p-4 group-hover:bg-brand-primary group-hover:text-white transition-colors duration-200">
-									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-									</svg>
-								</div>
-								<div>
-									<h3 className="text-lg font-semibold text-gray-900">Import Data</h3>
-									<p className="text-base text-gray-500">Bulk import records</p>
-								</div>
-							</div>
-						</Link>
-
-						<Link href={route('admin.sections.import')} className="card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
-							<div className="flex items-center gap-6">
-								<div className="rounded-xl bg-brand-primary bg-opacity-10 p-4 group-hover:bg-brand-primary group-hover:text-white transition-colors duration-200">
-									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
-									</svg>
-								</div>
-								<div>
-									<h3 className="text-lg font-semibold text-gray-900">Import Sections</h3>
-									<p className="text-base text-gray-500">Import sections & students</p>
-								</div>
-							</div>
-						</Link>
-
-						<Link href="#" className="card group hover:border-brand-primary hover:shadow-lg transition-all duration-200 p-6">
-							<div className="flex items-center gap-6">
-								<div className="rounded-xl bg-brand-primary bg-opacity-10 p-4 group-hover:bg-brand-primary group-hover:text-white transition-colors duration-200">
-									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-									</svg>
-								</div>
-								<div>
-									<h3 className="text-lg font-semibold text-gray-900">Settings</h3>
-									<p className="text-base text-gray-500">System configuration</p>
-								</div>
-							</div>
-						</Link>
+						</div>
 					</div>
 
-					{/* Stats Overview */}
-					<div className="grid grid-cols-1 gap-8 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
-						<StatsCard
-							icon={<svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-							</svg>}
-							title="Present Today"
-							value={`${stats?.presentToday?.rate || 0}%`}
-							subtitle={`${stats?.presentToday?.count || 0} of ${stats?.presentToday?.total || 0} students`}
-						/>
-						<StatsCard
-							icon={<svg className="h-6 w-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-							</svg>}
-							title="Late Today"
-							value={`${stats?.lateToday?.rate || 0}%`}
-							subtitle={`${stats?.lateToday?.count || 0} students`}
-						/>
-						<StatsCard
-							icon={<svg className="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-							</svg>}
-							title="Absent Today"
-							value={`${stats?.absentToday?.rate || 0}%`}
-							subtitle={`${stats?.absentToday?.count || 0} students`}
-						/>
-						<StatsCard
-							icon={<svg className="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-							</svg>}
-							title="Weekly Average"
-							value={`${stats?.weeklyAverage || 0}%`}
-							subtitle="Last 8 weeks"
-						/>
-						<StatsCard
-							icon={<svg className="h-6 w-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-							</svg>}
-							title="Excused Today"
-							value="12"
-							subtitle="Students excused"
-						/>
-						<StatsCard
-							icon={<svg className="h-6 w-6 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-							</svg>}
-							title="Total Classes"
-							value="45"
-							subtitle="Active sections"
-						/>
+					{/* Quick Actions */}
+					<div className="mb-16">
+						<div className="text-center mb-10">
+							<h2 className="text-3xl font-bold text-gray-900 mb-4">Quick Actions</h2>
+							<p className="text-lg text-gray-600">Access frequently used features and tools</p>
+						</div>
+						<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+							<Link href={route('admin.attendance.section')} className="group bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-brand-primary transition-all">
+								<div className="flex items-center space-x-4">
+									<div className="h-12 w-12 bg-brand-primary/10 rounded-xl flex items-center justify-center group-hover:bg-brand-primary group-hover:text-white transition-colors">
+										<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+										</svg>
+									</div>
+									<div>
+										<h3 className="font-semibold text-gray-900 group-hover:text-brand-primary transition-colors">Record Attendance</h3>
+										<p className="text-sm text-gray-500">Take daily attendance</p>
+									</div>
+								</div>
+							</Link>
+
+							<Link href={route('admin.interventions')} className="group bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-brand-primary transition-all">
+								<div className="flex items-center space-x-4">
+									<div className="h-12 w-12 bg-orange-100 rounded-xl flex items-center justify-center group-hover:bg-orange-500 group-hover:text-white transition-colors">
+										<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+										</svg>
+									</div>
+									<div>
+										<h3 className="font-semibold text-gray-900 group-hover:text-orange-600 transition-colors">Interventions</h3>
+										<p className="text-sm text-gray-500">Manage student support</p>
+									</div>
+								</div>
+							</Link>
+
+							<Link href={route('admin.reports')} className="group bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-brand-primary transition-all">
+								<div className="flex items-center space-x-4">
+									<div className="h-12 w-12 bg-blue-100 rounded-xl flex items-center justify-center group-hover:bg-blue-500 group-hover:text-white transition-colors">
+										<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+										</svg>
+									</div>
+									<div>
+										<h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">Reports</h3>
+										<p className="text-sm text-gray-500">View analytics</p>
+									</div>
+								</div>
+							</Link>
+
+							<Link href={route('admin.sections')} className="group bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-brand-primary transition-all">
+								<div className="flex items-center space-x-4">
+									<div className="h-12 w-12 bg-green-100 rounded-xl flex items-center justify-center group-hover:bg-green-500 group-hover:text-white transition-colors">
+										<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+										</svg>
+									</div>
+									<div>
+										<h3 className="font-semibold text-gray-900 group-hover:text-green-600 transition-colors">Sections</h3>
+										<p className="text-sm text-gray-500">Manage classes</p>
+									</div>
+								</div>
+							</Link>
+						</div>
 					</div>
 
-					{/* Additional Stats */}
-					<div className="grid grid-cols-1 gap-8 md:grid-cols-3 lg:grid-cols-6">
-						<StatsCard
-							icon={<svg className="h-6 w-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-							</svg>}
-							title="Open Interventions"
-							value={stats?.openInterventions || 0}
-							subtitle="Require attention"
-						/>
-						<StatsCard
-							icon={<svg className="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-							</svg>}
-							title="At-Risk Students"
-							value={stats?.atRiskStudents || 0}
-							subtitle="3+ absences (2 weeks)"
-						/>
-						<StatsCard
-							icon={<svg className="h-6 w-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-							</svg>}
-							title="Total Students"
-							value={stats?.presentToday?.total || 0}
-							subtitle="Enrolled"
-						/>
-						<StatsCard
-							icon={<svg className="h-6 w-6 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-							</svg>}
-							title="Attendance Rate"
-							value="94.2%"
-							subtitle="Overall average"
-						/>
-						<StatsCard
-							icon={<svg className="h-6 w-6 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-							</svg>}
-							title="Trending Up"
-							value="+2.3%"
-							subtitle="This week"
-						/>
-					</div>
-
-					{/* Attendance Trend */}
-					<div className="card p-8">
-						<h3 className="mb-6 text-2xl font-bold text-gray-800">Attendance Trend</h3>
+					{/* Attendance Trend Chart */}
+					<div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 mb-12">
+						<div className="flex items-center justify-between mb-6">
+							<h2 className="text-2xl font-bold text-gray-900">Attendance Trend</h2>
+							<div className="flex items-center space-x-2 text-sm text-gray-500">
+								<div className="h-2 w-2 bg-brand-primary rounded-full"></div>
+								<span>Last 8 weeks</span>
+							</div>
+						</div>
 						<canvas ref={canvasRef} height="120"></canvas>
 					</div>
 
-					{/* Recent Activities */}
-					<div className="grid grid-cols-1 gap-8 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-						<div className="card p-6">
-							<div className="mb-6 flex items-center justify-between">
-								<h3 className="text-xl font-bold text-gray-800">Recent Absences</h3>
-								<Link href={route('admin.attendance.section')} className="text-base font-medium text-brand-primary hover:text-brand-primary/80">
-									View All
-								</Link>
-							</div>
-							<div className="divide-y">
-								{recentAbsences?.length > 0 ? recentAbsences.map((r) => (
-									<div key={r.id} className="flex items-center justify-between py-4">
-										<div>
-											<p className="text-lg font-semibold text-gray-900">{r.student?.first_name} {r.student?.last_name}</p>
-											<p className="text-base text-gray-500">{new Date(r.date).toLocaleDateString()}</p>
-										</div>
-										<span className="rounded-full bg-red-100 px-4 py-2 text-sm font-medium uppercase text-red-800">{r.status}</span>
+					{/* Department Overview */}
+					<div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 mb-12">
+						<div className="flex items-center justify-between mb-6">
+							<h2 className="text-2xl font-bold text-gray-900">Department Overview</h2>
+						</div>
+						<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+							<div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-6">
+								<div className="flex items-center justify-between mb-4">
+									<div className="h-12 w-12 bg-blue-500 rounded-lg flex items-center justify-center">
+										<svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+										</svg>
 									</div>
-								)) : (
-									<p className="py-6 text-base text-gray-500 text-center">No recent absences</p>
-								)}
+									<span className="text-2xl font-bold text-blue-600">{sections?.length || 0}</span>
+								</div>
+								<h3 className="text-lg font-semibold text-gray-900 mb-2">Active Sections</h3>
+								<p className="text-sm text-gray-600">Classes across all departments</p>
 							</div>
-						</div>
-
-						<div className="card p-6">
-							<div className="mb-6 flex items-center justify-between">
-								<h3 className="text-xl font-bold text-gray-800">Recent Interventions</h3>
-								<Link href={route('admin.interventions')} className="text-base font-medium text-brand-primary hover:text-brand-primary/80">
-									View All
-								</Link>
-							</div>
-							<div className="divide-y">
-								{recentInterventions?.length > 0 ? recentInterventions.map((i) => (
-									<div key={i.id} className="flex items-center justify-between py-4">
-										<div>
-											<p className="text-lg font-semibold text-gray-900">{i.student?.first_name} {i.student?.last_name}</p>
-											<p className="text-base text-gray-500">{new Date(i.date).toLocaleDateString()}</p>
-										</div>
-										<div className="flex flex-col items-end gap-2">
-											<span className="rounded-full bg-brand-primary bg-opacity-10 px-4 py-2 text-sm font-medium text-brand-primary">{i.type}</span>
-											<span className={`rounded-full px-3 py-1 text-sm font-medium ${
-												i.status === 'resolved' ? 'bg-green-100 text-green-700' : 
-												i.status === 'in_progress' ? 'bg-blue-100 text-blue-700' : 
-												'bg-yellow-100 text-yellow-800'
-											}`}>
-												{i.status?.replace('_', ' ')}
-											</span>
-										</div>
+							<div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-6">
+								<div className="flex items-center justify-between mb-4">
+									<div className="h-12 w-12 bg-green-500 rounded-lg flex items-center justify-center">
+										<svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+										</svg>
 									</div>
-								)) : (
-									<p className="py-6 text-base text-gray-500 text-center">No recent interventions</p>
-								)}
+									<span className="text-2xl font-bold text-green-600">{totalStudentsCount || 0}</span>
+								</div>
+								<h3 className="text-lg font-semibold text-gray-900 mb-2">Total Students</h3>
+								<p className="text-sm text-gray-600">Enrolled across all sections</p>
 							</div>
-						</div>
-
-						<div className="card p-6">
-							<div className="mb-6 flex items-center justify-between">
-								<h3 className="text-xl font-bold text-gray-800">At-Risk Students</h3>
-								<Link href={route('admin.interventions')} className="text-base font-medium text-brand-primary hover:text-brand-primary/80">
-									Create Intervention
-								</Link>
-							</div>
-							<div className="divide-y">
-								{atRiskStudents?.length > 0 ? atRiskStudents.map((student) => (
-									<div key={student.student_id} className="flex items-center justify-between py-4">
-										<div>
-											<p className="text-lg font-semibold text-gray-900">{student.student?.first_name} {student.student?.last_name}</p>
-											<p className="text-base text-gray-500">{student.absence_count} absences (2 weeks)</p>
-										</div>
-										<span className="rounded-full bg-red-100 px-4 py-2 text-sm font-medium text-red-800">At Risk</span>
+							<div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-6">
+								<div className="flex items-center justify-between mb-4">
+									<div className="h-12 w-12 bg-purple-500 rounded-lg flex items-center justify-center">
+										<svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+										</svg>
 									</div>
-								)) : (
-									<p className="py-6 text-base text-gray-500 text-center">No at-risk students</p>
-								)}
-							</div>
-						</div>
-
-						<div className="card p-6">
-							<div className="mb-6 flex items-center justify-between">
-								<h3 className="text-xl font-bold text-gray-800">System Status</h3>
-								<span className="text-base font-medium text-green-600">All Systems Operational</span>
-							</div>
-							<div className="space-y-4">
-								<div className="flex items-center justify-between">
-									<span className="text-base text-gray-700">Database</span>
-									<span className="rounded-full bg-green-100 px-3 py-1 text-sm font-medium text-green-800">Online</span>
+									<span className="text-2xl font-bold text-purple-600">{overallAttendanceRate || 0}%</span>
 								</div>
-								<div className="flex items-center justify-between">
-									<span className="text-base text-gray-700">API Services</span>
-									<span className="rounded-full bg-green-100 px-3 py-1 text-sm font-medium text-green-800">Online</span>
-								</div>
-								<div className="flex items-center justify-between">
-									<span className="text-base text-gray-700">Backup System</span>
-									<span className="rounded-full bg-green-100 px-3 py-1 text-sm font-medium text-green-800">Online</span>
-								</div>
-							</div>
-						</div>
-
-						<div className="card p-6">
-							<div className="mb-6 flex items-center justify-between">
-								<h3 className="text-xl font-bold text-gray-800">Quick Stats</h3>
-								<span className="text-base font-medium text-blue-600">Today</span>
-							</div>
-							<div className="space-y-4">
-								<div className="flex items-center justify-between">
-									<span className="text-base text-gray-700">Classes Today</span>
-									<span className="text-lg font-bold text-gray-900">24</span>
-								</div>
-								<div className="flex items-center justify-between">
-									<span className="text-base text-gray-700">Teachers Active</span>
-									<span className="text-lg font-bold text-gray-900">18</span>
-								</div>
-								<div className="flex items-center justify-between">
-									<span className="text-base text-gray-700">Records Updated</span>
-									<span className="text-lg font-bold text-gray-900">156</span>
-								</div>
+								<h3 className="text-lg font-semibold text-gray-900 mb-2">Overall Attendance</h3>
+								<p className="text-sm text-gray-600">Current attendance rate</p>
 							</div>
 						</div>
 					</div>
 
-
-					{/* Recent Records Section */}
-					{recentRecords && (
-						<div className="card p-10">
-							<div className="mb-10 flex items-center justify-between">
-								<div>
-									<h3 className="text-3xl font-bold text-gray-900">Recent Attendance Records</h3>
-									<p className="text-lg text-gray-600 mt-2">Latest attendance entries across all departments</p>
-								</div>
-								<div className="flex items-center gap-6">
-									<div className="relative">
-										<input 
-											type="text" 
-											className="rounded-lg border-gray-300 pl-12 pr-6 focus:border-brand-primary focus:ring-brand-primary text-lg py-4 w-80" 
-											placeholder="Search by student, department, program, or section..." 
-											value={searchTerm}
-											onChange={(e) => setSearchTerm(e.target.value)}
-										/>
-										<svg className="absolute left-4 top-1/2 h-7 w-7 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-										</svg>
-									</div>
-									<select 
-										className="rounded-lg border-gray-300 focus:border-brand-primary focus:ring-brand-primary text-lg py-4 px-4"
-										value={selectedSection}
-										onChange={(e) => setSelectedSection(e.target.value)}
-									>
-										<option value="">All Sections</option>
-										{sections?.map(section => (
-											<option key={section.id} value={section.id}>{section.name}</option>
-										))}
-									</select>
-									<select 
-										className="rounded-lg border-gray-300 focus:border-brand-primary focus:ring-brand-primary text-lg py-4 px-4"
-										value={selectedStatus}
-										onChange={(e) => setSelectedStatus(e.target.value)}
-									>
-										<option value="">All Status</option>
-										<option value="present">Present</option>
-										<option value="late">Late</option>
-										<option value="absent">Absent</option>
-										<option value="excused">Excused</option>
-									</select>
-								</div>
+					{/* Recent Activity */}
+					<div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+						<div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+							<div className="flex items-center justify-between mb-6">
+								<h3 className="text-xl font-bold text-gray-900">Recent Absences</h3>
+								<Link href={route('admin.attendance.section')} className="text-sm font-medium text-brand-primary hover:text-brand-primary/80">
+									View All
+								</Link>
 							</div>
-
-							<DataTable
-								columns={[
-									{ key: 'date', label: 'Date', render: (date) => new Date(date).toLocaleDateString() },
-									{ key: 'department', label: 'Department', render: (_, row) => (
-										<div className="font-medium text-gray-900">
-											{row.student?.section?.department || '-'}
-										</div>
-									)},
-									{ key: 'program', label: 'Program', render: (_, row) => (
-										<div className="font-medium text-gray-900">
-											{row.student?.section?.program || '-'}
-										</div>
-									)},
-									{ key: 'year_level', label: 'Year Level', render: (_, row) => (
-										<div className="font-medium text-gray-900">
-											{row.student?.section?.year_level || '-'}
-										</div>
-									)},
-									{ key: 'section', label: 'Section', render: (_, row) => (
-										<div className="font-medium text-gray-900">
-											{row.student?.section?.name || '-'}
-										</div>
-									)},
-									{ key: 'student', label: 'Student', render: (_, row) => (
+							<div className="space-y-4">
+								{recentAbsences?.length > 0 ? recentAbsences.slice(0, 5).map((r) => (
+									<div key={r.id} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-b-0">
 										<div>
-											<div className="font-medium">{row.student?.first_name} {row.student?.last_name}</div>
-											<div className="text-sm text-gray-500">{row.student?.student_number}</div>
+											<p className="font-medium text-gray-900">{r.student?.first_name} {r.student?.last_name}</p>
+											<p className="text-sm text-gray-500">{r.student?.section?.name} • {new Date(r.date).toLocaleDateString()}</p>
 										</div>
-									)},
-									{ key: 'status', label: 'Status', render: (status) => (
-										<span className={`inline-flex rounded-full px-3 py-1 text-sm font-semibold ${getStatusColor(status)}`}>
-											{status?.toUpperCase()}
+										<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+											Absent
 										</span>
-									)},
-									{ key: 'schedule', label: 'Subject', render: (_, row) => (
-										<div>
-											<div className="font-medium">{row.schedule?.subject?.name || 'General'}</div>
-											{row.schedule && (
-												<div className="text-sm text-gray-500">
-													{formatTime(row.schedule.time_start)} - {formatTime(row.schedule.time_end)}
-												</div>
-											)}
-										</div>
-									)},
-									{ key: 'remarks', label: 'Remarks', render: (remarks) => remarks || '-' },
-									{ key: 'created_at', label: 'Recorded', render: (created_at) => new Date(created_at).toLocaleString() },
-								]}
-								data={filteredRecords}
-							/>
+									</div>
+								)) : (
+									<div className="text-center py-8">
+										<svg className="h-12 w-12 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+										</svg>
+										<p className="text-gray-500">No recent absences</p>
+									</div>
+								)}
+							</div>
+						</div>
 
-							<div className="mt-10 flex items-center justify-between border-t border-gray-200 pt-10">
-								<p className="text-xl text-gray-700">Showing {filteredRecords.length} of {recentRecords?.length || 0} entries</p>
-								<div className="flex gap-6">
-									<button className="rounded-xl border border-gray-300 px-8 py-4 text-lg hover:bg-gray-50 transition-colors">Previous</button>
-									<button className="rounded-xl border border-gray-300 px-8 py-4 text-lg hover:bg-gray-50 transition-colors">Next</button>
+						<div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+							<div className="flex items-center justify-between mb-6">
+								<h3 className="text-xl font-bold text-gray-900">At-Risk Students</h3>
+								<Link href={route('admin.interventions')} className="text-sm font-medium text-brand-primary hover:text-brand-primary/80">
+									Create Intervention
+								</Link>
+							</div>
+							<div className="space-y-4">
+								{atRiskStudents?.length > 0 ? atRiskStudents.slice(0, 5).map((student) => (
+									<div key={student.student_id} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-b-0">
+										<div>
+											<p className="font-medium text-gray-900">{student.student?.first_name} {student.student?.last_name}</p>
+											<p className="text-sm text-gray-500">{student.absence_count} absences in 2 weeks</p>
+										</div>
+										<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+											At Risk
+										</span>
+									</div>
+								)) : (
+									<div className="text-center py-8">
+										<svg className="h-12 w-12 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+										</svg>
+										<p className="text-gray-500">No at-risk students</p>
+									</div>
+								)}
+							</div>
+						</div>
+					</div>
+
+					{/* System Status & Quick Stats */}
+					<div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
+						<div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+							<div className="flex items-center mb-6">
+								<div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center mr-4">
+									<svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+									</svg>
+								</div>
+								<h3 className="text-xl font-bold text-gray-900">Today's Attendance</h3>
+							</div>
+							<div className="space-y-4">
+								<div className="flex items-center justify-between">
+									<span className="text-gray-600">Present</span>
+									<span className="font-semibold text-green-600">{todayStats?.present || 0}</span>
+								</div>
+								<div className="flex items-center justify-between">
+									<span className="text-gray-600">Late</span>
+									<span className="font-semibold text-yellow-600">{todayStats?.late || 0}</span>
+								</div>
+								<div className="flex items-center justify-between">
+									<span className="text-gray-600">Absent</span>
+									<span className="font-semibold text-red-600">{todayStats?.absent || 0}</span>
 								</div>
 							</div>
 						</div>
-					)}
+
+						<div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+							<div className="flex items-center mb-6">
+								<div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
+									<svg className="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+									</svg>
+								</div>
+								<h3 className="text-xl font-bold text-gray-900">Student Overview</h3>
+							</div>
+							<div className="space-y-4">
+								<div className="flex items-center justify-between">
+									<span className="text-gray-600">Total Students</span>
+									<span className="font-semibold text-gray-900">{totalStudentsCount || 0}</span>
+								</div>
+								<div className="flex items-center justify-between">
+									<span className="text-gray-600">Active Sections</span>
+									<span className="font-semibold text-gray-900">{sections?.length || 0}</span>
+								</div>
+								<div className="flex items-center justify-between">
+									<span className="text-gray-600">At-Risk Students</span>
+									<span className="font-semibold text-orange-600">{atRiskStudents?.length || 0}</span>
+								</div>
+							</div>
+						</div>
+
+						<div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+							<div className="flex items-center mb-6">
+								<div className="h-12 w-12 bg-purple-100 rounded-lg flex items-center justify-center mr-4">
+									<svg className="h-6 w-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+									</svg>
+								</div>
+								<h3 className="text-xl font-bold text-gray-900">Quick Actions</h3>
+							</div>
+							<div className="space-y-3">
+								<Link href={route('admin.attendance.section')} className="block w-full text-left px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
+									📝 Take Attendance
+								</Link>
+								<Link href={route('admin.reports')} className="block w-full text-left px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
+									📊 Generate Report
+								</Link>
+								<Link href={route('admin.sections')} className="block w-full text-left px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
+									👥 Manage Sections
+								</Link>
+								<Link href={route('admin.interventions')} className="block w-full text-left px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
+									⚠️ Create Intervention
+								</Link>
+							</div>
+						</div>
+					</div>
+
+					{/* Recent Activity Feed */}
+					<div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 mb-12">
+						<div className="flex items-center justify-between mb-6">
+							<h2 className="text-2xl font-bold text-gray-900">Recent Activity</h2>
+							<Link href={route('admin.attendance')} className="text-sm font-medium text-brand-primary hover:text-brand-primary/80">
+								View All Activity
+							</Link>
+						</div>
+						<div className="space-y-4">
+							{recentRecords?.length > 0 ? recentRecords.slice(0, 5).map((record) => (
+								<div key={record.id} className="flex items-start space-x-4 p-4 bg-gray-50 rounded-lg">
+									<div className="h-8 w-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+										<svg className="h-4 w-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+										</svg>
+									</div>
+									<div className="flex-1">
+										<p className="text-sm font-medium text-gray-900">
+											Attendance recorded for {record.student?.first_name} {record.student?.last_name}
+										</p>
+										<p className="text-xs text-gray-500">
+											{record.student?.section?.name} • {new Date(record.date).toLocaleDateString()}
+										</p>
+									</div>
+									<span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+										record.status === 'present' ? 'bg-green-100 text-green-800' :
+										record.status === 'late' ? 'bg-yellow-100 text-yellow-800' :
+										record.status === 'absent' ? 'bg-red-100 text-red-800' :
+										'bg-blue-100 text-blue-800'
+									}`}>
+										{record.status?.charAt(0).toUpperCase() + record.status?.slice(1)}
+									</span>
+								</div>
+							)) : (
+								<div className="text-center py-8">
+									<svg className="h-12 w-12 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+									</svg>
+									<p className="text-gray-500">No recent activity</p>
+								</div>
+							)}
+						</div>
+					</div>
+
+					{/* Footer Info */}
+					<div className="bg-gradient-to-r from-brand-primary/5 to-emerald-50 rounded-2xl p-8 border border-brand-primary/10">
+						<div className="text-center">
+							<div className="flex items-center justify-center mb-4">
+								<div className="h-12 w-12 bg-brand-primary rounded-lg flex items-center justify-center mr-4">
+									<svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+									</svg>
+								</div>
+								<h3 className="text-xl font-bold text-gray-900">SmartAttend System</h3>
+							</div>
+							<p className="text-gray-600 mb-4">
+								Powered by advanced analytics and intelligent insights for PHINMA University of Pangasinan
+							</p>
+							<div className="flex items-center justify-center space-x-6 text-sm text-gray-500">
+								<span>Total Students: {totalStudentsCount || 0}</span>
+								<span>•</span>
+								<span>Active Sections: {sections?.length || 0}</span>
+								<span>•</span>
+								<span>Attendance Rate: {overallAttendanceRate || 0}%</span>
+							</div>
+						</div>
+					</div>
 				</div>
 			</div>
 		</AuthenticatedLayout>

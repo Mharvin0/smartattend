@@ -1,0 +1,19 @@
+<svg width="60" height="60" viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Circle -->
+  <circle cx="30" cy="30" r="28" fill="#1B5E20" stroke="#4CAF50" stroke-width="2"/>
+  
+  <!-- Geometric Attendance Pattern -->
+  <g fill="#FFFFFF" opacity="0.9">
+    <!-- Central Diamond -->
+    <polygon points="30,15 40,25 30,35 20,25" fill="#FFFFFF"/>
+    
+    <!-- Surrounding Triangles -->
+    <polygon points="30,10 35,20 25,20" fill="#4CAF50" opacity="0.7"/>
+    <polygon points="50,30 40,35 40,25" fill="#4CAF50" opacity="0.7"/>
+    <polygon points="30,50 25,40 35,40" fill="#4CAF50" opacity="0.7"/>
+    <polygon points="10,30 20,25 20,35" fill="#4CAF50" opacity="0.7"/>
+  </g>
+  
+  <!-- Central Dot -->
+  <circle cx="30" cy="30" r="3" fill="#1B5E20"/>
+</svg>

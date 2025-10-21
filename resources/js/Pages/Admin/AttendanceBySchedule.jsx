@@ -82,7 +82,7 @@ export default function AttendanceBySchedule({ schedules, students, filters }) {
 	return (
 		<AuthenticatedLayout header={<h2 className="text-2xl font-bold leading-tight text-gray-800">Attendance by Schedule</h2>}>
 			<Head title="Attendance by Schedule" />
-			<div className="min-h-screen py-8">
+			<div className="min-h-screen bg-gradient-to-br from-brand-primary/10 via-emerald-50/80 to-brand-secondary/5 py-8">
 				<div className="mx-auto max-w-full space-y-10 px-4 sm:px-6 lg:px-8 xl:px-12">
 					{/* Schedule Selection */}
 					<div className="card p-6">

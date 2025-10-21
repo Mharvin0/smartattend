@@ -5,9 +5,11 @@ class ApplicationLogo extends React.Component {
         const { className } = this.props;
         return (
             <div className={className}>
-                <div className="flex h-full w-full items-center justify-center rounded-full bg-brand-primary">
-                    <span className="text-2xl font-bold text-brand-secondary">UP</span>
-                </div>
+                <img 
+                    src="/images/smartattend-logo-modern.svg" 
+                    alt="SmartAttend - Attendance Management System" 
+                    className="h-full w-full object-contain"
+                />
             </div>
         );
     }

@@ -16,7 +16,7 @@ export default function AttendanceImport({ sections, departments, programs }) {
 	return (
 		<AuthenticatedLayout header={<h2 className="text-2xl font-bold leading-tight text-gray-800">Import Attendance Records</h2>}>
 			<Head title="Import Attendance" />
-			<div className="min-h-screen py-8">
+			<div className="min-h-screen bg-gradient-to-br from-brand-primary/10 via-emerald-50/80 to-brand-secondary/5 py-8">
 				<div className="mx-auto max-w-full space-y-10 px-4 sm:px-6 lg:px-8 xl:px-12">
 					{/* Hero Section */}
 					<div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 p-8 text-white">

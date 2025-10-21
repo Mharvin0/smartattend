@@ -1,0 +1,38 @@
+<svg width="60" height="60" viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Circle with Gradient -->
+  <defs>
+    <linearGradient id="modernBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1B5E20;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2E7D32;stop-opacity:1" />
+    </linearGradient>
+    <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#4CAF50;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#1B5E20;stop-opacity:0.3" />
+    </radialGradient>
+  </defs>
+  
+  <!-- Main Circle -->
+  <circle cx="30" cy="30" r="28" fill="url(#modernBg)" stroke="#4CAF50" stroke-width="1"/>
+  
+  <!-- Abstract Hexagonal Pattern -->
+  <g fill="#FFFFFF" opacity="0.8">
+    <!-- Central hexagon -->
+    <polygon points="30,20 35,25 35,35 30,40 25,35 25,25" fill="#4CAF50" opacity="0.6"/>
+    
+    <!-- Corner elements -->
+    <circle cx="20" cy="20" r="3" fill="#FFFFFF"/>
+    <circle cx="40" cy="20" r="3" fill="#FFFFFF"/>
+    <circle cx="20" cy="40" r="3" fill="#FFFFFF"/>
+    <circle cx="40" cy="40" r="3" fill="#FFFFFF"/>
+    
+    <!-- Connecting lines -->
+    <line x1="20" y1="20" x2="30" y2="30" stroke="#4CAF50" stroke-width="1.5" opacity="0.5"/>
+    <line x1="40" y1="20" x2="30" y2="30" stroke="#4CAF50" stroke-width="1.5" opacity="0.5"/>
+    <line x1="20" y1="40" x2="30" y2="30" stroke="#4CAF50" stroke-width="1.5" opacity="0.5"/>
+    <line x1="40" y1="40" x2="30" y2="30" stroke="#4CAF50" stroke-width="1.5" opacity="0.5"/>
+  </g>
+  
+  <!-- Central focus -->
+  <circle cx="30" cy="30" r="5" fill="url(#centerGlow)"/>
+  <circle cx="30" cy="30" r="2" fill="#FFFFFF"/>
+</svg>

@@ -12,6 +12,8 @@ use App\Http\Controllers\Admin\SectionController;
 use App\Http\Controllers\Admin\SubjectController;
 use App\Http\Controllers\Admin\ScheduleAdminController;
 use App\Http\Controllers\Admin\DepartmentController;
+use App\Http\Controllers\Admin\AdminPageController;
+use App\Http\Controllers\Super\SystemAdminController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -28,6 +30,7 @@ Route::middleware('auth')->group(function () {
     // Admin (PedroHub) routes
     Route::middleware(['role:Admin|Super Admin'])->prefix('admin')->name('admin.')->group(function () {
         Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+        Route::get('/admin-page', [AdminPageController::class, 'index'])->name('admin-page');
         Route::get('/student/{student}', [DashboardController::class, 'studentProfile'])->name('student');
 
         // Attendance
@@ -88,6 +91,9 @@ Route::middleware('auth')->group(function () {
         Route::post('/programs', [DepartmentController::class, 'storeProgram'])->name('programs.store');
         Route::patch('/programs/{program}', [DepartmentController::class, 'updateProgram'])->name('programs.update');
         Route::delete('/programs/{program}', [DepartmentController::class, 'destroyProgram'])->name('programs.destroy');
+        
+        // System Administration
+        Route::get('/system-admin', [SystemAdminController::class, 'index'])->name('system-admin');
     });
 });
 

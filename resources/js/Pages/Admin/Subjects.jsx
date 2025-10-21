@@ -10,7 +10,7 @@ export default function Subjects({ subjects, sections }) {
 	return (
 		<AuthenticatedLayout header={<h2 className="text-xl font-semibold leading-tight text-gray-800">Subjects</h2>}>
 			<Head title="Subjects" />
-			<div className="py-6">
+			<div className="min-h-screen bg-gradient-to-br from-brand-primary/10 via-emerald-50/80 to-brand-secondary/5 py-8">
 				<div className="mx-auto max-w-7xl space-y-6 sm:px-6 lg:px-8">
 					{flash.success && (
 						<div className="pointer-events-none fixed right-6 top-6 z-50 rounded bg-green-600 px-4 py-2 text-sm text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">{flash.success}</div>
