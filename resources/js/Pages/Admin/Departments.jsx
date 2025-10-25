@@ -1,5 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, useForm, usePage } from '@inertiajs/react';
+import { Head, useForm, usePage, router } from '@inertiajs/react';
 import { useState } from 'react';
 
 export default function Departments({ departments }) {
@@ -92,18 +92,26 @@ export default function Departments({ departments }) {
 	};
 
 	const deleteDepartment = (department) => {
-		if (confirm('Are you sure you want to delete this department? This will also delete all associated programs.')) {
-			postDepartment(route('super.departments.destroy', department.id), {
-				method: 'delete',
-			});
+		const sectionsCount = department.sections?.length || 0;
+		const programsCount = department.programs?.length || 0;
+		
+		let message = `Are you sure you want to delete "${department.name}"?`;
+		if (programsCount > 0) {
+			message += `\n\nThis will also delete ${programsCount} associated program${programsCount > 1 ? 's' : ''}.`;
+		}
+		if (sectionsCount > 0) {
+			message += `\n\nWARNING: This department has ${sectionsCount} associated section${sectionsCount > 1 ? 's' : ''}. You may need to reassign or delete these sections first.`;
+		}
+		message += '\n\nThis action cannot be undone.';
+		
+		if (confirm(message)) {
+			router.delete(route('super.departments.destroy', department.id));
 		}
 	};
 
 	const deleteProgram = (program) => {
 		if (confirm('Are you sure you want to delete this program?')) {
-			postProgram(route('super.programs.destroy', program.id), {
-				method: 'delete',
-			});
+			router.delete(route('super.programs.destroy', program.id));
 		}
 	};
 
@@ -114,6 +122,9 @@ export default function Departments({ departments }) {
 				<div className="mx-auto max-w-full space-y-10 px-4 sm:px-6 lg:px-8 xl:px-12">
 					{flash.success && (
 						<div className="pointer-events-none fixed right-6 top-6 z-50 rounded bg-green-600 px-4 py-2 text-sm text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">{flash.success}</div>
+					)}
+					{flash.error && (
+						<div className="pointer-events-none fixed right-6 top-6 z-50 rounded bg-red-600 px-4 py-2 text-sm text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">{flash.error}</div>
 					)}
 
 					{/* Department Management */}

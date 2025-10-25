@@ -11,7 +11,8 @@ const DropdownNav = ({ icon, children, label, isOpen, onToggle }) => {
 			   url.includes('/admin/subjects') || 
 			   url.includes('/admin/schedules') || 
 			   url.includes('/super/departments') || 
-			   url.includes('/super/users');
+			   url.includes('/super/users') ||
+			   url.includes('/super/system-admin');
 	};
 
 	// Auto-open dropdown if any child is active
@@ -24,7 +25,11 @@ const DropdownNav = ({ icon, children, label, isOpen, onToggle }) => {
 	return (
 		<div className="relative">
 			<button
-				onClick={onToggle}
+				onClick={(e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					onToggle();
+				}}
 				className={`flex items-center gap-4 rounded-lg px-6 py-4 text-lg font-semibold transition-colors w-full ${
 					isOpen || isAnyChildActive()
 						? 'bg-brand-primary text-white'
@@ -53,7 +58,10 @@ const DropdownNav = ({ icon, children, label, isOpen, onToggle }) => {
 			</button>
 			
 			{(isOpen || isAnyChildActive()) && (
-				<div className="ml-4 mt-2 space-y-1 border-l-2 border-brand-primary/20 pl-4">
+				<div 
+					className="ml-4 mt-2 space-y-1 border-l-2 border-brand-primary/20 pl-4"
+					onClick={(e) => e.stopPropagation()}
+				>
 					{children}
 				</div>
 			)}

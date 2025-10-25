@@ -31,6 +31,13 @@ Route::middleware('auth')->group(function () {
     Route::middleware(['role:Admin|Super Admin'])->prefix('admin')->name('admin.')->group(function () {
         Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
         Route::get('/admin-page', [AdminPageController::class, 'index'])->name('admin-page');
+        Route::get('/admin-page/live-data', [AdminPageController::class, 'getLiveData'])->name('admin-page.live-data');
+        Route::post('/admin-page/quick-attendance', [AdminPageController::class, 'quickAttendance'])->name('admin-page.quick-attendance');
+        Route::post('/admin-page/intervention', [AdminPageController::class, 'createIntervention'])->name('admin-page.intervention');
+        Route::post('/admin-page/communication', [AdminPageController::class, 'sendCommunication'])->name('admin-page.communication');
+        Route::post('/admin-page/bulk-operation', [AdminPageController::class, 'bulkOperation'])->name('admin-page.bulk-operation');
+        Route::post('/admin-page/student', [AdminPageController::class, 'storeStudent'])->name('admin-page.student.store');
+        Route::post('/admin-page/export-records', [AdminPageController::class, 'exportStudentRecords'])->name('admin-page.export-records');
         Route::get('/student/{student}', [DashboardController::class, 'studentProfile'])->name('student');
 
         // Attendance
@@ -41,11 +48,15 @@ Route::middleware('auth')->group(function () {
         Route::post('/attendance/by-schedule', [AttendanceController::class, 'storeSchedule'])->name('attendance.schedule.store');
         Route::get('/attendance/import', [AttendanceController::class, 'importForm'])->name('attendance.import');
         Route::post('/attendance/import', [AttendanceController::class, 'importStore'])->name('attendance.import.store');
+        Route::post('/attendance/bulk-update', [AttendanceController::class, 'bulkUpdate'])->name('attendance.bulk-update');
+        Route::get('/attendance/analytics', [AttendanceController::class, 'analytics'])->name('attendance.analytics');
+        Route::get('/attendance/student/{student}/history', [AttendanceController::class, 'studentHistory'])->name('attendance.student.history');
 
         // Interventions
         Route::get('/interventions', [InterventionController::class, 'index'])->name('interventions');
         Route::post('/interventions', [InterventionController::class, 'store'])->name('interventions.store');
         Route::patch('/interventions/{intervention}', [InterventionController::class, 'update'])->name('interventions.update');
+        Route::patch('/interventions/{intervention}/status', [InterventionController::class, 'updateStatus'])->name('interventions.status');
         Route::delete('/interventions/{intervention}', [InterventionController::class, 'destroy'])->name('interventions.destroy');
         Route::post('/interventions/bulk', [InterventionController::class, 'bulkAction'])->name('interventions.bulk');
 
@@ -94,6 +105,12 @@ Route::middleware('auth')->group(function () {
         
         // System Administration
         Route::get('/system-admin', [SystemAdminController::class, 'index'])->name('system-admin');
+        Route::get('/system-admin/test', [SystemAdminController::class, 'test'])->name('system-admin.test');
+        Route::post('/system-admin/clear-cache', [SystemAdminController::class, 'clearCache'])->name('system-admin.clear-cache');
+        Route::post('/system-admin/optimize', [SystemAdminController::class, 'optimizeSystem'])->name('system-admin.optimize');
+        Route::post('/system-admin/backup', [SystemAdminController::class, 'createBackup'])->name('system-admin.backup');
+        Route::post('/system-admin/maintenance', [SystemAdminController::class, 'runMaintenance'])->name('system-admin.maintenance');
+        Route::get('/system-admin/logs', [SystemAdminController::class, 'getSystemLogs'])->name('system-admin.logs');
     });
 });
 

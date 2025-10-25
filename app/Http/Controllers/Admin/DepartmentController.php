@@ -64,8 +64,28 @@ class DepartmentController extends Controller
      */
     public function destroy(Department $department)
     {
-        $department->delete();
-        return back()->with('success', 'Department deleted successfully');
+        try {
+            // Check if department has any sections
+            if ($department->sections()->count() > 0) {
+                return back()->with('error', 'Cannot delete department. It has associated sections. Please reassign or delete the sections first.');
+            }
+
+            // Check if department has any subjects
+            $subjectsCount = \App\Models\Subject::where('department', $department->name)->count();
+            if ($subjectsCount > 0) {
+                return back()->with('error', 'Cannot delete department. It has associated subjects. Please reassign or delete the subjects first.');
+            }
+
+            // Delete associated programs first
+            $department->programs()->delete();
+            
+            // Then delete the department
+            $department->delete();
+            
+            return back()->with('success', 'Department and all associated programs deleted successfully');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to delete department: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -108,7 +128,22 @@ class DepartmentController extends Controller
      */
     public function destroyProgram(Program $program)
     {
-        $program->delete();
-        return back()->with('success', 'Program deleted successfully');
+        try {
+            // Check if program has any sections
+            if ($program->sections()->count() > 0) {
+                return back()->with('error', 'Cannot delete program. It has associated sections. Please reassign or delete the sections first.');
+            }
+
+            // Check if program has any subjects
+            $subjectsCount = \App\Models\Subject::where('program', $program->code)->count();
+            if ($subjectsCount > 0) {
+                return back()->with('error', 'Cannot delete program. It has associated subjects. Please reassign or delete the subjects first.');
+            }
+
+            $program->delete();
+            return back()->with('success', 'Program deleted successfully');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to delete program: ' . $e->getMessage());
+        }
     }
 }

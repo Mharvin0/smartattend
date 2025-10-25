@@ -1,257 +1,291 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, useForm } from '@inertiajs/react';
+import { Head, useForm, usePage } from '@inertiajs/react';
+import { useState } from 'react';
 
 export default function AttendanceImport({ sections, departments, programs }) {
-	const { data, setData, post, processing, errors, reset } = useForm({
-		file: null,
-	});
+    const { data, setData, post, processing, errors } = useForm({
+        file: null,
+        section_id: '',
+        date: new Date().toISOString().split('T')[0],
+    });
 
-	const submit = (e) => {
-		e.preventDefault();
-		post(route('admin.attendance.import.store'), {
-			onSuccess: () => reset(),
-		});
-	};
+    const [dragActive, setDragActive] = useState(false);
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [importTemplate, setImportTemplate] = useState(null);
 
-	return (
-		<AuthenticatedLayout header={<h2 className="text-2xl font-bold leading-tight text-gray-800">Import Attendance Records</h2>}>
-			<Head title="Import Attendance" />
-			<div className="min-h-screen bg-gradient-to-br from-brand-primary/10 via-emerald-50/80 to-brand-secondary/5 py-8">
-				<div className="mx-auto max-w-full space-y-10 px-4 sm:px-6 lg:px-8 xl:px-12">
-					{/* Hero Section */}
-					<div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 p-8 text-white">
-						<div className="absolute inset-0 bg-black/10"></div>
-						<div className="relative">
-							<div className="flex items-center gap-4 mb-4">
-								<div className="h-16 w-16 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-									<svg className="h-8 w-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-									</svg>
-								</div>
-								<div>
-									<h3 className="text-3xl font-bold">Import Attendance Records</h3>
-									<p className="text-blue-100 text-lg">Bulk import student attendance data with section information</p>
-								</div>
-							</div>
-						</div>
-					</div>
+    const flash = usePage().props.flash || {};
 
-					<div className="card p-8">
-						<div className="mb-8">
-							<h4 className="text-2xl font-semibold text-gray-900 mb-3">Upload CSV File</h4>
-							<p className="text-lg text-gray-600">
-								Upload a CSV file to import attendance records for students. All section information is now required for proper data organization.
-							</p>
-						</div>
-						
-						<div className="mb-8 p-8 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border border-blue-200 shadow-sm">
-							<div className="flex items-center gap-4 mb-6">
-								<div className="h-12 w-12 rounded-xl bg-blue-100 flex items-center justify-center">
-									<svg className="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-									</svg>
-								</div>
-								<div>
-									<h4 className="text-xl font-bold text-blue-900">CSV Template</h4>
-									<p className="text-blue-700 text-lg">Download the template with proper formatting</p>
-								</div>
-							</div>
-							<a 
-								href="/templates/attendance_template.csv" 
-								download 
-								className="inline-flex items-center gap-3 text-lg px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-							>
-								<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-								</svg>
-								Download CSV Template
-							</a>
-						</div>
+    const submit = (e) => {
+        e.preventDefault();
+        post(route('admin.attendance.import.store'), {
+            forceFormData: true,
+        });
+    };
 
-						<div className="mb-8 p-8 bg-gradient-to-r from-gray-50 to-slate-50 rounded-2xl border border-gray-200 shadow-sm">
-							<div className="flex items-center gap-4 mb-6">
-								<div className="h-12 w-12 rounded-xl bg-gray-100 flex items-center justify-center">
-									<svg className="h-6 w-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-									</svg>
-								</div>
-								<div>
-									<h4 className="text-xl font-bold text-gray-900">Required CSV Columns</h4>
-									<p className="text-gray-600 text-lg">All section information is now required</p>
-								</div>
-							</div>
-							<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-								<div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-									<h5 className="font-bold text-gray-900 mb-4 text-lg flex items-center gap-2">
-										<span className="h-2 w-2 bg-red-500 rounded-full"></span>
-										Student Information
-									</h5>
-									<ul className="space-y-2 text-base text-gray-700">
-										<li className="flex items-center gap-2">
-											<span className="h-1.5 w-1.5 bg-gray-400 rounded-full"></span>
-											<span className="font-medium">student_number</span>
-											<span className="text-red-600 text-sm">(required)</span>
-										</li>
-										<li className="flex items-center gap-2">
-											<span className="h-1.5 w-1.5 bg-gray-400 rounded-full"></span>
-											<span className="font-medium">date</span>
-											<span className="text-red-600 text-sm">(required)</span>
-										</li>
-										<li className="flex items-center gap-2">
-											<span className="h-1.5 w-1.5 bg-gray-400 rounded-full"></span>
-											<span className="font-medium">status</span>
-											<span className="text-red-600 text-sm">(required)</span>
-										</li>
-									</ul>
-								</div>
-								<div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-									<h5 className="font-bold text-gray-900 mb-4 text-lg flex items-center gap-2">
-										<span className="h-2 w-2 bg-orange-500 rounded-full"></span>
-										Section Information
-									</h5>
-									<ul className="space-y-2 text-base text-gray-700">
-										<li className="flex items-center gap-2">
-											<span className="h-1.5 w-1.5 bg-gray-400 rounded-full"></span>
-											<span className="font-medium">department</span>
-											<span className="text-red-600 text-sm">(required)</span>
-										</li>
-										<li className="flex items-center gap-2">
-											<span className="h-1.5 w-1.5 bg-gray-400 rounded-full"></span>
-											<span className="font-medium">program</span>
-											<span className="text-red-600 text-sm">(required)</span>
-										</li>
-										<li className="flex items-center gap-2">
-											<span className="h-1.5 w-1.5 bg-gray-400 rounded-full"></span>
-											<span className="font-medium">year_level</span>
-											<span className="text-red-600 text-sm">(required)</span>
-										</li>
-										<li className="flex items-center gap-2">
-											<span className="h-1.5 w-1.5 bg-gray-400 rounded-full"></span>
-											<span className="font-medium">section</span>
-											<span className="text-red-600 text-sm">(required)</span>
-										</li>
-									</ul>
-								</div>
-								<div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-									<h5 className="font-bold text-gray-900 mb-4 text-lg flex items-center gap-2">
-										<span className="h-2 w-2 bg-green-500 rounded-full"></span>
-										Additional Fields
-									</h5>
-									<ul className="space-y-2 text-base text-gray-700">
-										<li className="flex items-center gap-2">
-											<span className="h-1.5 w-1.5 bg-gray-400 rounded-full"></span>
-											<span className="font-medium">schedule_id</span>
-											<span className="text-gray-500 text-sm">(optional)</span>
-										</li>
-										<li className="flex items-center gap-2">
-											<span className="h-1.5 w-1.5 bg-gray-400 rounded-full"></span>
-											<span className="font-medium">remarks</span>
-											<span className="text-gray-500 text-sm">(optional)</span>
-										</li>
-									</ul>
-								</div>
-							</div>
-						</div>
+    const handleDrag = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.type === 'dragenter' || e.type === 'dragover') {
+            setDragActive(true);
+        } else if (e.type === 'dragleave') {
+            setDragActive(false);
+        }
+    };
 
-						<div className="mb-8 p-8 bg-gradient-to-r from-amber-50 to-yellow-50 rounded-2xl border border-amber-200 shadow-sm">
-							<div className="flex items-center gap-4 mb-6">
-								<div className="h-12 w-12 rounded-xl bg-amber-100 flex items-center justify-center">
-									<svg className="h-6 w-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-									</svg>
-								</div>
-								<div>
-									<h4 className="text-xl font-bold text-amber-900">Available Departments & Programs</h4>
-									<p className="text-amber-700 text-lg">Reference for valid department and program values</p>
-								</div>
-							</div>
-							<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-								{Object.entries(programs).map(([department, deptPrograms]) => (
-									<div key={department} className="bg-white p-6 rounded-xl border border-amber-200 shadow-sm hover:shadow-md transition-shadow">
-										<h5 className="font-bold text-amber-900 mb-4 text-lg">{department}</h5>
-										<ul className="space-y-2 text-sm text-amber-800">
-											{Object.entries(deptPrograms).slice(0, 4).map(([code, name]) => (
-												<li key={code} className="flex items-start gap-2">
-													<span className="h-1.5 w-1.5 bg-amber-400 rounded-full mt-2 flex-shrink-0"></span>
-													<span><span className="font-medium">{code}</span> - {name}</span>
-												</li>
-											))}
-											{Object.keys(deptPrograms).length > 4 && (
-												<li className="text-amber-600 font-medium">... and {Object.keys(deptPrograms).length - 4} more programs</li>
-											)}
-										</ul>
-									</div>
-								))}
-							</div>
-						</div>
+    const handleDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragActive(false);
+        
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            const file = e.dataTransfer.files[0];
+            setData('file', file);
+            setSelectedFile(file);
+        }
+    };
 
-						<div className="p-8 bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl border border-green-200 shadow-sm">
-							<div className="flex items-center gap-4 mb-6">
-								<div className="h-12 w-12 rounded-xl bg-green-100 flex items-center justify-center">
-									<svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-									</svg>
-								</div>
-								<div>
-									<h4 className="text-xl font-bold text-green-900">Upload & Import</h4>
-									<p className="text-green-700 text-lg">Select your CSV file and import attendance records</p>
-								</div>
-							</div>
-							
-							<form onSubmit={submit} className="space-y-6">
-								<div>
-									<label htmlFor="file" className="block text-lg font-medium text-gray-700 mb-4">CSV File</label>
-									<div className="relative">
-										<input
-											id="file"
-											type="file"
-											accept=".csv,.txt"
-											className="block w-full text-lg text-gray-500 file:mr-6 file:py-4 file:px-8 file:rounded-xl file:border-0 file:text-lg file:font-semibold file:bg-gradient-to-r file:from-green-500 file:to-green-600 file:text-white hover:file:from-green-600 hover:file:to-green-700 transition-all duration-200"
-											onChange={(e) => setData('file', e.target.files[0])}
-										/>
-									</div>
-									{errors.file && <div className="text-lg text-red-600 mt-3 p-3 bg-red-50 rounded-lg border border-red-200">{errors.file}</div>}
-								</div>
-								
-								<div className="flex items-center gap-6">
-									<button 
-										type="submit" 
-										disabled={processing || !data.file} 
-										className="inline-flex items-center gap-3 text-xl px-10 py-5 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl hover:from-green-700 hover:to-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-									>
-										{processing ? (
-											<>
-												<svg className="animate-spin h-6 w-6" fill="none" viewBox="0 0 24 24">
-													<circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-													<path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-												</svg>
-												Importing...
-											</>
-										) : (
-											<>
-												<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-												</svg>
-												Import CSV
-											</>
-										)}
-									</button>
-									<button 
-										type="button" 
-										onClick={() => reset()} 
-										className="inline-flex items-center gap-3 text-xl px-10 py-5 bg-gradient-to-r from-gray-500 to-gray-600 text-white rounded-xl hover:from-gray-600 hover:to-gray-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-									>
-										<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-										</svg>
-										Clear
-									</button>
-								</div>
-							</form>
-						</div>
-					</div>
-				</div>
-			</div>
-		</AuthenticatedLayout>
-	);
+    const handleFileChange = (e) => {
+        if (e.target.files && e.target.files[0]) {
+            const file = e.target.files[0];
+            setData('file', file);
+            setSelectedFile(file);
+        }
+    };
+
+    const downloadTemplate = () => {
+        // Create CSV template
+        const csvContent = "student_number,status,remarks\n2024-0001,present,\n2024-0002,absent,Sick\n2024-0003,late,Traffic";
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'attendance_template.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    };
+
+    const filteredSections = data.section_id 
+        ? sections.filter(s => s.id == data.section_id)
+        : sections;
+
+    return (
+        <AuthenticatedLayout header={<h2 className="text-2xl font-bold leading-tight text-gray-800">Import Attendance</h2>}>
+            <Head title="Import Attendance" />
+            <div className="min-h-screen bg-gradient-to-br from-brand-primary/10 via-emerald-50/80 to-brand-secondary/5 py-8">
+                <div className="mx-auto max-w-4xl space-y-8 px-4 sm:px-6 lg:px-8 xl:px-12">
+                    {flash.success && (
+                        <div className="pointer-events-none fixed right-6 top-6 z-50 rounded bg-green-600 px-4 py-2 text-sm text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">
+                            {flash.success}
+                        </div>
+                    )}
+
+                    {/* Import Instructions */}
+                    <div className="card">
+                        <div className="mb-6">
+                            <h3 className="text-lg font-medium text-gray-900">Import Instructions</h3>
+                            <p className="mt-1 text-sm text-gray-600">Follow these steps to import attendance data from a CSV file.</p>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="flex items-start">
+                                <div className="flex-shrink-0">
+                                    <div className="h-6 w-6 bg-brand-primary rounded-full flex items-center justify-center">
+                                        <span className="text-xs font-medium text-white">1</span>
+                                    </div>
+                                </div>
+                                <div className="ml-3">
+                                    <h4 className="text-sm font-medium text-gray-900">Download Template</h4>
+                                    <p className="text-sm text-gray-600">Download the CSV template to see the required format.</p>
+                                    <button
+                                        onClick={downloadTemplate}
+                                        className="mt-2 inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary"
+                                    >
+                                        <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        Download Template
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="flex items-start">
+                                <div className="flex-shrink-0">
+                                    <div className="h-6 w-6 bg-brand-primary rounded-full flex items-center justify-center">
+                                        <span className="text-xs font-medium text-white">2</span>
+                                    </div>
+                                </div>
+                                <div className="ml-3">
+                                    <h4 className="text-sm font-medium text-gray-900">Prepare Your Data</h4>
+                                    <p className="text-sm text-gray-600">Fill in the CSV file with student numbers and attendance status.</p>
+                                    <div className="mt-2 text-xs text-gray-500">
+                                        <p><strong>Required columns:</strong> student_number, status</p>
+                                        <p><strong>Optional columns:</strong> remarks</p>
+                                        <p><strong>Status values:</strong> present, late, absent, excused</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex items-start">
+                                <div className="flex-shrink-0">
+                                    <div className="h-6 w-6 bg-brand-primary rounded-full flex items-center justify-center">
+                                        <span className="text-xs font-medium text-white">3</span>
+                                    </div>
+                                </div>
+                                <div className="ml-3">
+                                    <h4 className="text-sm font-medium text-gray-900">Upload and Import</h4>
+                                    <p className="text-sm text-gray-600">Select the section, date, and upload your CSV file.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Import Form */}
+                    <div className="card">
+                        <div className="mb-6">
+                            <h3 className="text-lg font-medium text-gray-900">Import Attendance Data</h3>
+                            <p className="mt-1 text-sm text-gray-600">Upload your CSV file to import attendance records.</p>
+                        </div>
+
+                        <form onSubmit={submit} className="space-y-6">
+                            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Section *</label>
+                                    <select
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                        value={data.section_id}
+                                        onChange={(e) => setData('section_id', e.target.value)}
+                                        required
+                                    >
+                                        <option value="">Select Section</option>
+                                        {sections.map((section) => (
+                                            <option key={section.id} value={section.id}>
+                                                {section.name} ({section.department?.name} - {section.program?.name})
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {errors.section_id && <p className="mt-1 text-sm text-red-600">{errors.section_id}</p>}
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Date *</label>
+                                    <input
+                                        type="date"
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                        value={data.date}
+                                        onChange={(e) => setData('date', e.target.value)}
+                                        required
+                                    />
+                                    {errors.date && <p className="mt-1 text-sm text-red-600">{errors.date}</p>}
+                                </div>
+                            </div>
+
+                            {/* File Upload */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">CSV File *</label>
+                                <div
+                                    className={`mt-1 relative border-2 border-dashed rounded-lg p-6 ${
+                                        dragActive
+                                            ? 'border-brand-primary bg-brand-primary/5'
+                                            : 'border-gray-300 hover:border-gray-400'
+                                    }`}
+                                    onDragEnter={handleDrag}
+                                    onDragLeave={handleDrag}
+                                    onDragOver={handleDrag}
+                                    onDrop={handleDrop}
+                                >
+                                    <input
+                                        type="file"
+                                        accept=".csv,.txt"
+                                        onChange={handleFileChange}
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                    />
+                                    <div className="text-center">
+                                        <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                                        </svg>
+                                        <div className="mt-2">
+                                            <p className="text-sm text-gray-600">
+                                                <span className="font-medium text-brand-primary">Click to upload</span> or drag and drop
+                                            </p>
+                                            <p className="text-xs text-gray-500">CSV files only, max 2MB</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                {selectedFile && (
+                                    <div className="mt-2 flex items-center text-sm text-gray-600">
+                                        <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                                    </div>
+                                )}
+                                {errors.file && <p className="mt-1 text-sm text-red-600">{errors.file}</p>}
+                            </div>
+
+                            {/* Section Preview */}
+                            {data.section_id && (
+                                <div>
+                                    <h4 className="text-sm font-medium text-gray-700 mb-2">Selected Section Students</h4>
+                                    <div className="bg-gray-50 rounded-lg p-4">
+                                        <div className="text-sm text-gray-600">
+                                            <p><strong>Section:</strong> {sections.find(s => s.id == data.section_id)?.name}</p>
+                                            <p><strong>Students:</strong> {sections.find(s => s.id == data.section_id)?.students?.length || 0} enrolled</p>
+                                        </div>
+                                        {sections.find(s => s.id == data.section_id)?.students && (
+                                            <div className="mt-2">
+                                                <p className="text-xs text-gray-500 mb-1">Student numbers in this section:</p>
+                                                <div className="text-xs text-gray-600 max-h-20 overflow-y-auto">
+                                                    {sections.find(s => s.id == data.section_id).students.slice(0, 10).map((student, index) => (
+                                                        <span key={index} className="inline-block mr-2 mb-1">
+                                                            {student.student_number}
+                                                        </span>
+                                                    ))}
+                                                    {sections.find(s => s.id == data.section_id).students.length > 10 && (
+                                                        <span className="text-gray-400">... and {sections.find(s => s.id == data.section_id).students.length - 10} more</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex justify-end">
+                                <button
+                                    type="submit"
+                                    disabled={processing || !data.file || !data.section_id}
+                                    className="btn-primary inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                                    </svg>
+                                    {processing ? 'Importing...' : 'Import Attendance'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    {/* CSV Format Example */}
+                    <div className="card">
+                        <h3 className="text-lg font-medium text-gray-900 mb-4">CSV Format Example</h3>
+                        <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
+                            <pre className="text-sm text-gray-100">
+{`student_number,status,remarks
+2024-0001,present,
+2024-0002,absent,Sick
+2024-0003,late,Traffic jam
+2024-0004,present,
+2024-0005,excused,Medical appointment`}
+                            </pre>
+                        </div>
+                        <div className="mt-4 text-sm text-gray-600">
+                            <p><strong>Note:</strong> The student_number must match exactly with the student numbers in the selected section.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </AuthenticatedLayout>
+    );
 }

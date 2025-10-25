@@ -1,13 +1,102 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, useForm, usePage } from '@inertiajs/react';
+import { Head, useForm, usePage, router } from '@inertiajs/react';
 import DataTable from '@/Components/DataTable';
+import { useState, useEffect } from 'react';
 
-export default function Schedules({ schedules, sections, subjects }) {
-	const { data, setData, post, processing } = useForm({ section_id: '', subject_id: '', day_of_week: 1, time_start: '08:00', time_end: '09:00' });
+export default function Schedules({ schedules, departments, programs, sections, subjects, days, filters }) {
+	const { data, setData, post, processing, errors } = useForm({ 
+		department_id: '', 
+		program_id: '', 
+		section_id: '', 
+		subject_id: '', 
+		day: '', 
+		time_start: '08:00', 
+		time_end: '09:00' 
+	});
+	
+	const [filterData, setFilterData] = useState({
+		department_id: filters.department_id || '',
+		program_id: filters.program_id || '',
+		section_id: filters.section_id || '',
+		subject_id: filters.subject_id || '',
+		day: filters.day || '',
+		search: filters.search || '',
+	});
+
+	const [filteredPrograms, setFilteredPrograms] = useState([]);
+	const [filteredSections, setFilteredSections] = useState([]);
+	const [filteredSubjects, setFilteredSubjects] = useState([]);
+
 	const flash = usePage().props.flash || {};
-	const submit = (e) => { e.preventDefault(); post(route('admin.schedules')); };
 
-	const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+	// Filter programs based on selected department
+	useEffect(() => {
+		if (data.department_id) {
+			const filtered = programs.filter(p => p.department_id == data.department_id);
+			setFilteredPrograms(filtered);
+			// Reset program selection when department changes
+			setData('program_id', '');
+		} else {
+			setFilteredPrograms(programs);
+		}
+	}, [data.department_id, programs]);
+
+	// Filter sections based on selected program
+	useEffect(() => {
+		if (data.program_id) {
+			const filtered = sections.filter(s => s.program_id == data.program_id);
+			setFilteredSections(filtered);
+			// Reset section selection when program changes
+			setData('section_id', '');
+		} else {
+			setFilteredSections(sections);
+		}
+	}, [data.program_id, sections]);
+
+	// Filter subjects based on selected program
+	useEffect(() => {
+		if (data.program_id) {
+			const filtered = subjects.filter(s => s.program_id == data.program_id);
+			setFilteredSubjects(filtered);
+			// Reset subject selection when program changes
+			setData('subject_id', '');
+		} else {
+			setFilteredSubjects(subjects);
+		}
+	}, [data.program_id, subjects]);
+
+	const submit = (e) => { 
+		e.preventDefault(); 
+		post(route('admin.schedules.store')); 
+	};
+
+	const handleFilterChange = (key, value) => {
+		const newFilters = { ...filterData, [key]: value };
+		setFilterData(newFilters);
+		
+		// Build query string
+		const queryParams = new URLSearchParams();
+		Object.entries(newFilters).forEach(([k, v]) => {
+			if (v) queryParams.append(k, v);
+		});
+		
+		router.get(route('admin.schedules'), Object.fromEntries(queryParams), {
+			preserveState: true,
+			replace: true
+		});
+	};
+
+	const clearFilters = () => {
+		setFilterData({
+			department_id: '',
+			program_id: '',
+			section_id: '',
+			subject_id: '',
+			day: '',
+			search: '',
+		});
+		router.get(route('admin.schedules'));
+	};
 
 	return (
 		<AuthenticatedLayout header={<h2 className="text-2xl font-bold leading-tight text-gray-800">Schedules</h2>}>
@@ -18,71 +107,123 @@ export default function Schedules({ schedules, sections, subjects }) {
 						<div className="pointer-events-none fixed right-6 top-6 z-50 rounded bg-green-600 px-4 py-2 text-sm text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">{flash.success}</div>
 					)}
 
+					{/* Add New Schedule Form */}
 					<div className="card">
 						<div className="mb-6">
 							<h3 className="text-lg font-medium text-gray-900">Add New Schedule</h3>
-							<p className="mt-1 text-sm text-gray-600">Create a new class schedule by selecting section, subject, and time.</p>
+							<p className="mt-1 text-sm text-gray-600">Create a new class schedule by selecting department, program, section, subject, day, and time.</p>
 						</div>
 
-						<form onSubmit={submit} className="grid grid-cols-1 gap-6 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8">
+						<form onSubmit={submit} className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 							<div>
-								<label className="block text-sm font-medium text-gray-700">Section</label>
+								<label className="block text-sm font-medium text-gray-700">Department *</label>
+								<select
+									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+									value={data.department_id}
+									onChange={(e) => setData('department_id', e.target.value)}
+									required
+								>
+									<option value="">Select Department</option>
+									{departments.map((d) => (
+										<option key={d.id} value={d.id}>{d.name}</option>
+									))}
+								</select>
+								{errors.department_id && <p className="mt-1 text-sm text-red-600">{errors.department_id}</p>}
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-gray-700">Program *</label>
+								<select
+									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+									value={data.program_id}
+									onChange={(e) => setData('program_id', e.target.value)}
+									required
+									disabled={!data.department_id}
+								>
+									<option value="">Select Program</option>
+									{filteredPrograms.map((p) => (
+										<option key={p.id} value={p.id}>{p.name}</option>
+									))}
+								</select>
+								{errors.program_id && <p className="mt-1 text-sm text-red-600">{errors.program_id}</p>}
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-gray-700">Section *</label>
 								<select
 									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
 									value={data.section_id}
 									onChange={(e) => setData('section_id', e.target.value)}
+									required
+									disabled={!data.program_id}
 								>
 									<option value="">Select Section</option>
-									{sections.map((s) => (
+									{filteredSections.map((s) => (
 										<option key={s.id} value={s.id}>{s.name}</option>
 									))}
 								</select>
+								{errors.section_id && <p className="mt-1 text-sm text-red-600">{errors.section_id}</p>}
 							</div>
+
 							<div>
-								<label className="block text-sm font-medium text-gray-700">Subject</label>
+								<label className="block text-sm font-medium text-gray-700">Subject *</label>
 								<select
 									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
 									value={data.subject_id}
 									onChange={(e) => setData('subject_id', e.target.value)}
+									required
+									disabled={!data.program_id}
 								>
 									<option value="">Select Subject</option>
-									{subjects.map((s) => (
-										<option key={s.id} value={s.id}>{s.name}</option>
+									{filteredSubjects.map((s) => (
+										<option key={s.id} value={s.id}>{s.name} ({s.code})</option>
 									))}
 								</select>
+								{errors.subject_id && <p className="mt-1 text-sm text-red-600">{errors.subject_id}</p>}
 							</div>
+
 							<div>
-								<label className="block text-sm font-medium text-gray-700">Day</label>
+								<label className="block text-sm font-medium text-gray-700">Day *</label>
 								<select
 									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
-									value={data.day_of_week}
-									onChange={(e) => setData('day_of_week', e.target.value)}
+									value={data.day}
+									onChange={(e) => setData('day', e.target.value)}
+									required
 								>
-									{dayNames.map((day, index) => (
-										<option key={index + 1} value={index + 1}>{day}</option>
+									<option value="">Select Day</option>
+									{Object.entries(days).map(([key, value]) => (
+										<option key={key} value={key}>{value}</option>
 									))}
 								</select>
+								{errors.day && <p className="mt-1 text-sm text-red-600">{errors.day}</p>}
 							</div>
+
 							<div>
-								<label className="block text-sm font-medium text-gray-700">Start Time</label>
+								<label className="block text-sm font-medium text-gray-700">Start Time *</label>
 								<input
 									type="time"
 									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
 									value={data.time_start}
 									onChange={(e) => setData('time_start', e.target.value)}
+									required
 								/>
+								{errors.time_start && <p className="mt-1 text-sm text-red-600">{errors.time_start}</p>}
 							</div>
+
 							<div>
-								<label className="block text-sm font-medium text-gray-700">End Time</label>
+								<label className="block text-sm font-medium text-gray-700">End Time *</label>
 								<input
 									type="time"
 									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
 									value={data.time_end}
 									onChange={(e) => setData('time_end', e.target.value)}
+									required
 								/>
+								{errors.time_end && <p className="mt-1 text-sm text-red-600">{errors.time_end}</p>}
 							</div>
-							<div className="md:col-span-5">
-								<button disabled={processing} className="btn-primary inline-flex items-center gap-2">
+
+							<div className="flex items-end">
+								<button disabled={processing} className="btn-primary inline-flex items-center gap-2 w-full">
 									<svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
 									</svg>
@@ -92,30 +233,136 @@ export default function Schedules({ schedules, sections, subjects }) {
 						</form>
 					</div>
 
+					{/* Filters */}
 					<div className="card">
-						<div className="mb-6 flex items-center justify-between">
+						<div className="mb-6">
+							<h3 className="text-lg font-medium text-gray-900">Filter Schedules</h3>
+							<p className="mt-1 text-sm text-gray-600">Filter schedules by department, program, section, subject, day, or search term.</p>
+						</div>
+
+						<div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
 							<div>
-								<h3 className="text-lg font-medium text-gray-900">All Schedules</h3>
-								<p className="mt-1 text-sm text-gray-600">View and manage class schedules.</p>
+								<label className="block text-sm font-medium text-gray-700">Department</label>
+								<select
+									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+									value={filterData.department_id}
+									onChange={(e) => handleFilterChange('department_id', e.target.value)}
+								>
+									<option value="">All Departments</option>
+									{departments.map((d) => (
+										<option key={d.id} value={d.id}>{d.name}</option>
+									))}
+								</select>
 							</div>
-							<div className="flex items-center gap-4">
-								<select className="rounded-lg border-gray-300 focus:border-brand-primary focus:ring-brand-primary sm:text-sm">
+
+							<div>
+								<label className="block text-sm font-medium text-gray-700">Program</label>
+								<select
+									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+									value={filterData.program_id}
+									onChange={(e) => handleFilterChange('program_id', e.target.value)}
+								>
+									<option value="">All Programs</option>
+									{programs.map((p) => (
+										<option key={p.id} value={p.id}>{p.name}</option>
+									))}
+								</select>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-gray-700">Section</label>
+								<select
+									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+									value={filterData.section_id}
+									onChange={(e) => handleFilterChange('section_id', e.target.value)}
+								>
 									<option value="">All Sections</option>
 									{sections.map((s) => (
 										<option key={s.id} value={s.id}>{s.name}</option>
 									))}
 								</select>
-								<select className="rounded-lg border-gray-300 focus:border-brand-primary focus:ring-brand-primary sm:text-sm">
-									<option value="">All Days</option>
-									{dayNames.map((day, index) => (
-										<option key={index + 1} value={index + 1}>{day}</option>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-gray-700">Subject</label>
+								<select
+									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+									value={filterData.subject_id}
+									onChange={(e) => handleFilterChange('subject_id', e.target.value)}
+								>
+									<option value="">All Subjects</option>
+									{subjects.map((s) => (
+										<option key={s.id} value={s.id}>{s.name} ({s.code})</option>
 									))}
 								</select>
 							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-gray-700">Day</label>
+								<select
+									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+									value={filterData.day}
+									onChange={(e) => handleFilterChange('day', e.target.value)}
+								>
+									<option value="">All Days</option>
+									{Object.entries(days).map(([key, value]) => (
+										<option key={key} value={key}>{value}</option>
+									))}
+								</select>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-gray-700">Search</label>
+								<input
+									type="text"
+									placeholder="Search schedules..."
+									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+									value={filterData.search}
+									onChange={(e) => handleFilterChange('search', e.target.value)}
+								/>
+							</div>
+						</div>
+
+						<div className="mt-4 flex justify-between">
+							<button
+								onClick={clearFilters}
+								className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary"
+							>
+								Clear Filters
+							</button>
+							<div className="text-sm text-gray-500">
+								Showing {schedules.length} schedule(s)
+							</div>
+						</div>
+					</div>
+
+					{/* Schedules Table */}
+					<div className="card">
+						<div className="mb-6">
+							<h3 className="text-lg font-medium text-gray-900">All Schedules</h3>
+							<p className="mt-1 text-sm text-gray-600">View and manage class schedules.</p>
 						</div>
 
 						<DataTable
 							columns={[
+								{ 
+									key: 'department',
+									label: 'Department',
+									render: (department) => (
+										<span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-800">
+											{department?.name || 'N/A'}
+										</span>
+									)
+								},
+								{ 
+									key: 'program',
+									label: 'Program',
+									render: (program) => (
+										<span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
+											{program?.name || 'N/A'}
+										</span>
+									)
+								},
 								{ 
 									key: 'subject',
 									label: 'Subject',
@@ -136,9 +383,13 @@ export default function Schedules({ schedules, sections, subjects }) {
 									)
 								},
 								{
-									key: 'day_of_week',
+									key: 'day',
 									label: 'Day',
-									render: (day) => dayNames[day - 1]
+									render: (day) => (
+										<span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
+											{day || 'N/A'}
+										</span>
+									)
 								},
 								{
 									key: 'time',

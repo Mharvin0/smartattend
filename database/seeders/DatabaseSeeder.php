@@ -50,5 +50,11 @@ class DatabaseSeeder extends Seeder
 			]
 		);
 		$admin->syncRoles([$adminRole]);
+
+		// Seed sample data
+		$this->call([
+			DepartmentProgramSeeder::class,
+			StudentSeeder::class,
+		]);
 	}
 }

@@ -40,6 +40,11 @@ class Section extends Model
         return $this->belongsTo(Program::class);
     }
 
+    public function attendanceRecords(): HasMany
+    {
+        return $this->hasMany(AttendanceRecord::class);
+    }
+
     public function getStudentsCountAttribute(): int
     {
         return $this->students()->count();
@@ -52,7 +57,6 @@ class Section extends Model
             '2nd Year',
             '3rd Year',
             '4th Year',
-            '5th Year',
         ];
     }
 
