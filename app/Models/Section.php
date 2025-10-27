@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Section extends Model
 {
@@ -15,6 +16,7 @@ class Section extends Model
         'name',
         'year_level',
         'adviser_name',
+        'adviser_id',
         'program',
         'department',
         'semester',
@@ -43,6 +45,18 @@ class Section extends Model
     public function attendanceRecords(): HasMany
     {
         return $this->hasMany(AttendanceRecord::class);
+    }
+
+    public function teachers(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'teacher_sections', 'section_id', 'teacher_id')
+                    ->withPivot('subject')
+                    ->withTimestamps();
+    }
+
+    public function adviser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'adviser_id');
     }
 
     public function getStudentsCountAttribute(): int

@@ -21,7 +21,29 @@ class AdminPageController extends Controller
 {
     public function __construct()
     {
-        $this->middleware(['auth', 'role:Admin|Super Admin']);
+        $this->middleware(['auth']);
+        $this->middleware(function ($request, $next) {
+            $user = auth()->user();
+            
+            // Check if user is authenticated
+            if (!$user) {
+                return redirect()->route('login');
+            }
+            
+            // Check if user has admin role
+            if (!$user->hasRole('Admin')) {
+                // Redirect based on their actual role
+                if ($user->hasRole('Super Admin')) {
+                    return redirect()->route('super.dashboard');
+                } elseif ($user->hasRole('Teacher')) {
+                    return redirect()->route('teacher.dashboard');
+                }
+                // Otherwise, show 403 error
+                abort(403, 'Access denied. Admin role required.');
+            }
+            
+            return $next($request);
+        });
     }
 
     public function index()
@@ -57,8 +79,8 @@ class AdminPageController extends Controller
             ];
         });
         
-        // Get all subjects with teachers
-        $subjects = Subject::with('teacher')->get();
+        // Get all subjects
+        $subjects = Subject::with(['section', 'department', 'program'])->get();
         
         // Get all schedules with relationships
         $schedules = Schedule::with(['section.program.department', 'subject'])->get();
@@ -226,11 +248,7 @@ class AdminPageController extends Controller
             'recorded_by' => auth()->id(),
         ]);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Intervention created successfully',
-            'intervention' => $intervention->load(['student.section.program.department']),
-        ]);
+        return redirect()->back()->with('success', 'Intervention created successfully');
     }
 
     public function sendCommunication(Request $request)
@@ -622,6 +640,9 @@ class AdminPageController extends Controller
                 'first_name' => $validated['first_name'],
                 'last_name' => $validated['last_name'],
                 'student_number' => $validated['student_number'],
+                'department_id' => $validated['department_id'],
+                'program_id' => $validated['program_id'],
+                'year_level' => $validated['year_level'],
                 'section_id' => $validated['section_id'],
                 'gender' => $validated['gender'],
                 'birth_date' => $validated['birth_date'],
@@ -634,28 +655,17 @@ class AdminPageController extends Controller
                 $student->schedules()->attach($validated['schedule_ids']);
             }
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Student created successfully',
-                'student' => $student->load(['section.program.department', 'schedules'])
-            ]);
+            return redirect()->back()->with('success', 'Student created successfully');
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $e->errors()
-            ], 422);
+            return redirect()->back()->withErrors($e->errors())->withInput();
         } catch (\Exception $e) {
             Log::error('Student creation failed: ' . $e->getMessage(), [
                 'student_data' => $request->all(),
                 'trace' => $e->getTraceAsString()
             ]);
             
-            return response()->json([
-                'success' => false,
-                'message' => 'Student creation failed: ' . $e->getMessage()
-            ], 500);
+            return redirect()->back()->with('error', 'Student creation failed: ' . $e->getMessage())->withInput();
         }
     }
 

@@ -13,23 +13,73 @@ class SectionController extends Controller
 {
     public function __construct()
     {
-        $this->middleware(['auth', 'role:Admin|Super Admin']);
+        $this->middleware(['auth']);
+        $this->middleware(function ($request, $next) {
+            if (!auth()->user()->hasAnyRole(['Admin', 'Super Admin'])) {
+                abort(403, 'Unauthorized access');
+            }
+            return $next($request);
+        });
     }
 
     public function index()
     {
-        $sections = Section::with(['department', 'program'])
+        $sections = Section::with(['department', 'program', 'teachers'])
             ->orderBy('program')
             ->orderBy('year_level')
             ->orderBy('name')
             ->get();
 
+        // Get teachers for adviser selection
+        $teachers = \App\Models\User::role('Teacher')
+            ->with(['department', 'program'])
+            ->get();
+
         return Inertia::render('Admin/Sections', [
             'sections' => $sections,
             'programs' => Section::getPrograms(),
+            'programsList' => \App\Models\Program::with('department')->get(),
             'yearLevels' => Section::getYearLevels(),
             'semesters' => Section::getSemesters(),
-            'departments' => Section::getDepartments(),
+            'departments' => \App\Models\Department::all(),
+            'teachers' => $teachers,
+        ]);
+    }
+
+    public function show(Section $section)
+    {
+        $section->load(['department', 'program', 'teachers', 'students']);
+        
+        return response()->json([
+            'section' => [
+                'id' => $section->id,
+                'name' => $section->name,
+                'year_level' => $section->year_level,
+                'adviser_name' => $section->adviser_name,
+                'program' => $section->program,
+                'department' => $section->department,
+                'semester' => $section->semester,
+                'academic_year' => $section->academic_year,
+                'department_id' => $section->department_id,
+                'program_id' => $section->program_id,
+                'students_count' => $section->students_count,
+                'teachers' => $section->teachers->map(function ($teacher) {
+                    return [
+                        'id' => $teacher->id,
+                        'name' => $teacher->name,
+                        'email' => $teacher->email,
+                        'subject' => $teacher->pivot->subject ?? 'General',
+                    ];
+                }),
+                'students' => $section->students->map(function ($student) {
+                    return [
+                        'id' => $student->id,
+                        'student_id' => $student->student_id,
+                        'name' => $student->first_name . ' ' . $student->last_name,
+                        'email' => $student->email,
+                    ];
+                }),
+            ]
         ]);
     }
 
@@ -39,6 +89,7 @@ class SectionController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'year_level' => ['required', 'string', 'max:255'],
             'adviser_name' => ['required', 'string', 'max:255'],
+            'adviser_id' => ['nullable', 'integer', 'exists:users,id'],
             'program' => ['required', 'string', 'max:255'],
             'department' => ['nullable', 'string', 'max:255'],
             'semester' => ['required', 'string', 'max:255'],

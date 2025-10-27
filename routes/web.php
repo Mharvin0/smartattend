@@ -13,7 +13,13 @@ use App\Http\Controllers\Admin\SubjectController;
 use App\Http\Controllers\Admin\ScheduleAdminController;
 use App\Http\Controllers\Admin\DepartmentController;
 use App\Http\Controllers\Admin\AdminPageController;
+use App\Http\Controllers\Teacher\TeacherPageController;
+use App\Http\Controllers\Teacher\DashboardController as TeacherDashboardController;
+use App\Http\Controllers\Teacher\StudentController;
+use App\Http\Controllers\Teacher\ClassController;
+use App\Http\Controllers\Teacher\ReportController as TeacherReportController;
 use App\Http\Controllers\Super\SystemAdminController;
+use App\Http\Controllers\Super\SuperAdminController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -26,10 +32,25 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    
+    // Debug route to test authentication
+    Route::get('/debug-auth', function () {
+        $user = auth()->user();
+        return response()->json([
+            'authenticated' => auth()->check(),
+            'user' => $user ? $user->name : 'Not authenticated',
+            'email' => $user ? $user->email : 'N/A',
+            'roles' => $user ? $user->roles->pluck('name') : [],
+            'has_admin_role' => $user ? $user->hasRole('Admin') : false,
+            'has_super_admin_role' => $user ? $user->hasRole('Super Admin') : false,
+            'can_access_admin' => $user ? $user->hasAnyRole(['Admin', 'Super Admin']) : false,
+            'session_id' => session()->getId(),
+        ]);
+    })->name('debug.auth');
 
-    // Admin (PedroHub) routes
-    Route::middleware(['role:Admin|Super Admin'])->prefix('admin')->name('admin.')->group(function () {
-        Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+    // Admin (PedroHub) routes - Only for Admin and Super Admin roles
+    Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
+        Route::get('/dashboard', [AdminPageController::class, 'index'])->name('dashboard');
         Route::get('/admin-page', [AdminPageController::class, 'index'])->name('admin-page');
         Route::get('/admin-page/live-data', [AdminPageController::class, 'getLiveData'])->name('admin-page.live-data');
         Route::post('/admin-page/quick-attendance', [AdminPageController::class, 'quickAttendance'])->name('admin-page.quick-attendance');
@@ -40,16 +61,19 @@ Route::middleware('auth')->group(function () {
         Route::post('/admin-page/export-records', [AdminPageController::class, 'exportStudentRecords'])->name('admin-page.export-records');
         Route::get('/student/{student}', [DashboardController::class, 'studentProfile'])->name('student');
 
-        // Attendance
-        Route::get('/attendance', [AttendanceController::class, 'index'])->name('attendance');
-        Route::get('/attendance/by-section', [AttendanceController::class, 'bySection'])->name('attendance.section');
-        Route::post('/attendance/by-section', [AttendanceController::class, 'storeSection'])->name('attendance.section.store');
-        Route::get('/attendance/by-schedule', [AttendanceController::class, 'bySchedule'])->name('attendance.schedule');
-        Route::post('/attendance/by-schedule', [AttendanceController::class, 'storeSchedule'])->name('attendance.schedule.store');
-        Route::get('/attendance/import', [AttendanceController::class, 'importForm'])->name('attendance.import');
-        Route::post('/attendance/import', [AttendanceController::class, 'importStore'])->name('attendance.import.store');
-        Route::post('/attendance/bulk-update', [AttendanceController::class, 'bulkUpdate'])->name('attendance.bulk-update');
-        Route::get('/attendance/analytics', [AttendanceController::class, 'analytics'])->name('attendance.analytics');
+				// Attendance
+				Route::get('/attendance', [AttendanceController::class, 'index'])->name('attendance');
+				Route::get('/attendance/by-section', [AttendanceController::class, 'bySection'])->name('attendance.section');
+				Route::post('/attendance/by-section', [AttendanceController::class, 'storeSection'])->name('attendance.section.store');
+				Route::get('/attendance/by-schedule', [AttendanceController::class, 'bySchedule'])->name('attendance.schedule');
+				Route::post('/attendance/by-schedule', [AttendanceController::class, 'storeSchedule'])->name('attendance.schedule.store');
+				Route::get('/attendance/import', [AttendanceController::class, 'importForm'])->name('attendance.import');
+				Route::post('/attendance/import', [AttendanceController::class, 'importStore'])->name('attendance.import.store');
+				Route::post('/attendance/bulk-update', [AttendanceController::class, 'bulkUpdate'])->name('attendance.bulk-update');
+				Route::get('/attendance/analytics', [AttendanceController::class, 'analytics'])->name('attendance.analytics');
+				Route::get('/attendance/department-rates', [AttendanceController::class, 'departmentAttendanceRates'])->name('attendance.department-rates');
+				Route::get('/attendance/faculty-compliance', [AttendanceController::class, 'facultyCompliance'])->name('attendance.faculty-compliance');
+				Route::post('/attendance/generate-report', [AttendanceController::class, 'generateReport'])->name('attendance.generate-report');
         Route::get('/attendance/student/{student}/history', [AttendanceController::class, 'studentHistory'])->name('attendance.student.history');
 
         // Interventions
@@ -64,13 +88,14 @@ Route::middleware('auth')->group(function () {
         Route::get('/reports', [ReportController::class, 'index'])->name('reports');
         Route::get('/reports/weekly/pdf', [ReportController::class, 'weeklyPdf'])->name('reports.weekly.pdf');
 
-        // Sections
-        Route::get('/sections', [SectionController::class, 'index'])->name('sections');
-        Route::post('/sections', [SectionController::class, 'store'])->name('sections.store');
-        Route::get('/sections/import', [SectionController::class, 'importForm'])->name('sections.import');
-        Route::post('/sections/import', [SectionController::class, 'importStore'])->name('sections.import.store');
-        Route::patch('/sections/{section}', [SectionController::class, 'update'])->name('sections.update');
-        Route::delete('/sections/{section}', [SectionController::class, 'destroy'])->name('sections.destroy');
+               // Sections
+               Route::get('/sections', [SectionController::class, 'index'])->name('sections');
+               Route::get('/sections/{section}', [SectionController::class, 'show'])->name('sections.show');
+               Route::post('/sections', [SectionController::class, 'store'])->name('sections.store');
+               Route::get('/sections/import', [SectionController::class, 'importForm'])->name('sections.import');
+               Route::post('/sections/import', [SectionController::class, 'importStore'])->name('sections.import.store');
+               Route::patch('/sections/{section}', [SectionController::class, 'update'])->name('sections.update');
+               Route::delete('/sections/{section}', [SectionController::class, 'destroy'])->name('sections.destroy');
 
         // Subjects
         Route::get('/subjects', [SubjectController::class, 'index'])->name('subjects');
@@ -83,10 +108,82 @@ Route::middleware('auth')->group(function () {
         Route::post('/schedules', [ScheduleAdminController::class, 'store'])->name('schedules.store');
         Route::patch('/schedules/{schedule}', [ScheduleAdminController::class, 'update'])->name('schedules.update');
         Route::delete('/schedules/{schedule}', [ScheduleAdminController::class, 'destroy'])->name('schedules.destroy');
+
+        // Students
+        Route::get('/students', [\App\Http\Controllers\Admin\StudentController::class, 'index'])->name('students');
+        Route::get('/students/{student}', [\App\Http\Controllers\Admin\StudentController::class, 'show'])->name('students.show');
+        Route::post('/students/update-priority', [\App\Http\Controllers\Admin\StudentController::class, 'updatePriority'])->name('students.update-priority');
+        Route::post('/students/update-all-priorities', [\App\Http\Controllers\Admin\StudentController::class, 'updateAllPriorities'])->name('students.update-all-priorities');
+    });
+
+    // Teacher routes - Only for Teacher role
+    Route::middleware(['role:Teacher'])->prefix('teacher')->name('teacher.')->group(function () {
+        Route::get('/', [TeacherDashboardController::class, 'index'])->name('dashboard');
+        Route::get('/teacher-page', [TeacherPageController::class, 'index'])->name('teacher-page');
+        Route::get('/teacher-page/live-data', [TeacherPageController::class, 'getLiveData'])->name('teacher-page.live-data');
+        Route::post('/teacher-page/quick-attendance', [TeacherPageController::class, 'quickAttendance'])->name('teacher-page.quick-attendance');
+        
+        // Teacher functional pages
+        Route::get('/students', [StudentController::class, 'index'])->name('students');
+        Route::get('/classes', [ClassController::class, 'index'])->name('classes');
+        Route::get('/reports', [TeacherReportController::class, 'index'])->name('reports');
+    });
+
+    // Redirect teachers away from admin routes (only if they don't have admin roles)
+    Route::middleware(['auth', 'role:Teacher'])->group(function () {
+        Route::get('/admin', function () {
+            return redirect()->route('teacher.dashboard');
+        });
     });
 
     // Super Admin management
     Route::middleware(['role:Super Admin'])->prefix('super')->name('super.')->group(function () {
+        Route::get('/', [SystemAdminController::class, 'index'])->name('dashboard');
+        
+        // Super Admin tabs
+        Route::get('/interventions', [SystemAdminController::class, 'interventions'])->name('interventions');
+        Route::get('/attendance', [SystemAdminController::class, 'attendance'])->name('attendance');
+        Route::get('/sections', [SystemAdminController::class, 'sections'])->name('sections');
+        Route::get('/reports', [SystemAdminController::class, 'reports'])->name('reports');
+        
+        // Sections Management - Import routes only
+        Route::get('/sections/import', [SectionController::class, 'importForm'])->name('sections.import');
+        Route::post('/sections/import', [SectionController::class, 'importStore'])->name('sections.import.store');
+        
+        // Subjects Management
+        Route::get('/subjects', [SubjectController::class, 'index'])->name('subjects');
+        Route::post('/subjects', [SubjectController::class, 'store'])->name('subjects.store');
+        Route::patch('/subjects/{subject}', [SubjectController::class, 'update'])->name('subjects.update');
+        Route::delete('/subjects/{subject}', [SubjectController::class, 'destroy'])->name('subjects.destroy');
+        
+        // Schedules Management
+        Route::get('/schedules', [ScheduleAdminController::class, 'index'])->name('schedules');
+        Route::post('/schedules', [ScheduleAdminController::class, 'store'])->name('schedules.store');
+        Route::patch('/schedules/{schedule}', [ScheduleAdminController::class, 'update'])->name('schedules.update');
+        Route::delete('/schedules/{schedule}', [ScheduleAdminController::class, 'destroy'])->name('schedules.destroy');
+        Route::get('/reports/trends', [SystemAdminController::class, 'getTrendsData'])->name('reports.trends');
+        Route::get('/reports/weekly/pdf', [SystemAdminController::class, 'generateWeeklyPdf'])->name('reports.weekly.pdf');
+        Route::get('/reports/student-records/excel', [SystemAdminController::class, 'exportStudentRecordsExcel'])->name('reports.student-records.excel');
+        Route::get('/settings', [SystemAdminController::class, 'settings'])->name('settings');
+        
+        // Teacher Management Routes
+        Route::post('/teachers', [SystemAdminController::class, 'storeTeacher'])->name('teachers.store');
+        Route::put('/teachers/{id}', [SystemAdminController::class, 'updateTeacher'])->name('teachers.update');
+        Route::delete('/teachers/{id}', [SystemAdminController::class, 'destroyTeacher'])->name('teachers.destroy');
+        
+        // Intervention Management Routes
+        Route::post('/interventions', [SystemAdminController::class, 'storeIntervention'])->name('interventions.store');
+        Route::put('/interventions/{id}', [SystemAdminController::class, 'updateIntervention'])->name('interventions.update');
+        Route::delete('/interventions/{id}', [SystemAdminController::class, 'destroyIntervention'])->name('interventions.destroy');
+
+        // Dashboard refresh route
+        Route::get('/dashboard/refresh', [SystemAdminController::class, 'refreshDashboard'])->name('dashboard.refresh');
+        
+        // Section Management Routes
+        Route::post('/sections', [SystemAdminController::class, 'storeSection'])->name('sections.store');
+        Route::put('/sections/{id}', [SystemAdminController::class, 'updateSection'])->name('sections.update');
+        Route::delete('/sections/{id}', [SystemAdminController::class, 'destroySection'])->name('sections.destroy');
+        
         Route::get('/users', [UserController::class, 'index'])->name('users');
         Route::post('/users', [UserController::class, 'store'])->name('users.store');
         Route::patch('/users/{user}', [UserController::class, 'update'])->name('users.update');
@@ -103,14 +200,20 @@ Route::middleware('auth')->group(function () {
         Route::patch('/programs/{program}', [DepartmentController::class, 'updateProgram'])->name('programs.update');
         Route::delete('/programs/{program}', [DepartmentController::class, 'destroyProgram'])->name('programs.destroy');
         
-        // System Administration
-        Route::get('/system-admin', [SystemAdminController::class, 'index'])->name('system-admin');
-        Route::get('/system-admin/test', [SystemAdminController::class, 'test'])->name('system-admin.test');
-        Route::post('/system-admin/clear-cache', [SystemAdminController::class, 'clearCache'])->name('system-admin.clear-cache');
-        Route::post('/system-admin/optimize', [SystemAdminController::class, 'optimizeSystem'])->name('system-admin.optimize');
-        Route::post('/system-admin/backup', [SystemAdminController::class, 'createBackup'])->name('system-admin.backup');
-        Route::post('/system-admin/maintenance', [SystemAdminController::class, 'runMaintenance'])->name('system-admin.maintenance');
-        Route::get('/system-admin/logs', [SystemAdminController::class, 'getSystemLogs'])->name('system-admin.logs');
+				// System Administration
+				Route::get('/system-admin', [SystemAdminController::class, 'systemAdmin'])->name('system-admin');
+				Route::get('/system-admin/test', [SystemAdminController::class, 'test'])->name('system-admin.test');
+				Route::post('/system-admin/clear-cache', [SystemAdminController::class, 'clearCache'])->name('system-admin.clear-cache');
+				Route::post('/system-admin/optimize', [SystemAdminController::class, 'optimizeSystem'])->name('system-admin.optimize');
+				Route::post('/system-admin/backup', [SystemAdminController::class, 'createBackup'])->name('system-admin.backup');
+				Route::post('/system-admin/maintenance', [SystemAdminController::class, 'runMaintenance'])->name('system-admin.maintenance');
+				Route::get('/system-admin/logs', [SystemAdminController::class, 'getSystemLogs'])->name('system-admin.logs');
+				
+				// Super Admin Attendance Features
+				Route::get('/attendance/department-rates', [SystemAdminController::class, 'departmentAttendanceRates'])->name('super.attendance.department-rates');
+				Route::get('/attendance/faculty-compliance', [SystemAdminController::class, 'facultyCompliance'])->name('super.attendance.faculty-compliance');
+				Route::post('/attendance/generate-report', [SystemAdminController::class, 'generateReport'])->name('super.attendance.generate-report');
+        
     });
 });
 

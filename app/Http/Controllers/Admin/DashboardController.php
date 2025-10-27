@@ -7,6 +7,7 @@ use App\Models\AttendanceRecord;
 use App\Models\Intervention;
 use App\Models\WeeklySummary;
 use App\Models\Section;
+use App\Models\Student;
 use Carbon\CarbonImmutable;
 use Inertia\Inertia;
 
@@ -14,7 +15,29 @@ class DashboardController extends Controller
 {
 	public function __construct()
 	{
-		$this->middleware(['auth', 'role:Admin|Super Admin']);
+		$this->middleware(['auth']);
+		$this->middleware(function ($request, $next) {
+			$user = auth()->user();
+			
+			// Check if user is authenticated
+			if (!$user) {
+				return redirect()->route('login');
+			}
+			
+			// Check if user has admin role
+			if (!$user->hasRole('Admin')) {
+				// Redirect based on their actual role
+				if ($user->hasRole('Super Admin')) {
+					return redirect()->route('super.dashboard');
+				} elseif ($user->hasRole('Teacher')) {
+					return redirect()->route('teacher.dashboard');
+				}
+				// Otherwise, show 403 error
+				abort(403, 'Access denied. Admin role required.');
+			}
+			
+			return $next($request);
+		});
 	}
 	public function index()
 	{
@@ -102,7 +125,14 @@ class DashboardController extends Controller
 		// Calculate overall attendance rate for today
 		$overallAttendanceRate = $totalStudents > 0 ? round(($presentToday / $totalStudents) * 100, 1) : 0;
 
-		return Inertia::render('Admin/Dashboard', [
+		// Priority statistics
+		$priorityStats = [
+			'safe_count' => Student::where('priority', 'Safe')->count(),
+			'call_needed_count' => Student::where('priority', 'Call Needed')->count(),
+			'pns_count' => Student::where('priority', 'PNS')->count(),
+		];
+
+		return Inertia::render('Admin/AdminDashboard', [
 			'chart' => [
 				'labels' => $labels,
 				'weeklyRates' => $weeklyRates,
@@ -133,6 +163,7 @@ class DashboardController extends Controller
 			'sections' => $sections,
 			'totalStudentsCount' => $totalStudentsCount,
 			'overallAttendanceRate' => $overallAttendanceRate,
+			'priorityStats' => $priorityStats,
 		]);
 	}
 

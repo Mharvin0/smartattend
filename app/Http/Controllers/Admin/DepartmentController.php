@@ -33,14 +33,29 @@ class DepartmentController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'code' => ['required', 'string', 'max:10', 'unique:departments,code'],
+            'name' => ['required', 'string', 'max:255', 'unique:departments,name,NULL,id,deleted_at,NULL'],
+            'code' => ['required', 'string', 'max:10', 'unique:departments,code,NULL,id,deleted_at,NULL'],
             'description' => ['nullable', 'string'],
             'is_active' => ['boolean'],
         ]);
 
-        Department::create($validated);
-        return back()->with('success', 'Department created successfully');
+        try {
+            // Create the department
+            Department::create($validated);
+            return back()->with('success', "Department '{$validated['name']}' created successfully!");
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Handle database constraint violations
+            if ($e->getCode() == 23000) { // MySQL duplicate entry error
+                if (str_contains($e->getMessage(), 'departments_code_unique')) {
+                    return back()->with('error', "Department with code '{$validated['code']}' already exists. Please choose a different code.");
+                } elseif (str_contains($e->getMessage(), 'departments_name_unique')) {
+                    return back()->with('error', "Department with name '{$validated['name']}' already exists. Please choose a different name.");
+                }
+            }
+            return back()->with('error', 'Failed to create department: ' . $e->getMessage());
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to create department: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -49,8 +64,8 @@ class DepartmentController extends Controller
     public function update(Request $request, Department $department)
     {
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'code' => ['required', 'string', 'max:10', 'unique:departments,code,' . $department->id],
+            'name' => ['required', 'string', 'max:255', 'unique:departments,name,' . $department->id . ',id,deleted_at,NULL'],
+            'code' => ['required', 'string', 'max:10', 'unique:departments,code,' . $department->id . ',id,deleted_at,NULL'],
             'description' => ['nullable', 'string'],
             'is_active' => ['boolean'],
         ]);
@@ -96,14 +111,27 @@ class DepartmentController extends Controller
         $validated = $request->validate([
             'department_id' => ['required', 'exists:departments,id'],
             'name' => ['required', 'string', 'max:255'],
-            'code' => ['required', 'string', 'max:10', 'unique:programs,code'],
+            'code' => ['required', 'string', 'max:10', 'unique:programs,code,NULL,id,deleted_at,NULL'],
             'description' => ['nullable', 'string'],
             'duration_years' => ['required', 'integer', 'min:1', 'max:10'],
             'is_active' => ['boolean'],
         ]);
 
-        Program::create($validated);
-        return back()->with('success', 'Program created successfully');
+        try {
+            // Create the program
+            Program::create($validated);
+            return back()->with('success', "Program '{$validated['name']}' created successfully!");
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Handle database constraint violations
+            if ($e->getCode() == 23000) { // MySQL duplicate entry error
+                if (str_contains($e->getMessage(), 'programs_code_unique')) {
+                    return back()->with('error', "Program with code '{$validated['code']}' already exists. Please choose a different code.");
+                }
+            }
+            return back()->with('error', 'Failed to create program: ' . $e->getMessage());
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to create program: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -113,7 +141,7 @@ class DepartmentController extends Controller
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'code' => ['required', 'string', 'max:10', 'unique:programs,code,' . $program->id],
+            'code' => ['required', 'string', 'max:10', 'unique:programs,code,' . $program->id . ',id,deleted_at,NULL'],
             'description' => ['nullable', 'string'],
             'duration_years' => ['required', 'integer', 'min:1', 'max:10'],
             'is_active' => ['boolean'],

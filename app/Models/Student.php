@@ -13,9 +13,17 @@ class Student extends Model
         'last_name',
         'email',
         'student_number',
+        'department_id',
+        'program_id',
         'year_level',
         'section_id',
+        'gender',
+        'birth_date',
+        'guardian_name',
+        'guardian_contact',
         'status',
+        'priority',
+        'absence_count',
         'notes'
     ];
 
@@ -27,6 +35,16 @@ class Student extends Model
     public function section(): BelongsTo
     {
         return $this->belongsTo(Section::class);
+    }
+
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class);
+    }
+
+    public function program(): BelongsTo
+    {
+        return $this->belongsTo(Program::class);
     }
 
     public function attendanceRecords(): HasMany
@@ -111,5 +129,58 @@ class Student extends Model
               ->orWhere('student_number', 'like', "%{$search}%")
               ->orWhere('email', 'like', "%{$search}%");
         });
+    }
+
+    // Priority calculation methods
+    public function calculateAbsenceCount()
+    {
+        $absenceCount = $this->attendanceRecords()
+            ->where('status', 'absent')
+            ->count();
+        
+        $this->update(['absence_count' => $absenceCount]);
+        return $absenceCount;
+    }
+
+    public function calculatePriority()
+    {
+        $absenceCount = $this->absence_count;
+        
+        if ($absenceCount < 4) {
+            $priority = 'Safe';
+        } elseif ($absenceCount >= 4 && $absenceCount < 8) {
+            $priority = 'Call Needed';
+        } else {
+            $priority = 'PNS';
+        }
+        
+        $this->update(['priority' => $priority]);
+        return $priority;
+    }
+
+    public function updatePriority()
+    {
+        $this->calculateAbsenceCount();
+        return $this->calculatePriority();
+    }
+
+    public function getPriorityColorAttribute(): string
+    {
+        return match ($this->priority) {
+            'Safe' => 'text-green-600',
+            'Call Needed' => 'text-yellow-600',
+            'PNS' => 'text-red-600',
+            default => 'text-gray-600',
+        };
+    }
+
+    public function getPriorityBadgeAttribute(): string
+    {
+        return match ($this->priority) {
+            'Safe' => 'bg-green-100 text-green-800',
+            'Call Needed' => 'bg-yellow-100 text-yellow-800',
+            'PNS' => 'bg-red-100 text-red-800',
+            default => 'bg-gray-100 text-gray-800',
+        };
     }
 }

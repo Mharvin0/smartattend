@@ -1,4 +1,4 @@
-export default function DataTable({ columns, data, actions = true }) {
+export default function DataTable({ columns, data, actions = true, onView, onEdit, onDelete }) {
 	return (
 		<div className="overflow-x-auto">
 			<table className="min-w-full divide-y divide-gray-200">
@@ -22,7 +22,32 @@ export default function DataTable({ columns, data, actions = true }) {
 							))}
 							{actions && (
 								<td className="whitespace-nowrap px-6 py-4 text-right text-sm">
-									<button className="font-medium text-brand-primary hover:text-brand-primary/80">Edit</button>
+									<div className="flex items-center justify-end space-x-2">
+										{onView && (
+											<button 
+												onClick={() => onView(row)}
+												className="font-medium text-blue-600 hover:text-blue-800"
+											>
+												View
+											</button>
+										)}
+										{onEdit && (
+											<button 
+												onClick={() => onEdit(row)}
+												className="font-medium text-green-600 hover:text-green-800"
+											>
+												Edit
+											</button>
+										)}
+										{onDelete && (
+											<button 
+												onClick={() => onDelete(row)}
+												className="font-medium text-red-600 hover:text-red-800"
+											>
+												Delete
+											</button>
+										)}
+									</div>
 								</td>
 							)}
 						</tr>

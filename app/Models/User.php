@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class User extends Authenticatable
 {
@@ -22,6 +23,8 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'department_id',
+        'program_id',
     ];
 
     /**
@@ -45,5 +48,31 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * Get the sections assigned to this teacher.
+     */
+    public function sections(): BelongsToMany
+    {
+        return $this->belongsToMany(Section::class, 'teacher_sections', 'teacher_id', 'section_id')
+                    ->withPivot('subject')
+                    ->withTimestamps();
+    }
+
+    /**
+     * Get the department that this user belongs to.
+     */
+    public function department()
+    {
+        return $this->belongsTo(Department::class);
+    }
+
+    /**
+     * Get the program that this user belongs to.
+     */
+    public function program()
+    {
+        return $this->belongsTo(Program::class);
     }
 }

@@ -1,5 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, useForm, usePage } from '@inertiajs/react';
+import { Head, useForm, usePage, router } from '@inertiajs/react';
 import DataTable from '@/Components/DataTable';
 import { useState, useEffect } from 'react';
 
@@ -31,16 +31,25 @@ export default function Subjects({ subjects, sections, departments, programs, ye
 	const [filterSemester, setFilterSemester] = useState('');
 	const [filterSection, setFilterSection] = useState('');
 
+	// State for edit functionality
+	const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+	const [editingSubject, setEditingSubject] = useState(null);
+	const [isLoading, setIsLoading] = useState(false);
+
 	// Filter programs based on selected department
 	const handleDepartmentChange = (departmentName) => {
 		setData('department', departmentName);
 		setData('program', '');
 		setData('program_id', '');
 		
-		if (departmentName) {
+		// Find department ID
+		const departmentObj = departments.find(d => d.name === departmentName);
+		setData('department_id', departmentObj?.id || '');
+		
+		if (departmentName && departmentObj) {
 			const departmentPrograms = {};
 			programs.forEach(program => {
-				if (program.department_id && departments.find(dept => dept.name === departmentName && dept.id === program.department_id)) {
+				if (String(program.department_id) === String(departmentObj.id)) {
 					departmentPrograms[program.code] = program.name;
 				}
 			});
@@ -53,15 +62,29 @@ export default function Subjects({ subjects, sections, departments, programs, ye
 	// Filter sections based on selected program and year level
 	useEffect(() => {
 		if (data.program && data.year_level) {
-			const filteredSections = sections.filter(section => 
-				section.program === data.program && 
-				section.year_level === data.year_level
-			);
-			setAvailableSections(filteredSections);
+			// Find the program ID from the selected program code
+			const selectedProgram = programs.find(p => p.code === data.program);
+			const programId = selectedProgram?.id;
+			
+			if (programId) {
+				const filteredSections = sections.filter(section => {
+					// Check both program_id and program relationship with proper type handling
+					const matchesProgram = String(section.program_id) === String(programId) || 
+										  (section.program && String(section.program.id) === String(programId)) ||
+										  (typeof section.program === 'string' && section.program === data.program);
+					
+					const matchesYearLevel = section.year_level === data.year_level;
+					
+					return matchesProgram && matchesYearLevel;
+				});
+				setAvailableSections(filteredSections);
+			} else {
+				setAvailableSections([]);
+			}
 		} else {
 			setAvailableSections(sections);
 		}
-	}, [data.program, data.year_level, sections]);
+	}, [data.program, data.year_level, sections, programs]);
 
 	// Filter subjects based on search and filter criteria
 	const filteredSubjects = subjects.filter(subject => {
@@ -94,6 +117,38 @@ export default function Subjects({ subjects, sections, departments, programs, ye
 		setFilterYearLevel('');
 		setFilterSemester('');
 		setFilterSection('');
+	};
+
+	// Handle edit subject
+	const handleEditSubject = (subject) => {
+		setEditingSubject(subject);
+		setIsEditModalOpen(true);
+	};
+
+	// Handle delete subject
+	const handleDeleteSubject = async (subject) => {
+		if (confirm(`Are you sure you want to delete "${subject.name}"? This action cannot be undone.`)) {
+			setIsLoading(true);
+			try {
+				router.delete(route('admin.subjects.destroy', subject.id), {
+					onSuccess: () => {
+						setIsLoading(false);
+					},
+					onError: () => {
+						setIsLoading(false);
+					}
+				});
+			} catch (error) {
+				setIsLoading(false);
+				console.error('Error deleting subject:', error);
+			}
+		}
+	};
+
+	// Close edit modal
+	const closeEditModal = () => {
+		setIsEditModalOpen(false);
+		setEditingSubject(null);
 	};
 
 	return (
@@ -131,7 +186,14 @@ export default function Subjects({ subjects, sections, departments, programs, ye
 								<select
 									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
 									value={data.program}
-									onChange={(e) => setData('program', e.target.value)}
+									onChange={(e) => {
+										const programCode = e.target.value;
+										setData('program', programCode);
+										
+										// Find program ID from the programs list
+										const programObj = programs.find(p => p.code === programCode);
+										setData('program_id', programObj?.id || '');
+									}}
 									disabled={!data.department}
 								>
 									<option value="">{data.department ? 'Select Program' : 'Select Department first'}</option>
@@ -265,8 +327,8 @@ export default function Subjects({ subjects, sections, departments, programs, ye
 									onChange={(e) => setFilterDepartment(e.target.value)}
 								>
 									<option value="">All Departments</option>
-									{uniqueDepartments.map((dept) => (
-										<option key={dept} value={dept}>{dept}</option>
+									{uniqueDepartments.map((dept, index) => (
+										<option key={typeof dept === 'string' ? dept : dept?.id || `dept-${index}`} value={dept}>{typeof dept === 'string' ? dept : dept?.name || dept}</option>
 									))}
 								</select>
 
@@ -277,8 +339,8 @@ export default function Subjects({ subjects, sections, departments, programs, ye
 									onChange={(e) => setFilterProgram(e.target.value)}
 								>
 									<option value="">All Programs</option>
-									{uniquePrograms.map((program) => (
-										<option key={program} value={program}>{program}</option>
+									{uniquePrograms.map((program, index) => (
+										<option key={typeof program === 'string' ? program : program?.id || `program-${index}`} value={program}>{typeof program === 'string' ? program : program?.name || program?.code || program}</option>
 									))}
 								</select>
 
@@ -313,8 +375,8 @@ export default function Subjects({ subjects, sections, departments, programs, ye
 									onChange={(e) => setFilterSection(e.target.value)}
 								>
 									<option value="">All Sections</option>
-									{uniqueSections.map((section) => (
-										<option key={section} value={section}>{section}</option>
+									{uniqueSections.map((section, index) => (
+										<option key={typeof section === 'string' ? section : section?.id || `section-${index}`} value={section}>{typeof section === 'string' ? section : section?.name || section}</option>
 									))}
 								</select>
 							</div>
@@ -325,8 +387,26 @@ export default function Subjects({ subjects, sections, departments, programs, ye
 								columns={[
 									{ key: 'code', label: 'Code' },
 									{ key: 'name', label: 'Subject Name' },
-									{ key: 'department', label: 'Department' },
-									{ key: 'program', label: 'Program' },
+									{ 
+										key: 'department', 
+										label: 'Department',
+										render: (department) => {
+											const deptName = typeof department === 'string' ? department : department?.name || 'No Department';
+											return (
+												<span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-sm font-medium text-blue-800">
+													{deptName}
+												</span>
+											);
+										}
+									},
+									{ 
+										key: 'program', 
+										label: 'Program',
+										render: (program) => {
+											const programName = typeof program === 'string' ? program : program?.name || program?.code || 'No Program';
+											return programName;
+										}
+									},
 									{ key: 'year_level', label: 'Year Level' },
 									{ key: 'semester', label: 'Semester' },
 									{ key: 'adviser', label: 'Adviser' },
@@ -342,6 +422,8 @@ export default function Subjects({ subjects, sections, departments, programs, ye
 								]}
 								data={filteredSubjects}
 								actions={true}
+								onEdit={handleEditSubject}
+								onDelete={handleDeleteSubject}
 							/>
 						) : (
 							<div className="text-center py-12">
@@ -369,6 +451,160 @@ export default function Subjects({ subjects, sections, departments, programs, ye
 					</div>
 				</div>
 			</div>
+
+			{/* Edit Subject Modal */}
+			{isEditModalOpen && editingSubject && (
+				<div className="fixed inset-0 z-50 overflow-y-auto">
+					<div className="flex min-h-screen items-center justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+						<div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={closeEditModal}></div>
+						
+						<div className="inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:align-middle">
+							<div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+								<div className="sm:flex sm:items-start">
+									<div className="mt-3 text-center sm:mt-0 sm:text-left w-full">
+										<h3 className="text-lg font-medium leading-6 text-gray-900 mb-4">
+											Edit Subject: {editingSubject.name}
+										</h3>
+										
+										<form onSubmit={(e) => {
+											e.preventDefault();
+											setIsLoading(true);
+											router.patch(route('admin.subjects.update', editingSubject.id), {
+												code: editingSubject.code,
+												name: editingSubject.name,
+												department: editingSubject.department,
+												program: editingSubject.program,
+												year_level: editingSubject.year_level,
+												semester: editingSubject.semester,
+												adviser: editingSubject.adviser,
+												section_id: editingSubject.section_id
+											}, {
+												onSuccess: () => {
+													setIsLoading(false);
+													closeEditModal();
+												},
+												onError: () => {
+													setIsLoading(false);
+												}
+											});
+										}} className="space-y-4">
+											<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+												<div>
+													<label className="block text-sm font-medium text-gray-700 mb-2">Subject Code</label>
+													<input
+														type="text"
+														value={editingSubject.code || ''}
+														onChange={(e) => setEditingSubject({...editingSubject, code: e.target.value})}
+														className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+														required
+													/>
+												</div>
+												<div>
+													<label className="block text-sm font-medium text-gray-700 mb-2">Subject Name</label>
+													<input
+														type="text"
+														value={editingSubject.name || ''}
+														onChange={(e) => setEditingSubject({...editingSubject, name: e.target.value})}
+														className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+														required
+													/>
+												</div>
+												<div>
+													<label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
+													<input
+														type="text"
+														value={editingSubject.department || ''}
+														onChange={(e) => setEditingSubject({...editingSubject, department: e.target.value})}
+														className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+														required
+													/>
+												</div>
+												<div>
+													<label className="block text-sm font-medium text-gray-700 mb-2">Program</label>
+													<input
+														type="text"
+														value={editingSubject.program || ''}
+														onChange={(e) => setEditingSubject({...editingSubject, program: e.target.value})}
+														className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+														required
+													/>
+												</div>
+												<div>
+													<label className="block text-sm font-medium text-gray-700 mb-2">Year Level</label>
+													<select
+														value={editingSubject.year_level || ''}
+														onChange={(e) => setEditingSubject({...editingSubject, year_level: e.target.value})}
+														className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+														required
+													>
+														<option value="">Select Year Level</option>
+														{yearLevels.map((year) => (
+															<option key={year} value={year}>{year}</option>
+														))}
+													</select>
+												</div>
+												<div>
+													<label className="block text-sm font-medium text-gray-700 mb-2">Semester</label>
+													<select
+														value={editingSubject.semester || ''}
+														onChange={(e) => setEditingSubject({...editingSubject, semester: e.target.value})}
+														className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+														required
+													>
+														<option value="">Select Semester</option>
+														{semesters.map((sem) => (
+															<option key={sem} value={sem}>{sem}</option>
+														))}
+													</select>
+												</div>
+												<div>
+													<label className="block text-sm font-medium text-gray-700 mb-2">Section</label>
+													<select
+														value={editingSubject.section_id || ''}
+														onChange={(e) => setEditingSubject({...editingSubject, section_id: e.target.value})}
+														className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+													>
+														<option value="">Select Section</option>
+														{sections.map((s) => (
+															<option key={s.id} value={s.id}>{s.name}</option>
+														))}
+													</select>
+												</div>
+												<div>
+													<label className="block text-sm font-medium text-gray-700 mb-2">Adviser</label>
+													<input
+														type="text"
+														value={editingSubject.adviser || ''}
+														onChange={(e) => setEditingSubject({...editingSubject, adviser: e.target.value})}
+														className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+													/>
+												</div>
+											</div>
+											
+											<div className="flex items-center justify-end space-x-3 pt-4">
+												<button
+													type="button"
+													onClick={closeEditModal}
+													className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+												>
+													Cancel
+												</button>
+												<button
+													type="submit"
+													disabled={isLoading}
+													className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+												>
+													{isLoading ? 'Saving...' : 'Save Changes'}
+												</button>
+											</div>
+										</form>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
 		</AuthenticatedLayout>
 	);
 }

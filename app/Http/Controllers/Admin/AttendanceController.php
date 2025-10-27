@@ -27,7 +27,13 @@ class AttendanceController extends Controller
 {
 	public function __construct()
 	{
-		$this->middleware(['auth', 'role:Admin|Super Admin']);
+		$this->middleware(['auth']);
+		$this->middleware(function ($request, $next) {
+			if (!auth()->user()->hasAnyRole(['Admin', 'Super Admin'])) {
+				abort(403, 'Unauthorized access');
+			}
+			return $next($request);
+		});
 		$this->middleware('permission:capture attendance')->only(['bySection','storeSection','bySchedule','storeSchedule']);
 		$this->middleware('permission:import attendance')->only(['importForm','importStore']);
 	}
@@ -66,7 +72,7 @@ class AttendanceController extends Controller
 		// Get attendance calendar data
 		$calendarData = $this->getAttendanceCalendarData($filters);
 
-		return Inertia::render('Admin/Attendance', [
+		return Inertia::render('Admin/AttendanceEnhanced', [
 			'stats' => $stats,
 			'todayAttendance' => $todayAttendance,
 			'trends' => $trends,
@@ -419,6 +425,292 @@ class AttendanceController extends Controller
 				'attendanceByTime' => [],
 			], 500);
 		}
+	}
+
+	// Department/Program Attendance Rate Tracker
+	public function departmentAttendanceRates(Request $request)
+	{
+		$filters = [
+			'date_range' => $request->get('date_range') ?: [now()->subDays(30)->format('Y-m-d'), now()->format('Y-m-d')],
+			'department_id' => $request->get('department_id'),
+		];
+
+		try {
+			$departments = Department::with(['programs.sections.students'])
+				->when($filters['department_id'], function($query, $departmentId) {
+					return $query->where('id', $departmentId);
+				})
+				->get()
+				->map(function($department) use ($filters) {
+					$programs = $department->programs->map(function($program) use ($filters) {
+						$sections = $program->sections;
+						$totalStudents = $sections->sum(function($section) {
+							return $section->students->count();
+						});
+
+						// Calculate attendance rates for this program
+						$attendanceStats = AttendanceRecord::getAttendanceStats([
+							'date_range' => $filters['date_range'],
+							'program_id' => $program->id,
+						]);
+
+						return [
+							'id' => $program->id,
+							'name' => $program->name,
+							'code' => $program->code,
+							'total_students' => $totalStudents,
+							'attendance_rate' => $attendanceStats['present_percentage'],
+							'total_records' => $attendanceStats['total'],
+							'present' => $attendanceStats['present'],
+							'late' => $attendanceStats['late'],
+							'absent' => $attendanceStats['absent'],
+							'excused' => $attendanceStats['excused'],
+							'sections_count' => $sections->count(),
+						];
+					});
+
+					// Calculate overall department attendance rate
+					$departmentStats = AttendanceRecord::getAttendanceStats([
+						'date_range' => $filters['date_range'],
+						'department_id' => $department->id,
+					]);
+
+					return [
+						'id' => $department->id,
+						'name' => $department->name,
+						'code' => $department->code,
+						'attendance_rate' => $departmentStats['present_percentage'],
+						'total_records' => $departmentStats['total'],
+						'present' => $departmentStats['present'],
+						'late' => $departmentStats['late'],
+						'absent' => $departmentStats['absent'],
+						'excused' => $departmentStats['excused'],
+						'programs' => $programs,
+						'programs_count' => $programs->count(),
+					];
+				});
+
+			return response()->json([
+				'departments' => $departments,
+				'filters' => $filters,
+			]);
+		} catch (\Exception $e) {
+			\Log::error('Department attendance rates error: ' . $e->getMessage());
+			return response()->json(['error' => 'Failed to load department attendance rates'], 500);
+		}
+	}
+
+	// Faculty Attendance Compliance Tracker
+	public function facultyCompliance(Request $request)
+	{
+		$filters = [
+			'date_range' => $request->get('date_range') ?: [now()->subDays(30)->format('Y-m-d'), now()->format('Y-m-d')],
+			'department_id' => $request->get('department_id'),
+		];
+
+		try {
+			// Get all teachers and their assigned sections
+			$teachers = \App\Models\User::role('Teacher')
+				->with(['sections.program.department'])
+				->get()
+				->map(function($teacher) use ($filters) {
+					$sections = $teacher->sections;
+					$totalSections = $sections->count();
+					
+					// Calculate expected attendance records for this teacher's sections
+					$expectedRecords = 0;
+					$actualRecords = 0;
+					$lateRecords = 0;
+					
+					foreach ($sections as $section) {
+						// Count expected attendance days in the date range
+						$startDate = Carbon::parse($filters['date_range'][0]);
+						$endDate = Carbon::parse($filters['date_range'][1]);
+						$daysDiff = $startDate->diffInDays($endDate);
+						$expectedRecords += $section->students->count() * $daysDiff;
+						
+						// Count actual attendance records recorded by this teacher
+						$actualRecords += AttendanceRecord::whereHas('student', function($query) use ($section) {
+								$query->where('section_id', $section->id);
+							})
+							->where('recorded_by', $teacher->id)
+							->whereBetween('date', $filters['date_range'])
+							->count();
+						
+						// Count late submissions (records created more than 1 hour after class time)
+						$lateRecords += AttendanceRecord::whereHas('student', function($query) use ($section) {
+								$query->where('section_id', $section->id);
+							})
+							->where('recorded_by', $teacher->id)
+							->whereBetween('date', $filters['date_range'])
+							->whereRaw('TIMESTAMPDIFF(HOUR, CONCAT(date, " ", TIME(schedules.time_start)), created_at) > 1')
+							->join('schedules', 'attendance_records.schedule_id', '=', 'schedules.id')
+							->count();
+					}
+					
+					$complianceRate = $expectedRecords > 0 ? round(($actualRecords / $expectedRecords) * 100, 2) : 0;
+					$timelinessRate = $actualRecords > 0 ? round((($actualRecords - $lateRecords) / $actualRecords) * 100, 2) : 0;
+					
+					return [
+						'id' => $teacher->id,
+						'name' => $teacher->name,
+						'email' => $teacher->email,
+						'total_sections' => $totalSections,
+						'expected_records' => $expectedRecords,
+						'actual_records' => $actualRecords,
+						'late_records' => $lateRecords,
+						'compliance_rate' => $complianceRate,
+						'timeliness_rate' => $timelinessRate,
+						'status' => $this->getComplianceStatus($complianceRate, $timelinessRate),
+						'departments' => $sections->pluck('program.department.name')->unique()->values(),
+					];
+				});
+
+			return response()->json([
+				'teachers' => $teachers,
+				'filters' => $filters,
+				'summary' => [
+					'total_teachers' => $teachers->count(),
+					'average_compliance' => $teachers->avg('compliance_rate'),
+					'average_timeliness' => $teachers->avg('timeliness_rate'),
+					'compliant_teachers' => $teachers->where('compliance_rate', '>=', 90)->count(),
+				],
+			]);
+		} catch (\Exception $e) {
+			\Log::error('Faculty compliance error: ' . $e->getMessage());
+			return response()->json(['error' => 'Failed to load faculty compliance data'], 500);
+		}
+	}
+
+	// Automated Reports Generation
+	public function generateReport(Request $request)
+	{
+		$request->validate([
+			'report_type' => 'required|in:weekly,monthly',
+			'department_id' => 'nullable|exists:departments,id',
+			'program_id' => 'nullable|exists:programs,id',
+			'format' => 'required|in:pdf,excel',
+			'date_range' => 'required|array|size:2',
+			'date_range.*' => 'required|date',
+		]);
+
+		try {
+			$filters = [
+				'date_range' => $request->date_range,
+				'department_id' => $request->department_id,
+				'program_id' => $request->program_id,
+			];
+
+			// Generate report data
+			$reportData = $this->prepareReportData($filters, $request->report_type);
+			
+			// Log audit event
+			AuditLogService::logAttendance(
+				AuditLog::TYPE_DATA_EXPORT,
+				"Generated {$request->report_type} attendance report",
+				$filters
+			);
+
+			if ($request->format === 'pdf') {
+				return $this->generatePdfReport($reportData, $request->report_type, $filters);
+			} else {
+				return $this->generateExcelReport($reportData, $request->report_type, $filters);
+			}
+		} catch (\Exception $e) {
+			\Log::error('Report generation error: ' . $e->getMessage());
+			return response()->json(['error' => 'Failed to generate report'], 500);
+		}
+	}
+
+	private function getComplianceStatus($complianceRate, $timelinessRate)
+	{
+		if ($complianceRate >= 95 && $timelinessRate >= 90) {
+			return 'excellent';
+		} elseif ($complianceRate >= 85 && $timelinessRate >= 80) {
+			return 'good';
+		} elseif ($complianceRate >= 70 && $timelinessRate >= 70) {
+			return 'fair';
+		} else {
+			return 'needs_improvement';
+		}
+	}
+
+	private function prepareReportData($filters, $reportType)
+	{
+		$stats = AttendanceRecord::getAttendanceStats($filters);
+		$trends = AttendanceRecord::getAttendanceTrends($filters);
+		$topAbsentStudents = $this->getTopAbsentStudents($filters);
+		
+		// Get department/program breakdown
+		$departments = Department::with(['programs.sections.students'])
+			->when($filters['department_id'], function($query, $departmentId) {
+				return $query->where('id', $departmentId);
+			})
+			->get()
+			->map(function($department) use ($filters) {
+				$departmentStats = AttendanceRecord::getAttendanceStats([
+					'date_range' => $filters['date_range'],
+					'department_id' => $department->id,
+				]);
+
+				$programs = $department->programs->map(function($program) use ($filters) {
+					$programStats = AttendanceRecord::getAttendanceStats([
+						'date_range' => $filters['date_range'],
+						'program_id' => $program->id,
+					]);
+
+					return [
+						'name' => $program->name,
+						'code' => $program->code,
+						'attendance_rate' => $programStats['present_percentage'],
+						'total_records' => $programStats['total'],
+						'present' => $programStats['present'],
+						'absent' => $programStats['absent'],
+					];
+				});
+
+				return [
+					'name' => $department->name,
+					'code' => $department->code,
+					'attendance_rate' => $departmentStats['present_percentage'],
+					'total_records' => $departmentStats['total'],
+					'present' => $departmentStats['present'],
+					'absent' => $departmentStats['absent'],
+					'programs' => $programs,
+				];
+			});
+
+		return [
+			'report_type' => $reportType,
+			'date_range' => $filters['date_range'],
+			'generated_at' => now()->format('Y-m-d H:i:s'),
+			'stats' => $stats,
+			'trends' => $trends,
+			'top_absent_students' => $topAbsentStudents,
+			'departments' => $departments,
+		];
+	}
+
+	private function generatePdfReport($data, $reportType, $filters)
+	{
+		// This would integrate with a PDF library like DomPDF or TCPDF
+		// For now, return a placeholder response
+		return response()->json([
+			'success' => true,
+			'message' => 'PDF report generation would be implemented here',
+			'data' => $data,
+		]);
+	}
+
+	private function generateExcelReport($data, $reportType, $filters)
+	{
+		// This would integrate with a library like Laravel Excel
+		// For now, return a placeholder response
+		return response()->json([
+			'success' => true,
+			'message' => 'Excel report generation would be implemented here',
+			'data' => $data,
+		]);
 	}
 
 	// Student attendance history

@@ -24,6 +24,7 @@
     },
     "dependencies": {
         "chart.js": "^4.4.1",
+        "lucide-react": "^0.548.0",
         "ziggy-js": "^1.8.1"
     }
 }

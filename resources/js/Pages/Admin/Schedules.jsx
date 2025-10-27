@@ -27,12 +27,27 @@ export default function Schedules({ schedules, departments, programs, sections, 
 	const [filteredSections, setFilteredSections] = useState([]);
 	const [filteredSubjects, setFilteredSubjects] = useState([]);
 
+	// Filter options for the filter section
+	const [filterPrograms, setFilterPrograms] = useState([]);
+	const [filterSections, setFilterSections] = useState([]);
+	const [filterSubjects, setFilterSubjects] = useState([]);
+
 	const flash = usePage().props.flash || {};
+
+	// Initialize filter options
+	useEffect(() => {
+		setFilterPrograms(programs);
+		setFilterSections(sections);
+		setFilterSubjects(subjects);
+	}, [programs, sections, subjects]);
 
 	// Filter programs based on selected department
 	useEffect(() => {
 		if (data.department_id) {
-			const filtered = programs.filter(p => p.department_id == data.department_id);
+			const filtered = programs.filter(p => {
+				// Handle both string and number comparisons
+				return String(p.department_id) === String(data.department_id);
+			});
 			setFilteredPrograms(filtered);
 			// Reset program selection when department changes
 			setData('program_id', '');
@@ -44,7 +59,12 @@ export default function Schedules({ schedules, departments, programs, sections, 
 	// Filter sections based on selected program
 	useEffect(() => {
 		if (data.program_id) {
-			const filtered = sections.filter(s => s.program_id == data.program_id);
+			const filtered = sections.filter(s => {
+				// Check both program_id and program relationship with proper type handling
+				return String(s.program_id) === String(data.program_id) || 
+					   (s.program && String(s.program.id) === String(data.program_id)) ||
+					   (typeof s.program === 'string' && s.program === data.program_id);
+			});
 			setFilteredSections(filtered);
 			// Reset section selection when program changes
 			setData('section_id', '');
@@ -56,7 +76,12 @@ export default function Schedules({ schedules, departments, programs, sections, 
 	// Filter subjects based on selected program
 	useEffect(() => {
 		if (data.program_id) {
-			const filtered = subjects.filter(s => s.program_id == data.program_id);
+			const filtered = subjects.filter(s => {
+				// Check both program_id and program relationship with proper type handling
+				return String(s.program_id) === String(data.program_id) || 
+					   (s.program && String(s.program.id) === String(data.program_id)) ||
+					   (typeof s.program === 'string' && s.program === data.program_id);
+			});
 			setFilteredSubjects(filtered);
 			// Reset subject selection when program changes
 			setData('subject_id', '');
@@ -64,6 +89,54 @@ export default function Schedules({ schedules, departments, programs, sections, 
 			setFilteredSubjects(subjects);
 		}
 	}, [data.program_id, subjects]);
+
+	// Filter options for filter dropdowns based on selected department
+	useEffect(() => {
+		if (filterData.department_id) {
+			const filtered = programs.filter(p => String(p.department_id) === String(filterData.department_id));
+			setFilterPrograms(filtered);
+			// Reset program filter when department changes
+			if (filterData.program_id && !filtered.find(p => p.id == filterData.program_id)) {
+				handleFilterChange('program_id', '');
+			}
+		} else {
+			setFilterPrograms(programs);
+		}
+	}, [filterData.department_id, programs]);
+
+	useEffect(() => {
+		if (filterData.program_id) {
+			const filtered = sections.filter(s => {
+				return String(s.program_id) === String(filterData.program_id) || 
+					   (s.program && String(s.program.id) === String(filterData.program_id)) ||
+					   (typeof s.program === 'string' && s.program === filterData.program_id);
+			});
+			setFilterSections(filtered);
+			// Reset section filter when program changes
+			if (filterData.section_id && !filtered.find(s => s.id == filterData.section_id)) {
+				handleFilterChange('section_id', '');
+			}
+		} else {
+			setFilterSections(sections);
+		}
+	}, [filterData.program_id, sections]);
+
+	useEffect(() => {
+		if (filterData.program_id) {
+			const filtered = subjects.filter(s => {
+				return String(s.program_id) === String(filterData.program_id) || 
+					   (s.program && String(s.program.id) === String(filterData.program_id)) ||
+					   (typeof s.program === 'string' && s.program === filterData.program_id);
+			});
+			setFilterSubjects(filtered);
+			// Reset subject filter when program changes
+			if (filterData.subject_id && !filtered.find(s => s.id == filterData.subject_id)) {
+				handleFilterChange('subject_id', '');
+			}
+		} else {
+			setFilterSubjects(subjects);
+		}
+	}, [filterData.program_id, subjects]);
 
 	const submit = (e) => { 
 		e.preventDefault(); 
@@ -263,7 +336,7 @@ export default function Schedules({ schedules, departments, programs, sections, 
 									onChange={(e) => handleFilterChange('program_id', e.target.value)}
 								>
 									<option value="">All Programs</option>
-									{programs.map((p) => (
+									{filterPrograms.map((p) => (
 										<option key={p.id} value={p.id}>{p.name}</option>
 									))}
 								</select>
@@ -277,7 +350,7 @@ export default function Schedules({ schedules, departments, programs, sections, 
 									onChange={(e) => handleFilterChange('section_id', e.target.value)}
 								>
 									<option value="">All Sections</option>
-									{sections.map((s) => (
+									{filterSections.map((s) => (
 										<option key={s.id} value={s.id}>{s.name}</option>
 									))}
 								</select>
@@ -291,7 +364,7 @@ export default function Schedules({ schedules, departments, programs, sections, 
 									onChange={(e) => handleFilterChange('subject_id', e.target.value)}
 								>
 									<option value="">All Subjects</option>
-									{subjects.map((s) => (
+									{filterSubjects.map((s) => (
 										<option key={s.id} value={s.id}>{s.name} ({s.code})</option>
 									))}
 								</select>

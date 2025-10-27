@@ -16,7 +16,7 @@ export default function Welcome({ auth, canLogin }) {
                             <div className="flex items-center space-x-4">
                                 {auth.user ? (
                                     <Link
-                                        href={route('admin.dashboard')}
+                                        href={route('admin.admin-page')}
                                         className="inline-flex items-center rounded-lg bg-brand-primary px-6 py-3 text-lg font-semibold text-white shadow-sm transition-all duration-200 hover:bg-brand-primary/90 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-brand-primary focus:ring-offset-2"
                                     >
                                         Dashboard
@@ -56,10 +56,10 @@ export default function Welcome({ auth, canLogin }) {
                         </p>
                             <div className="mt-12 flex flex-col sm:flex-row gap-6 justify-center">
                             {canLogin && (
-                                <>
+                                <>  
                                     {auth.user ? (
                                         <Link
-                                            href={route('admin.dashboard')}
+                                            href={route('admin.admin-page')}
                                                 className="inline-flex items-center justify-center rounded-xl bg-brand-secondary px-12 py-6 text-xl font-semibold text-black shadow-lg transition-all duration-200 hover:bg-brand-secondary/90 hover:shadow-xl hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-brand-secondary focus:ring-offset-2"
                                         >
                                             Open Dashboard

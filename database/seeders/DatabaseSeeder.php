@@ -14,6 +14,7 @@ class DatabaseSeeder extends Seeder
 	{
 		$superAdminRole = Role::firstOrCreate(['name' => 'Super Admin']);
 		$adminRole = Role::firstOrCreate(['name' => 'Admin']);
+		$teacherRole = Role::firstOrCreate(['name' => 'Teacher']);
 
 		$permissions = [
 			'view reports',
@@ -32,6 +33,7 @@ class DatabaseSeeder extends Seeder
 
 		$superAdminRole->givePermissionTo(Permission::all());
 		$adminRole->givePermissionTo(['view reports','export reports','capture attendance','import attendance','manage interventions']);
+		$teacherRole->givePermissionTo(['view reports','capture attendance']);
 
 		$super = User::firstOrCreate(
 			['email' => 'superadmin@smartattend.local'],
@@ -43,13 +45,22 @@ class DatabaseSeeder extends Seeder
 		$super->syncRoles([$superAdminRole]);
 
 		$admin = User::firstOrCreate(
-			['email' => 'pedrohub@smartattend.local'],
+			['email' => 'admin@smartattend.local'],
 			[
 				'name' => 'PedroHub Admin',
 				'password' => Hash::make('password'),
 			]
 		);
 		$admin->syncRoles([$adminRole]);
+
+		$teacher = User::firstOrCreate(
+			['email' => 'teacher@smartattend.local'],
+			[
+				'name' => 'Teacher 1',
+				'password' => Hash::make('password'),
+			]
+		);
+		$teacher->syncRoles([$teacherRole]);
 
 		// Seed sample data
 		$this->call([

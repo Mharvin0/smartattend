@@ -18,9 +18,9 @@ class SubjectController extends Controller
 			->orderBy('name')
 			->get();
 		
-		$sections = Section::with(['department', 'program'])
+		$sections = Section::with(['department:id,name', 'program:id,name,code'])
 			->orderBy('name')
-			->get(['id','name','department','program','year_level','semester','adviser_name']);
+			->get(['id','name','department_id','program_id','year_level','semester','adviser_name']);
 		
 		$departments = Department::where('is_active', true)->get(['id','name']);
 		$programs = Program::where('is_active', true)->get(['id','name','code','department_id']);

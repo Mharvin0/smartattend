@@ -71,6 +71,7 @@ export default function Login({ status, canResetPassword }) {
                                         placeholder="Enter your email"
                                         value={data.email}
                                         onChange={e => setData('email', e.target.value)}
+                                        autoComplete="email"
                                     />
                                     {errors.email && <div className="mt-2 text-base text-red-600 font-medium">{errors.email}</div>}
                                 </div>
@@ -93,6 +94,7 @@ export default function Login({ status, canResetPassword }) {
                                         placeholder="Enter your password"
                                         value={data.password}
                                         onChange={e => setData('password', e.target.value)}
+                                        autoComplete="current-password"
                                     />
                                     {errors.password && <div className="mt-2 text-base text-red-600 font-medium">{errors.password}</div>}
                                 </div>

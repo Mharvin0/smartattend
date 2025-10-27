@@ -213,7 +213,8 @@ export default function AdminPage() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                    'Accept': 'application/json',
                 },
                 body: JSON.stringify({
                     section_id: selectedSectionForAttendance,
@@ -246,25 +247,27 @@ export default function AdminPage() {
     const handleCreateIntervention = async (interventionData) => {
         setIsLoading(true);
         try {
-            const response = await fetch(route('admin.admin-page.intervention'), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+            // Use Inertia router instead of fetch to avoid CSRF issues
+            router.post(route('admin.admin-page.intervention'), interventionData, {
+                onSuccess: (page) => {
+                    // Check for success message in session
+                    if (page.props.flash?.success) {
+                        alert(page.props.flash.success);
+                    }
+                    setShowInterventionModal(false);
+                    fetchLiveData(); // Refresh live data
                 },
-                body: JSON.stringify(interventionData)
+                onError: (errors) => {
+                    console.error('Intervention creation failed:', errors);
+                    alert('Failed to create intervention: ' + (errors.message || 'Unknown error'));
+                },
+                onFinish: () => {
+                    setIsLoading(false);
+                }
             });
-
-            if (response.ok) {
-                const data = await response.json();
-                alert(data.message);
-                setShowInterventionModal(false);
-                fetchLiveData(); // Refresh live data
-            }
         } catch (error) {
             console.error('Failed to create intervention:', error);
-            alert('Failed to create intervention');
-        } finally {
+            alert('Failed to create intervention: ' + error.message);
             setIsLoading(false);
         }
     };
@@ -277,7 +280,8 @@ export default function AdminPage() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                    'Accept': 'application/json',
                 },
                 body: JSON.stringify(communicationData)
             });
@@ -333,7 +337,8 @@ export default function AdminPage() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                    'Accept': 'application/json',
                 },
                 body: JSON.stringify({
                     operation: operationType,
@@ -373,7 +378,8 @@ export default function AdminPage() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                    'Accept': 'application/json',
                 },
                 body: JSON.stringify({
                     format: exportFormat,
@@ -427,43 +433,41 @@ export default function AdminPage() {
         setIsLoading(true);
         
         try {
-            const response = await fetch(route('admin.admin-page.student.store'), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+            // Use Inertia router instead of fetch to avoid CSRF issues
+            router.post(route('admin.admin-page.student.store'), studentForm, {
+                onSuccess: (page) => {
+                    // Check for success message in session
+                    if (page.props.flash?.success) {
+                        alert(page.props.flash.success);
+                    }
+                    setShowStudentForm(false);
+                    setStudentForm({
+                        first_name: '',
+                        last_name: '',
+                        student_number: '',
+                        department_id: '',
+                        program_id: '',
+                        year_level: '',
+                        section_id: '',
+                        gender: '',
+                        birth_date: '',
+                        guardian_name: '',
+                        guardian_contact: '',
+                        schedule_ids: []
+                    });
+                    fetchLiveData(); // Refresh live data
                 },
-                body: JSON.stringify(studentForm)
+                onError: (errors) => {
+                    console.error('Student creation failed:', errors);
+                    alert('Failed to create student: ' + (errors.message || 'Unknown error'));
+                },
+                onFinish: () => {
+                    setIsLoading(false);
+                }
             });
-
-            if (response.ok) {
-                const data = await response.json();
-                alert(data.message);
-                setShowStudentForm(false);
-                setStudentForm({
-                    first_name: '',
-                    last_name: '',
-                    student_number: '',
-                    department_id: '',
-                    program_id: '',
-                    year_level: '',
-                    section_id: '',
-                    gender: '',
-                    birth_date: '',
-                    guardian_name: '',
-                    guardian_contact: '',
-                    schedule_ids: []
-                });
-                fetchLiveData(); // Refresh live data
-            } else {
-                const errorData = await response.json();
-                console.error('Student creation failed:', errorData);
-                alert(`Student creation failed: ${errorData.message || 'Unknown error'}`);
-            }
         } catch (error) {
             console.error('Failed to create student:', error);
-            alert('Failed to create student');
-        } finally {
+            alert('Failed to create student: ' + error.message);
             setIsLoading(false);
         }
     };
@@ -765,8 +769,8 @@ export default function AdminPage() {
                                     className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-gray-900 shadow-sm outline-none ring-0 transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
                                 >
                                     <option value="">All Teachers</option>
-                                    {subjects?.map(subject => (
-                                        <option key={subject.teacher_id} value={subject.teacher_id}>
+                                    {subjects?.filter(subject => subject.teacher_name).map(subject => (
+                                        <option key={`teacher-${subject.id}-${subject.teacher_id}`} value={subject.teacher_id}>
                                             {subject.teacher_name}
                                         </option>
                                     ))}
@@ -1183,7 +1187,7 @@ export default function AdminPage() {
                                             {selectedStudent.first_name} {selectedStudent.last_name}
                                         </h2>
                                         <p className="text-gray-600">{selectedStudent.student_number}</p>
-                                        <p className="text-sm text-gray-500">{selectedStudent.section?.name} - {selectedStudent.section?.program}</p>
+                                        <p className="text-sm text-gray-500">{selectedStudent.section?.name} - {selectedStudent.section?.program?.name}</p>
                                     </div>
                                 </div>
                                 <button
@@ -1211,7 +1215,7 @@ export default function AdminPage() {
                                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Academic Information</h3>
                                     <div className="space-y-2">
                                         <p><span className="font-medium">Section:</span> {selectedStudent.section?.name}</p>
-                                        <p><span className="font-medium">Program:</span> {selectedStudent.section?.program}</p>
+                                        <p><span className="font-medium">Program:</span> {selectedStudent.section?.program?.name}</p>
                                         <p><span className="font-medium">Year Level:</span> {selectedStudent.year_level || 'Not specified'}</p>
                                         <p><span className="font-medium">Status:</span> 
                                             <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
@@ -1313,7 +1317,7 @@ export default function AdminPage() {
                                     <option value="">Choose a section...</option>
                                     {sections?.map(section => (
                                         <option key={section.id} value={section.id}>
-                                            {section.name} - {section.program}
+                                            {section.name} - {section.program?.name}
                                         </option>
                                     ))}
                                 </select>
@@ -1423,7 +1427,7 @@ export default function AdminPage() {
                                             <div key={section.id} className="flex items-center justify-between">
                                                 <div>
                                                 <span className="text-sm font-medium text-gray-700">{section.name}</span>
-                                                    <p className="text-xs text-gray-500">{section.department} - {section.program}</p>
+                                                    <p className="text-xs text-gray-500">{section.department?.name} - {section.program?.name}</p>
                                                 </div>
                                                 <div className="flex items-center space-x-2">
                                                     <div className="w-32 bg-gray-200 rounded-full h-2">

@@ -17,19 +17,6 @@ export default function Users({ users, roles }) {
 			<Head title="Users" />
 			<div className="min-h-screen bg-gradient-to-br from-brand-primary/10 via-emerald-50/80 to-brand-secondary/5 py-8">
 				<div className="mx-auto max-w-7xl space-y-8 px-4 sm:px-6 lg:px-8">
-					{/* Hero Section */}
-					<div className="text-center mb-12">
-						<div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-brand-primary to-emerald-600 rounded-2xl shadow-lg mb-6">
-							<svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-							</svg>
-						</div>
-						<h1 className="text-4xl font-bold text-gray-900 mb-4">User Management</h1>
-						<p className="text-xl text-gray-600 max-w-2xl mx-auto">
-							Manage system administrators and user access for SmartAttend
-						</p>
-					</div>
-
 					{flash.success && (
 						<div className="pointer-events-none fixed right-6 top-6 z-50 rounded-xl bg-green-600 px-6 py-3 text-base text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">{flash.success}</div>
 					)}

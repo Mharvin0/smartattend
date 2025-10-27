@@ -1,16 +1,16 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, useForm, usePage, router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function Departments({ departments }) {
-	const { data: departmentData, setData: setDepartmentData, post: postDepartment, processing: departmentProcessing, reset: resetDepartment } = useForm({
+	const { data: departmentData, setData: setDepartmentData, post: postDepartment, patch: patchDepartment, processing: departmentProcessing, reset: resetDepartment } = useForm({
 		name: '',
 		code: '',
 		description: '',
 		is_active: true,
 	});
 
-	const { data: programData, setData: setProgramData, post: postProgram, processing: programProcessing, reset: resetProgram } = useForm({
+	const { data: programData, setData: setProgramData, post: postProgram, patch: patchProgram, processing: programProcessing, reset: resetProgram } = useForm({
 		department_id: '',
 		name: '',
 		code: '',
@@ -27,10 +27,21 @@ export default function Departments({ departments }) {
 
 	const flash = usePage().props.flash || {};
 
+	// Auto-hide notifications after 5 seconds
+	useEffect(() => {
+		if (flash.success || flash.error) {
+			const timer = setTimeout(() => {
+				// Clear flash messages by reloading the page without flash
+				router.reload({ only: ['departments'] });
+			}, 5000);
+			return () => clearTimeout(timer);
+		}
+	}, [flash.success, flash.error]);
+
 	const submitDepartment = (e) => {
 		e.preventDefault();
 		if (editingDepartment) {
-			postDepartment(route('super.departments.update', editingDepartment.id), {
+			patchDepartment(route('super.departments.update', editingDepartment.id), {
 				onSuccess: () => {
 					resetDepartment();
 					setEditingDepartment(null);
@@ -50,7 +61,7 @@ export default function Departments({ departments }) {
 	const submitProgram = (e) => {
 		e.preventDefault();
 		if (editingProgram) {
-			postProgram(route('super.programs.update', editingProgram.id), {
+			patchProgram(route('super.programs.update', editingProgram.id), {
 				onSuccess: () => {
 					resetProgram();
 					setEditingProgram(null);
@@ -121,10 +132,20 @@ export default function Departments({ departments }) {
 			<div className="min-h-screen bg-gradient-to-br from-brand-primary/10 via-emerald-50/80 to-brand-secondary/5 py-8">
 				<div className="mx-auto max-w-full space-y-10 px-4 sm:px-6 lg:px-8 xl:px-12">
 					{flash.success && (
-						<div className="pointer-events-none fixed right-6 top-6 z-50 rounded bg-green-600 px-4 py-2 text-sm text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">{flash.success}</div>
+						<div className="pointer-events-none fixed right-6 top-6 z-50 flex items-center gap-3 rounded-lg bg-green-600 px-4 py-3 text-sm text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">
+							<svg className="h-5 w-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+							</svg>
+							<span>{flash.success}</span>
+						</div>
 					)}
 					{flash.error && (
-						<div className="pointer-events-none fixed right-6 top-6 z-50 rounded bg-red-600 px-4 py-2 text-sm text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">{flash.error}</div>
+						<div className="pointer-events-none fixed right-6 top-6 z-50 flex items-center gap-3 rounded-lg bg-red-600 px-4 py-3 text-sm text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">
+							<svg className="h-5 w-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+							</svg>
+							<span>{flash.error}</span>
+						</div>
 					)}
 
 					{/* Department Management */}

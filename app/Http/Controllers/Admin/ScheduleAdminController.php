@@ -61,9 +61,9 @@ class ScheduleAdminController extends Controller
 
 		// Get filter options
 		$departments = Department::orderBy('name')->get(['id', 'name']);
-		$programs = Program::orderBy('name')->get(['id', 'name']);
-		$sections = Section::orderBy('name')->get(['id', 'name']);
-		$subjects = Subject::orderBy('name')->get(['id', 'name', 'code']);
+		$programs = Program::with('department')->orderBy('name')->get(['id', 'name', 'department_id']);
+		$sections = Section::with('program')->orderBy('name')->get(['id', 'name', 'program_id']);
+		$subjects = Subject::with('program')->orderBy('name')->get(['id', 'name', 'code', 'program_id']);
 		$days = Schedule::getDays();
 
 		return Inertia::render('Admin/Schedules', [

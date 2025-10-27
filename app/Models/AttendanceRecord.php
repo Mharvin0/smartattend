@@ -73,7 +73,7 @@ class AttendanceRecord extends Model
 
     public function scopeByDepartment($query, $departmentId)
     {
-        return $query->whereHas('student.section', function($q) use ($departmentId) {
+        return $query->whereHas('student.section.program', function($q) use ($departmentId) {
             $q->where('department_id', $departmentId);
         });
     }

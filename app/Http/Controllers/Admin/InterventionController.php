@@ -18,7 +18,13 @@ class InterventionController extends Controller
 {
 	public function __construct()
 	{
-		$this->middleware(['auth', 'role:Admin|Super Admin']);
+		$this->middleware(['auth']);
+		$this->middleware(function ($request, $next) {
+			if (!auth()->user()->hasAnyRole(['Admin', 'Super Admin'])) {
+				abort(403, 'Unauthorized access');
+			}
+			return $next($request);
+		});
 		$this->middleware('permission:manage interventions');
 	}
 

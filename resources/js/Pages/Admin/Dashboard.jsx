@@ -6,7 +6,7 @@ import StatsCard from '@/Components/StatsCard';
 import DataTable from '@/Components/DataTable';
 
 export default function Dashboard() {
-	const { chart, recentInterventions, recentAbsences, stats, atRiskStudents, recentRecords, todayStats, sections, totalStudentsCount, overallAttendanceRate } = usePage().props;
+	const { chart, recentInterventions, recentAbsences, stats, atRiskStudents, recentRecords, todayStats, sections, totalStudentsCount, overallAttendanceRate, priorityStats } = usePage().props;
 	const [searchTerm, setSearchTerm] = useState('');
 	const [selectedSection, setSelectedSection] = useState('');
 	const [selectedStatus, setSelectedStatus] = useState('');
@@ -184,6 +184,60 @@ export default function Dashboard() {
 						</div>
 					</div>
 
+					{/* Priority Statistics */}
+					<div className="mb-16">
+						<div className="text-center mb-10">
+							<h2 className="text-3xl font-bold text-gray-900 mb-4">Student Priority Overview</h2>
+							<p className="text-lg text-gray-600">Monitor student attendance priorities and intervention needs</p>
+						</div>
+						<div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+							<div className="bg-white rounded-3xl p-8 shadow-lg border border-gray-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
+								<div className="flex items-center justify-between">
+									<div>
+										<p className="text-base font-semibold text-gray-600 mb-2">Safe Students</p>
+										<p className="text-4xl font-bold text-green-600 mb-2">{priorityStats?.safe_count || 0}</p>
+										<p className="text-sm text-gray-500">Less than 4 absences</p>
+									</div>
+									<div className="h-16 w-16 bg-gradient-to-br from-green-100 to-green-200 rounded-2xl flex items-center justify-center group-hover:from-green-200 group-hover:to-green-300 transition-all duration-300">
+										<svg className="h-8 w-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+										</svg>
+									</div>
+								</div>
+							</div>
+
+							<div className="bg-white rounded-3xl p-8 shadow-lg border border-gray-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
+								<div className="flex items-center justify-between">
+									<div>
+										<p className="text-base font-semibold text-gray-600 mb-2">Call Needed</p>
+										<p className="text-4xl font-bold text-yellow-600 mb-2">{priorityStats?.call_needed_count || 0}</p>
+										<p className="text-sm text-gray-500">4-7 absences</p>
+									</div>
+									<div className="h-16 w-16 bg-gradient-to-br from-yellow-100 to-yellow-200 rounded-2xl flex items-center justify-center group-hover:from-yellow-200 group-hover:to-yellow-300 transition-all duration-300">
+										<svg className="h-8 w-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+										</svg>
+									</div>
+								</div>
+							</div>
+
+							<div className="bg-white rounded-3xl p-8 shadow-lg border border-gray-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
+								<div className="flex items-center justify-between">
+									<div>
+										<p className="text-base font-semibold text-gray-600 mb-2">PNS Required</p>
+										<p className="text-4xl font-bold text-red-600 mb-2">{priorityStats?.pns_count || 0}</p>
+										<p className="text-sm text-gray-500">8+ absences</p>
+									</div>
+									<div className="h-16 w-16 bg-gradient-to-br from-red-100 to-red-200 rounded-2xl flex items-center justify-center group-hover:from-red-200 group-hover:to-red-300 transition-all duration-300">
+										<svg className="h-8 w-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+										</svg>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
 					{/* Quick Actions */}
 					<div className="mb-16">
 						<div className="text-center mb-10">
@@ -229,6 +283,20 @@ export default function Dashboard() {
 									<div>
 										<h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">Reports</h3>
 										<p className="text-sm text-gray-500">View analytics</p>
+									</div>
+								</div>
+							</Link>
+
+							<Link href={route('admin.students')} className="group bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-brand-primary transition-all">
+								<div className="flex items-center space-x-4">
+									<div className="h-12 w-12 bg-purple-100 rounded-xl flex items-center justify-center group-hover:bg-purple-500 group-hover:text-white transition-colors">
+										<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+										</svg>
+									</div>
+									<div>
+										<h3 className="font-semibold text-gray-900 group-hover:text-purple-600 transition-colors">Students</h3>
+										<p className="text-sm text-gray-500">Manage priorities</p>
 									</div>
 								</div>
 							</Link>
