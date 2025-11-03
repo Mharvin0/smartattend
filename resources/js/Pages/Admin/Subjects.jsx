@@ -59,32 +59,84 @@ export default function Subjects({ subjects, sections, departments, programs, ye
 		}
 	};
 
-	// Filter sections based on selected program and year level
-	useEffect(() => {
-		if (data.program && data.year_level) {
-			// Find the program ID from the selected program code
-			const selectedProgram = programs.find(p => p.code === data.program);
-			const programId = selectedProgram?.id;
-			
-			if (programId) {
-				const filteredSections = sections.filter(section => {
-					// Check both program_id and program relationship with proper type handling
-					const matchesProgram = String(section.program_id) === String(programId) || 
-										  (section.program && String(section.program.id) === String(programId)) ||
-										  (typeof section.program === 'string' && section.program === data.program);
-					
-					const matchesYearLevel = section.year_level === data.year_level;
-					
-					return matchesProgram && matchesYearLevel;
-				});
-				setAvailableSections(filteredSections);
-			} else {
-				setAvailableSections([]);
-			}
-		} else {
-			setAvailableSections(sections);
-		}
-	}, [data.program, data.year_level, sections, programs]);
+    // Filter sections based on selected department, program, and optionally year level
+    useEffect(() => {
+        // Reset section selection when filters change
+        setData('section_id', '');
+
+        const formYearLevel = String(data.year_level || '').trim();
+
+        // Helper to extract numeric year from various formats
+        const extractYearNumber = (yearStr) => {
+            if (!yearStr) return null;
+            const str = String(yearStr).trim();
+            // Extract first number from strings like "1st Year", "1", "First Year", etc.
+            const match = str.match(/\d+/);
+            return match ? parseInt(match[0]) : null;
+        };
+
+        // Helper to compare year level safely
+        const yearMatches = (section) => {
+            if (!formYearLevel) return true; // if no year chosen, do not restrict
+            const formYearNum = extractYearNumber(formYearLevel);
+            const sectionYearNum = extractYearNumber(section.year_level);
+            
+            // If we can't extract numbers, do exact string match
+            if (formYearNum === null && sectionYearNum === null) {
+                return String(section.year_level || '').trim() === formYearLevel;
+            }
+            
+            // Compare by numeric value if both have numbers
+            if (formYearNum !== null && sectionYearNum !== null) {
+                return formYearNum === sectionYearNum;
+            }
+            
+            // Fallback: exact string match
+            return String(section.year_level || '').trim() === formYearLevel;
+        };
+
+        // If program is selected, show sections for that program (and year if chosen)
+        if (data.program) {
+            const selectedProgram = programs.find(p => p.code === data.program);
+            const programId = selectedProgram?.id;
+
+            if (programId) {
+                const filtered = sections.filter(section => {
+                    const matchesProgram = String(section.program_id) === String(programId) ||
+                        (section.program && String(section.program.id) === String(programId));
+
+                    // If department filter exists, enforce alignment
+                    let matchesDepartment = true;
+                    if (data.department_id) {
+                        const sectionDeptId = section.department_id ||
+                            (section.program && section.program.department_id) ||
+                            (section.department && section.department.id);
+                        matchesDepartment = String(sectionDeptId || '') === String(data.department_id);
+                    }
+
+                    return matchesProgram && matchesDepartment && yearMatches(section);
+                });
+                setAvailableSections(filtered);
+                return;
+            }
+        }
+
+        // If only department is selected (no program), show all sections within department (and year if chosen)
+        if (data.department_id && !data.program) {
+            const filtered = sections.filter(section => {
+                const sectionDeptId = section.department_id ||
+                    (section.program && section.program.department_id) ||
+                    (section.department && section.department.id);
+                const matchesDepartment = String(sectionDeptId || '') === String(data.department_id);
+                return matchesDepartment && yearMatches(section);
+            });
+            setAvailableSections(filtered);
+            return;
+        }
+
+        // Fallback: no filters -> no sections to avoid confusion
+        setAvailableSections([]);
+    }, [data.department_id, data.program, data.year_level, sections, programs, setData]);
 
 	// Filter subjects based on search and filter criteria
 	const filteredSubjects = subjects.filter(subject => {

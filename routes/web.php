@@ -141,10 +141,13 @@ Route::middleware('auth')->group(function () {
         Route::get('/', [SystemAdminController::class, 'index'])->name('dashboard');
         
         // Super Admin tabs
-        Route::get('/interventions', [SystemAdminController::class, 'interventions'])->name('interventions');
+        Route::get('/management', [SystemAdminController::class, 'management'])->name('management');
+        // Backward-compat: redirect old Interventions URL to Management
+        Route::get('/interventions', function () {
+            return redirect()->route('super.management');
+        });
         Route::get('/attendance', [SystemAdminController::class, 'attendance'])->name('attendance');
         Route::get('/sections', [SystemAdminController::class, 'sections'])->name('sections');
-        Route::get('/reports', [SystemAdminController::class, 'reports'])->name('reports');
         
         // Sections Management - Import routes only
         Route::get('/sections/import', [SectionController::class, 'importForm'])->name('sections.import');
@@ -161,11 +164,11 @@ Route::middleware('auth')->group(function () {
         Route::post('/schedules', [ScheduleAdminController::class, 'store'])->name('schedules.store');
         Route::patch('/schedules/{schedule}', [ScheduleAdminController::class, 'update'])->name('schedules.update');
         Route::delete('/schedules/{schedule}', [ScheduleAdminController::class, 'destroy'])->name('schedules.destroy');
-        Route::get('/reports/trends', [SystemAdminController::class, 'getTrendsData'])->name('reports.trends');
-        Route::get('/reports/weekly/pdf', [SystemAdminController::class, 'generateWeeklyPdf'])->name('reports.weekly.pdf');
-        Route::get('/reports/student-records/excel', [SystemAdminController::class, 'exportStudentRecordsExcel'])->name('reports.student-records.excel');
         Route::get('/settings', [SystemAdminController::class, 'settings'])->name('settings');
         
+        // Management remarks
+        Route::post('/management/remarks', [SystemAdminController::class, 'storeManagementRemark'])->name('management.remarks.store');
+
         // Teacher Management Routes
         Route::post('/teachers', [SystemAdminController::class, 'storeTeacher'])->name('teachers.store');
         Route::put('/teachers/{id}', [SystemAdminController::class, 'updateTeacher'])->name('teachers.update');

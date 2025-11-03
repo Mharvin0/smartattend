@@ -231,7 +231,6 @@ class AdminPageController extends Controller
             'student_id' => 'required|exists:students,id',
             'type' => 'required|string|max:255',
             'details' => 'required|string',
-            'priority' => 'required|in:low,medium,high',
             'responsible_staff' => 'nullable|exists:users,id',
             'due_date' => 'nullable|date|after:today',
         ]);
@@ -240,9 +239,8 @@ class AdminPageController extends Controller
             'student_id' => $validated['student_id'],
             'type' => $validated['type'],
             'details' => $validated['details'],
-            'priority' => $validated['priority'],
-            'responsible_staff' => $validated['responsible_staff'],
-            'due_date' => $validated['due_date'],
+            'responsible_staff' => $validated['responsible_staff'] ?? null,
+            'due_date' => $validated['due_date'] ?? null,
             'date' => now(),
             'status' => 'in_progress',
             'recorded_by' => auth()->id(),
@@ -259,7 +257,6 @@ class AdminPageController extends Controller
             'recipients.*' => 'required|exists:users,id',
             'subject' => 'required|string|max:255',
             'message' => 'required|string',
-            'priority' => 'required|in:low,medium,high',
         ]);
 
         // Here you would implement the actual communication logic
@@ -381,7 +378,6 @@ class AdminPageController extends Controller
             'done' => Intervention::where('status', 'done')->count(),
             'in_progress' => Intervention::where('status', 'in_progress')->count(),
             'no_response' => Intervention::where('status', 'no_response')->count(),
-            'high_priority' => Intervention::where('priority', 'high')->count(),
         ];
     }
 
@@ -522,7 +518,6 @@ class AdminPageController extends Controller
         $validated = $request->validate([
             'type' => 'required|string',
             'details' => 'required|string',
-            'priority' => 'required|in:low,medium,high',
             'due_date' => 'required|date',
         ]);
 
@@ -532,7 +527,6 @@ class AdminPageController extends Controller
                 'student_id' => $student->id,
                 'type' => $validated['type'],
                 'details' => $validated['details'],
-                'priority' => $validated['priority'],
                 'due_date' => $validated['due_date'],
                 'date' => now(),
                 'status' => 'in_progress',

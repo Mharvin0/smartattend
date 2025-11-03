@@ -11,6 +11,7 @@ export default function SystemAdmin({
     integrations, 
     systemTools, 
     auditLogs,
+    management,
     interventions,
     departments,
     programs,
@@ -25,7 +26,8 @@ export default function SystemAdmin({
     facultyCompliance,
     teachers: teachersProp = [],
     activeTab: initialActiveTab = 'dashboard',
-    pageTitle = 'System Admin Control'
+    pageTitle = 'System Admin Control',
+    availableMonths = []
 }) {
     const [activeTab, setActiveTab] = useState(initialActiveTab);
     const [currentTime, setCurrentTime] = useState(new Date());
@@ -82,7 +84,26 @@ export default function SystemAdmin({
         section_ids: []
     });
 
-    // Interventions management state
+    // Management (formerly Interventions) state
+    const [managementData, setManagementData] = useState((management && management.data) ? management.data : []);
+    const [showRemarkModal, setShowRemarkModal] = useState(false);
+    const [remarkRecord, setRemarkRecord] = useState(null);
+    const [remarkText, setRemarkText] = useState('');
+    
+    // Management filters
+    const [filterDepartment, setFilterDepartment] = useState('');
+    const [filterSection, setFilterSection] = useState('');
+    const [filterStatus, setFilterStatus] = useState('');
+    const [filterSpecificReason, setFilterSpecificReason] = useState('');
+    const [filterMonth, setFilterMonth] = useState('');
+    const [filterWeek, setFilterWeek] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [showManagementFilters, setShowManagementFilters] = useState(false);
+    const [showImportModal, setShowImportModal] = useState(false);
+    const [importFile, setImportFile] = useState(null);
+    const [importFileType, setImportFileType] = useState('csv');
+    
+    // Interventions legacy state (kept for backward compatibility)
     const [interventionsData, setInterventionsData] = useState(interventions?.data || []);
     const [showInterventionModal, setShowInterventionModal] = useState(false);
     const [editingIntervention, setEditingIntervention] = useState(null);
@@ -126,28 +147,6 @@ export default function SystemAdmin({
         return () => clearInterval(timer);
     }, []);
 
-    // Real-time trends data fetching - Temporarily disabled to prevent console errors
-    useEffect(() => {
-        // Temporarily disabled due to route configuration issues
-        // const fetchTrendsData = async () => {
-        //     try {
-        //         const response = await fetch(route('super.reports.trends'));
-        //         const data = await response.json();
-        //         setLiveDepartmentTrends(data.departmentTrends);
-        //         setLiveFacultyCompliance(data.facultyCompliance);
-        //     } catch (error) {
-        //         console.error('Error fetching trends data:', error);
-        //     }
-        // };
-
-        // // Fetch immediately
-        // fetchTrendsData();
-
-        // // Set up interval to fetch every 30 seconds
-        // const trendsTimer = setInterval(fetchTrendsData, 30000);
-
-        // return () => clearInterval(trendsTimer);
-    }, []);
 
     // Fetch teachers data when Settings tab is active
     useEffect(() => {
@@ -177,77 +176,6 @@ export default function SystemAdmin({
         }
     }, [notification]);
 
-    // Handle Weekly Summary Generation - Temporarily disabled
-    const handleGenerateWeeklySummary = async () => {
-        // Temporarily disabled due to route configuration issues
-        setNotification({ type: 'info', message: 'Weekly Summary generation is temporarily disabled' });
-        // setIsLoading(true);
-        // try {
-        //     const response = await fetch(route('super.reports.weekly.pdf'), {
-        //         method: 'GET',
-        //         headers: {
-        //             'Accept': 'application/pdf',
-        //         },
-        //     });
-        //     
-        //     if (response.ok) {
-        //         const blob = await response.blob();
-        //         const url = window.URL.createObjectURL(blob);
-        //         const a = document.createElement('a');
-        //         a.href = url;
-        //         a.download = `weekly-summary-${new Date().toISOString().split('T')[0]}.pdf`;
-        //         document.body.appendChild(a);
-        //         a.click();
-        //         window.URL.revokeObjectURL(url);
-        //         document.body.removeChild(a);
-        //         
-        //         setNotification({ type: 'success', message: 'Weekly summary PDF generated successfully!' });
-        //     } else {
-        //         throw new Error('Failed to generate PDF');
-        //     }
-        // } catch (error) {
-        //     console.error('Error generating weekly summary:', error);
-        //     setNotification({ type: 'error', message: 'Failed to generate weekly summary. Please try again.' });
-        // } finally {
-        //     setIsLoading(false);
-        // }
-    };
-
-    // Handle Student Records Export - Temporarily disabled
-    const handleExportStudentRecords = async () => {
-        // Temporarily disabled due to route configuration issues
-        setNotification({ type: 'info', message: 'Student Records export is temporarily disabled' });
-        // setIsLoading(true);
-        // try {
-        //     const response = await fetch(route('super.reports.student-records.excel'), {
-        //         method: 'GET',
-        //         headers: {
-        //             'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        //         },
-        //     });
-        //     
-        //     if (response.ok) {
-        //         const blob = await response.blob();
-        //         const url = window.URL.createObjectURL(blob);
-        //         const a = document.createElement('a');
-        //         a.href = url;
-        //         a.download = `student-records-${new Date().toISOString().split('T')[0]}.xlsx`;
-        //         document.body.appendChild(a);
-        //         a.click();
-        //         window.URL.revokeObjectURL(url);
-        //         document.body.removeChild(a);
-        //         
-        //         setNotification({ type: 'success', message: 'Student records Excel file exported successfully!' });
-        //     } else {
-        //         throw new Error('Failed to export Excel');
-        //     }
-        // } catch (error) {
-        //     console.error('Error exporting student records:', error);
-        //     setNotification({ type: 'error', message: 'Failed to export student records. Please try again.' });
-        // } finally {
-        //     setIsLoading(false);
-        // }
-    };
 
     // Teachers management functions
     const handleCreateTeacher = async () => {
@@ -567,8 +495,31 @@ export default function SystemAdmin({
 
     // Section Management Functions
     const handleCreateSection = async () => {
+        // Validate required fields
+        if (!sectionForm.name || !sectionForm.year_level || !sectionForm.academic_year || !sectionForm.semester) {
+            setNotification({ type: 'error', message: 'Please fill in all required fields.' });
+            return;
+        }
+        
+        if (!sectionForm.department_id || !sectionForm.program_id) {
+            setNotification({ type: 'error', message: 'Please select both Department and Program.' });
+            return;
+        }
+
         setIsLoading(true);
         try {
+            // Prepare payload with proper data types
+            const payload = {
+                name: sectionForm.name.trim(),
+                year_level: sectionForm.year_level,
+                academic_year: sectionForm.academic_year,
+                semester: sectionForm.semester,
+                adviser_name: sectionForm.adviser_name || null,
+                department_id: parseInt(sectionForm.department_id),
+                program_id: parseInt(sectionForm.program_id),
+                max_students: sectionForm.max_students ? parseInt(sectionForm.max_students) : null
+            };
+
             const response = await fetch(route('super.sections.store'), {
                 method: 'POST',
                 headers: {
@@ -576,11 +527,12 @@ export default function SystemAdmin({
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
                     'Accept': 'application/json',
                 },
-                body: JSON.stringify(sectionForm)
+                body: JSON.stringify(payload)
             });
 
-            if (response.ok) {
-                const result = await response.json();
+            const result = await response.json();
+
+            if (response.ok && result.success) {
                 setSectionsData([result.section, ...sectionsData]);
                 setShowSectionModal(false);
                 setSectionForm({
@@ -593,10 +545,14 @@ export default function SystemAdmin({
                     program_id: '',
                     max_students: 50
                 });
-                setNotification({ type: 'success', message: 'Section created successfully!' });
+                setNotification({ type: 'success', message: result.message || 'Section created successfully!' });
             } else {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Failed to create section');
+                // Handle validation errors
+                if (result.errors) {
+                    const errorMessages = Object.values(result.errors).flat().join(', ');
+                    throw new Error(errorMessages);
+                }
+                throw new Error(result.message || 'Failed to create section');
             }
         } catch (error) {
             console.error('Error creating section:', error);
@@ -1055,6 +1011,543 @@ export default function SystemAdmin({
         );
     };
 
+    const renderManagement = () => {
+        // Predefined specific reasons
+        const specificReasonOptions = [
+            '1. Death of Provider',
+            '1. Loss of Job of the Provider',
+            '1. Income Priorities',
+            '1. Daily Expenses',
+            '2. Personal Health Concern',
+            '2. Family Health Issues',
+            '3. Parent\'s Decision',
+            '3. Change Address',
+            '3. Prioritize family responsibilities',
+            '4. Learning Challenges',
+            '4. Lack of interest in chosen course',
+            '4. Overwhelming Academic Load',
+            '5. Bullying and Discrimination',
+            '5. Early Marriage or Parenthood',
+            '5. Pregnancy',
+            '6. Distance to School',
+            '6. Lack of Infrastructure',
+            '7. Affected by Calamities',
+            '7. Transferred to SUC',
+            '7. Transferred to LUC',
+            '7. Transferred to another Private Institution',
+            '7. Transferred to another school',
+            '8. Late Enrollee',
+            '8. Section Change',
+            '8. Change in class schedule'
+        ];
+
+        // Filter management data
+        const filteredData = managementData.filter(record => {
+            // Department filter
+            if (filterDepartment && record.department !== filterDepartment) {
+                return false;
+            }
+            
+            // Section filter
+            if (filterSection && record.section !== filterSection) {
+                return false;
+            }
+            
+            // Status filter
+            if (filterStatus && record.status !== filterStatus) {
+                return false;
+            }
+            
+            // Month filter
+            if (filterMonth && record.month !== filterMonth) {
+                return false;
+            }
+            
+            // Week filter
+            if (filterWeek && record.week && record.week.number !== parseInt(filterWeek)) {
+                return false;
+            }
+            
+            // Specific Reasons filter
+            if (filterSpecificReason && (!record.specific_reasons || !record.specific_reasons.toLowerCase().includes(filterSpecificReason.toLowerCase()))) {
+                return false;
+            }
+            
+            // Search filter (student name and student number only)
+            if (searchTerm) {
+                const searchLower = searchTerm.toLowerCase();
+                const studentName = `${record.student?.first_name || ''} ${record.student?.last_name || ''}`.toLowerCase();
+                const studentNumber = (record.student?.student_number || '').toLowerCase();
+                
+                if (!studentName.includes(searchLower) && !studentNumber.includes(searchLower)) {
+                    return false;
+                }
+            }
+            
+            return true;
+        });
+        
+        // Get unique weeks for the selected month
+        const getWeeksForMonth = (monthValue) => {
+            if (!monthValue) return [];
+            const monthRecords = managementData.filter(r => r.month === monthValue);
+            const weeks = [...new Set(monthRecords.map(r => r.week?.number).filter(Boolean))].sort((a, b) => a - b);
+            return weeks;
+        };
+        
+        const availableWeeks = getWeeksForMonth(filterMonth);
+
+        // Get unique values for filters
+        const uniqueDepartments = [...new Set(managementData.map(r => r.department).filter(Boolean))].sort();
+        const uniqueSections = [...new Set(managementData.map(r => r.section).filter(Boolean))].sort();
+        const uniqueStatuses = [...new Set(managementData.map(r => r.status).filter(Boolean))].sort();
+        const uniqueSpecificReasons = [...new Set(managementData.flatMap(r => 
+            r.specific_reasons ? r.specific_reasons.split(', ').map(s => s.trim()) : []
+        ).filter(Boolean))].sort();
+
+        return (
+            <div className="space-y-6">
+                {/* Filters */}
+                <div className="card">
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-lg font-medium text-gray-900">Filters</h3>
+                        <button
+                            onClick={() => setShowManagementFilters(!showManagementFilters)}
+                            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary"
+                        >
+                            <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                            </svg>
+                            {showManagementFilters ? 'Hide Filters' : 'Show Filters'}
+                        </button>
+                    </div>
+
+                    {showManagementFilters && (
+                        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                            {/* Search */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Search (Name or Student No.)</label>
+                                <input
+                                    type="text"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    placeholder="e.g. Juan Dela Cruz or 2020-00001"
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                />
+                            </div>
+                            
+                            {/* Month Filter */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Month</label>
+                                <select
+                                    value={filterMonth}
+                                    onChange={(e) => {
+                                        setFilterMonth(e.target.value);
+                                        setFilterWeek(''); // Reset week when month changes
+                                    }}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                >
+                                    <option value="">All Months</option>
+                                    {availableMonths.map(month => (
+                                        <option key={month.value} value={month.label}>{month.label}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            
+                            {/* Week Filter */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Week</label>
+                                <select
+                                    value={filterWeek}
+                                    onChange={(e) => setFilterWeek(e.target.value)}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                    disabled={!filterMonth}
+                                >
+                                    <option value="">All Weeks</option>
+                                    {availableWeeks.map(week => (
+                                        <option key={week} value={week}>Week {week}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            
+                            {/* Department Filter */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Department</label>
+                                <select
+                                    value={filterDepartment}
+                                    onChange={(e) => {
+                                        setFilterDepartment(e.target.value);
+                                        setFilterSection('');
+                                    }}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                >
+                                    <option value="">All Departments</option>
+                                    {uniqueDepartments.map(dept => (
+                                        <option key={dept} value={dept}>{dept}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            
+                            {/* Section Filter */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Section</label>
+                                <select
+                                    value={filterSection}
+                                    onChange={(e) => setFilterSection(e.target.value)}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                >
+                                    <option value="">All Sections</option>
+                                    {uniqueSections
+                                        .filter(section => !filterDepartment || managementData.find(r => r.section === section && r.department === filterDepartment))
+                                        .map(section => (
+                                            <option key={section} value={section}>{section}</option>
+                                        ))}
+                                </select>
+                            </div>
+                            
+                            {/* Status Filter */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Status</label>
+                                <select
+                                    value={filterStatus}
+                                    onChange={(e) => setFilterStatus(e.target.value)}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                >
+                                    <option value="">All Status</option>
+                                    {uniqueStatuses.map(status => (
+                                        <option key={status} value={status}>{status}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            
+                            {/* Specific Reasons Filter */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Specific Reason</label>
+                                <select
+                                    value={filterSpecificReason}
+                                    onChange={(e) => setFilterSpecificReason(e.target.value)}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                >
+                                    <option value="">All Reasons</option>
+                                    {specificReasonOptions.map(reason => (
+                                        <option key={reason} value={reason}>{reason}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="mt-4 flex justify-between">
+                        <button
+                            onClick={() => {
+                                setFilterDepartment('');
+                                setFilterSection('');
+                                setFilterStatus('');
+                                setFilterSpecificReason('');
+                                setFilterMonth('');
+                                setFilterWeek('');
+                                setSearchTerm('');
+                            }}
+                            className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary"
+                            disabled={!filterDepartment && !filterSection && !filterStatus && !filterSpecificReason && !filterMonth && !filterWeek && !searchTerm}
+                        >
+                            Clear Filters
+                        </button>
+                        <div className="text-sm text-gray-500">
+                            Showing {filteredData.length} of {managementData.length} records
+                        </div>
+                    </div>
+                </div>
+
+                <div className="card">
+                    <div className="mb-6">
+                        {/* Week Title and Date Range */}
+                        {management?.week && (
+                            <div className="mb-4 pb-4 border-b">
+                                <h2 className="text-2xl font-bold text-gray-900">{management.week.label}</h2>
+                                <p className="text-sm text-gray-600 mt-1">{management.week.date_range}</p>
+                            </div>
+                        )}
+                        
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h3 className="text-lg font-medium text-gray-900">Management</h3>
+                                <p className="mt-1 text-sm text-gray-600">View and manage student weekly attendance status.</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => {
+                                        // Export to CSV
+                                        const csvContent = [
+                                            ['Student Number', 'Name', 'Email', 'Section', 'Department', 'Month', 'Week', 'Status', 'Specific Reasons', 'Remarks'].join(','),
+                                            ...filteredData.map(record => [
+                                                record.student?.student_number || '',
+                                                `"${(record.student?.first_name || '')} ${(record.student?.last_name || '')}"`,
+                                                record.student?.email || '',
+                                                record.section || '',
+                                                record.department || '',
+                                                record.month || '',
+                                                record.week?.number || '',
+                                                record.status || '',
+                                                `"${(record.specific_reasons || '').replace(/"/g, '""')}"`,
+                                                `"${(record.remarks || '').replace(/"/g, '""')}"`
+                                            ].join(','))
+                                        ].join('\n');
+                                        
+                                        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                                        const link = document.createElement('a');
+                                        const url = URL.createObjectURL(blob);
+                                        link.setAttribute('href', url);
+                                        link.setAttribute('download', `management-data-${new Date().toISOString().split('T')[0]}.csv`);
+                                        link.style.visibility = 'hidden';
+                                        document.body.appendChild(link);
+                                        link.click();
+                                        document.body.removeChild(link);
+                                    }}
+                                    className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary"
+                                >
+                                    <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    Export Data
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        window.print();
+                                    }}
+                                    className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary"
+                                >
+                                    <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                                    </svg>
+                                    Print
+                                </button>
+                                <button
+                                    onClick={() => setShowImportModal(true)}
+                                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-brand-primary hover:bg-brand-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary"
+                                >
+                                    <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                    </svg>
+                                    Import Data
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <DataTable
+                            columns={[
+                                {
+                                    key: 'student',
+                                    label: 'Student',
+                                    render: (_, record) => (
+                                        <div>
+                                            <div className="font-medium text-gray-900">
+                                                {record.student?.first_name} {record.student?.last_name}
+                                            </div>
+                                            <div className="text-sm text-gray-500">{record.student?.student_number}</div>
+                                            {record.student?.email && (
+                                                <div className="text-xs text-gray-500">{record.student.email}</div>
+                                            )}
+                                        </div>
+                                    )
+                                },
+                                {
+                                    key: 'section_department',
+                                    label: 'Section + Department',
+                                    render: (_, record) => (
+                                        <div>
+                                            <div className="text-gray-900">{record.section || 'N/A'}</div>
+                                            <div className="text-xs text-gray-500">{record.department || 'N/A'}</div>
+                                        </div>
+                                    )
+                                },
+                                {
+                                    key: 'month',
+                                    label: 'Month',
+                                    render: (value) => value || 'N/A'
+                                },
+                                {
+                                    key: 'week',
+                                    label: 'Week',
+                                    render: (value) => value?.number ? `Week ${value.number}` : 'N/A'
+                                },
+                                {
+                                    key: 'status',
+                                    label: 'Status',
+                                    render: (value) => (
+                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                            value === 'PNS' ? 'bg-red-100 text-red-800' : value === 'SLIP' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'
+                                        }`}>
+                                            {value}
+                                        </span>
+                                    )
+                                },
+                                {
+                                    key: 'specific_reasons',
+                                    label: 'Specific Reasons',
+                                },
+                                {
+                                    key: 'remarks',
+                                    label: 'Remarks',
+                                },
+                                {
+                                    key: 'actions',
+                                    label: 'Actions',
+                                    render: (_, record) => (
+                                        <button
+                                            onClick={() => {
+                                                setRemarkRecord(record);
+                                                setRemarkText(record.remarks || '');
+                                                setShowRemarkModal(true);
+                                            }}
+                                            className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                                        >
+                                            Add/Edit Remark
+                                        </button>
+                                    )
+                                },
+                            ]}
+                            data={filteredData}
+                            actions={false}
+                        />
+                </div>
+
+                {/* Import Modal */}
+                {showImportModal && (
+                    <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-lg shadow-lg w-full max-w-md">
+                            <div className="px-6 py-4 border-b">
+                                <h4 className="text-lg font-semibold">Import Management Data</h4>
+                            </div>
+                            <div className="p-6 space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">File Type</label>
+                                    <select
+                                        value={importFileType}
+                                        onChange={(e) => setImportFileType(e.target.value)}
+                                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                    >
+                                        <option value="csv">CSV</option>
+                                        <option value="xml">XML</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Select File</label>
+                                    <input
+                                        type="file"
+                                        accept={importFileType === 'csv' ? '.csv' : '.xml'}
+                                        onChange={(e) => setImportFile(e.target.files[0])}
+                                        className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-brand-primary file:text-white hover:file:bg-brand-primary/90"
+                                    />
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                    Select a {importFileType.toUpperCase()} file to import management data. The file format will be configured later.
+                                </div>
+                            </div>
+                            <div className="px-6 py-4 border-t flex justify-end space-x-2">
+                                <button
+                                    onClick={() => {
+                                        setShowImportModal(false);
+                                        setImportFile(null);
+                                    }}
+                                    className="px-4 py-2 rounded border hover:bg-gray-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        if (!importFile) {
+                                            setNotification({ type: 'error', message: 'Please select a file to import.' });
+                                            return;
+                                        }
+                                        // TODO: Implement import logic
+                                        setNotification({ type: 'info', message: 'Import functionality will be implemented. File selected: ' + importFile.name });
+                                        setShowImportModal(false);
+                                        setImportFile(null);
+                                    }}
+                                    className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+                                >
+                                    Import
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {showRemarkModal && (
+                    <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-lg shadow-lg w-full max-w-lg">
+                            <div className="px-6 py-4 border-b">
+                                <h4 className="text-lg font-semibold">Super Admin Remark</h4>
+                            </div>
+                            <div className="p-6 space-y-4">
+                                <div>
+                                    <div className="text-sm text-gray-600 mb-1">Student</div>
+                                    <div className="font-medium">{remarkRecord?.student?.first_name} {remarkRecord?.student?.last_name} ({remarkRecord?.student?.student_number})</div>
+                                </div>
+                                <div>
+                                    <div className="text-sm text-gray-600 mb-1">Week</div>
+                                    <div className="font-medium">{remarkRecord?.week?.label} ({remarkRecord?.week?.start} - {remarkRecord?.week?.end})</div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm text-gray-600 mb-1">Remark</label>
+                                    <textarea
+                                        value={remarkText}
+                                        onChange={(e) => setRemarkText(e.target.value)}
+                                        className="w-full border rounded p-2 focus:outline-none focus:ring focus:border-blue-300"
+                                        rows={5}
+                                        placeholder="Enter your remark..."
+                                    />
+                                </div>
+                            </div>
+                            <div className="px-6 py-4 border-t flex justify-end space-x-2">
+                                <button
+                                    onClick={() => setShowRemarkModal(false)}
+                                    className="px-4 py-2 rounded border hover:bg-gray-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        if (!remarkRecord) return;
+                                        const payload = {
+                                            student_id: remarkRecord.id,
+                                            week_start: remarkRecord.week.start,
+                                            week_end: remarkRecord.week.end,
+                                            remark: remarkText,
+                                        };
+                                        try {
+                                            const response = await fetch(route('super.management.remarks.store'), {
+                                                method: 'POST',
+                                                headers: {
+                                                    'Content-Type': 'application/json',
+                                                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+                                                },
+                                                body: JSON.stringify(payload)
+                                            });
+                                            if (response.ok) {
+                                                // Update local state
+                                                setManagementData(prev => prev.map(item => (
+                                                    item.id === remarkRecord.id ? { ...item, remarks: remarkText } : item
+                                                )));
+                                                setShowRemarkModal(false);
+                                            }
+                                        } catch (e) {
+                                            console.error('Failed to save remark', e);
+                                        }
+                                    }}
+                                    className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+                                >
+                                    Save Remark
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     const renderAttendance = () => (
         <div className="space-y-6">
             {/* Attendance Header */}
@@ -1090,7 +1583,7 @@ export default function SystemAdmin({
                 {/* Real-time Attendance Trends */}
                 <div className="bg-white rounded-3xl shadow-lg p-8">
                     <div className="flex items-center justify-between mb-6">
-                        <h3 className="text-2xl font-bold text-gray-900">📈 Real-time Attendance Trends</h3>
+                        <h3 className="text-2xl font-bold text-gray-900">Real-time Attendance Trends</h3>
                         <div className="flex items-center space-x-2">
                             <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
                             <span className="text-sm text-gray-600">Live Data</span>
@@ -1219,47 +1712,12 @@ export default function SystemAdmin({
         </div>
     );
 
-    const renderReports = () => (
-        <div className="space-y-6">
-            <div className="bg-white rounded-3xl shadow-lg p-8">
-                <h2 className="text-3xl font-bold text-gray-900 mb-8">Reports & Analytics</h2>
-                <p className="text-gray-600 mb-6">Generate comprehensive system reports and analytics.</p>
-                
-                <div className="grid gap-6 md:grid-cols-2">
-                    <div className="border rounded-2xl p-6 hover:shadow-md transition-shadow">
-                        <h3 className="font-semibold text-gray-900 mb-2">Weekly Summary</h3>
-                        <p className="text-sm text-gray-600 mb-4">Generate comprehensive weekly attendance summary with department breakdowns and trends</p>
-                        <button 
-                            onClick={() => handleGenerateWeeklySummary()}
-                            className="w-full bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors"
-                        >
-                            Generate PDF
-                        </button>
-                    </div>
-                    <div className="border rounded-2xl p-6 hover:shadow-md transition-shadow">
-                        <h3 className="font-semibold text-gray-900 mb-2">Student Records</h3>
-                        <p className="text-sm text-gray-600 mb-4">Export comprehensive student attendance records and intervention data</p>
-                        <button 
-                            onClick={() => handleExportStudentRecords()}
-                            className="w-full bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-colors"
-                        >
-                            Export Excel
-                        </button>
-                    </div>
-                </div>
-
-            </div>
-        </div>
-    );
 
     const renderSections = () => (
         <div className="space-y-6">
             {/* Sections Header */}
             <div className="bg-white rounded-lg shadow p-8">
-                <div className="mb-6">
-                    <h2 className="text-3xl font-bold text-gray-900">Sections Management</h2>
-                    <p className="mt-2 text-gray-600">Manage all sections across departments and programs</p>
-                        </div>
+                <div className="mb-6"></div>
 
                 {/* Sections Statistics */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -1281,9 +1739,134 @@ export default function SystemAdmin({
                     </div>
                 </div>
 
+                {/* Add New Section (match Schedules UI) */}
+                <div className="card">
+                    <div className="mb-6">
+                        <h3 className="text-lg font-medium text-gray-900">Add New Section</h3>
+                        <p className="mt-1 text-sm text-gray-600">Create a new section by selecting department, program, and details.</p>
+                    </div>
+                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Department *</label>
+                            <select
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                value={sectionForm.department_id}
+                                onChange={(e) => setSectionForm({...sectionForm, department_id: e.target.value, program_id: ''})}
+                                required
+                            >
+                                <option value="">Select Department</option>
+                                {departments?.map((d) => (
+                                    <option key={d.id} value={d.id}>{d.name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Program *</label>
+                            <select
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                value={sectionForm.program_id}
+                                onChange={(e) => setSectionForm({...sectionForm, program_id: e.target.value})}
+                                required
+                                disabled={!sectionForm.department_id}
+                            >
+                                <option value="">Select Program</option>
+                                {programs?.filter(p => String(p.department_id) === String(sectionForm.department_id)).map((p) => (
+                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Section Name *</label>
+                            <input
+                                type="text"
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                value={sectionForm.name}
+                                onChange={(e) => setSectionForm({...sectionForm, name: e.target.value})}
+                                placeholder="e.g., A, B, C"
+                                required
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Year Level *</label>
+                            <select
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                value={sectionForm.year_level}
+                                onChange={(e) => setSectionForm({...sectionForm, year_level: e.target.value})}
+                                required
+                            >
+                                <option value="">Select Year Level</option>
+                                <option value="1">1st Year</option>
+                                <option value="2">2nd Year</option>
+                                <option value="3">3rd Year</option>
+                                <option value="4">4th Year</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Academic Year *</label>
+                            <input
+                                type="text"
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                value={sectionForm.academic_year}
+                                onChange={(e) => setSectionForm({...sectionForm, academic_year: e.target.value})}
+                                placeholder="2025"
+                                required
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Semester *</label>
+                            <select
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                value={sectionForm.semester}
+                                onChange={(e) => setSectionForm({...sectionForm, semester: e.target.value})}
+                                required
+                            >
+                                <option value="1st Semester">1st Semester</option>
+                                <option value="2nd Semester">2nd Semester</option>
+                                <option value="Summer">Summer</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Adviser Name</label>
+                            <input
+                                type="text"
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                value={sectionForm.adviser_name}
+                                onChange={(e) => setSectionForm({...sectionForm, adviser_name: e.target.value})}
+                                placeholder="Enter adviser name"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Max Students</label>
+                            <input
+                                type="number"
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                value={sectionForm.max_students}
+                                min="1"
+                                max="100"
+                                onChange={(e) => setSectionForm({...sectionForm, max_students: parseInt(e.target.value) || 50})}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="mt-4 flex justify-end">
+                        <button
+                            onClick={handleCreateSection}
+                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-brand-primary hover:bg-brand-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary"
+                        >
+                            Create Section
+                        </button>
+                    </div>
+                </div>
+
                 {/* Filter Controls */}
                 <div className="mb-6 bg-gray-50 rounded-lg p-4">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">Filter Sections</h3>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
@@ -1341,15 +1924,9 @@ export default function SystemAdmin({
 
                 {/* Sections Table */}
                 <div className="bg-white rounded-lg shadow">
-                    <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                    <div className="px-6 py-4 border-b border-gray-200">
                         <h3 className="text-lg font-medium text-gray-900">Sections</h3>
-                            <button 
-                            onClick={() => openSectionModal()}
-                            className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
-                            >
-                            Add New Section
-                            </button>
-                        </div>
+                    </div>
                     
                     <div className="overflow-x-auto">
                         <DataTable
@@ -2383,23 +2960,6 @@ export default function SystemAdmin({
                             </div>
                         </div>
 
-                        {/* Active Interventions */}
-                        <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-xl p-6 border border-red-200">
-                            <div className="flex items-center">
-                                <div className="flex-shrink-0">
-                                    <div className="h-10 w-10 bg-red-500 rounded-lg flex items-center justify-center">
-                                        <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                        </svg>
-                                    </div>
-                                </div>
-                                <div className="ml-4">
-                                    <p className="text-sm font-medium text-red-600">Active Interventions</p>
-                                    <p className="text-2xl font-bold text-red-900">{systemStats?.activeInterventions || 0}</p>
-                                </div>
-                            </div>
-                        </div>
-
                         {/* Today's Attendance */}
                         <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-xl p-6 border border-indigo-200">
                             <div className="flex items-center">
@@ -2689,26 +3249,6 @@ export default function SystemAdmin({
                     </div>
                     
                     <div className="space-y-4">
-                        {/* Critical Alerts - Low Attendance */}
-                        {systemStats?.averageAttendanceRate < 70 && (
-                            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                                <div className="flex items-start">
-                                    <div className="flex-shrink-0">
-                                        <svg className="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                                        </svg>
-                                    </div>
-                                    <div className="ml-3">
-                                        <h4 className="text-sm font-medium text-red-800">Critical Alert</h4>
-                                        <p className="text-sm text-red-700 mt-1">
-                                            Overall attendance rate is {systemStats?.averageAttendanceRate?.toFixed(1) || 0}% - below 70% threshold
-                                        </p>
-                                        <p className="text-xs text-red-600 mt-1">Live data</p>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
                         {/* Warning Alerts - High Absence Rate */}
                         {systemStats?.averageAttendanceRate < 85 && systemStats?.averageAttendanceRate >= 70 && (
                             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -2832,10 +3372,9 @@ export default function SystemAdmin({
 
                     {/* Tab Content */}
                     {activeTab === 'dashboard' && renderDashboard()}
-                    {activeTab === 'interventions' && renderInterventions()}
+                    {activeTab === 'management' && renderManagement()}
                     {activeTab === 'attendance' && renderAttendance()}
                     {activeTab === 'sections' && renderSections()}
-                    {activeTab === 'reports' && renderReports()}
                     {activeTab === 'settings' && renderSettings()}
                 </div>
             </div>

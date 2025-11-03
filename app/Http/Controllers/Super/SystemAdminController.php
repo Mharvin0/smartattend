@@ -78,6 +78,62 @@ class SystemAdminController extends Controller
         ]);
     }
 
+    public function management()
+    {
+        $management = $this->getManagementData();
+
+        return Inertia::render('Super/SystemAdmin', [
+            'activeTab' => 'management',
+            'users' => \App\Models\User::with('roles')->get(),
+            'systemStats' => $this->getSystemStats(),
+            'activityLogs' => $this->getRecentActivityLogs(),
+            'integrations' => $this->getIntegrationStatus(),
+            'systemTools' => $this->getSystemToolsData(),
+            'auditLogs' => AuditLog::with('user')->orderBy('created_at', 'desc')->limit(50)->get(),
+            'management' => $management,
+            'departments' => \App\Models\Department::orderBy('name')->get(),
+            'programs' => \App\Models\Program::with('department')->orderBy('name')->get(),
+            'sections' => \App\Models\Section::with(['program.department'])->orderBy('name')->get(),
+            'students' => \App\Models\Student::with(['section.program.department'])->orderBy('first_name')->get(),
+            'availableMonths' => $management['available_months'] ?? [],
+        ]);
+    }
+
+    public function storeManagementRemark(\Illuminate\Http\Request $request)
+    {
+        // Explicitly check for Super Admin role
+        if (!auth()->user()->hasRole('Super Admin')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: Only Super Admins can add remarks.'
+            ], 403);
+        }
+
+        $request->validate([
+            'student_id' => 'required|exists:students,id',
+            'week_start' => 'required|date',
+            'week_end' => 'required|date',
+            'remark' => 'required|string',
+        ]);
+
+        $remark = \App\Models\ManagementRemark::updateOrCreate(
+            [
+                'student_id' => $request->student_id,
+                'week_start' => $request->week_start,
+                'week_end' => $request->week_end,
+            ],
+            [
+                'remark' => $request->remark,
+                'created_by' => auth()->id(),
+            ]
+        );
+
+        return response()->json([
+            'success' => true,
+            'remark' => $remark->load(['student', 'creator']),
+        ]);
+    }
+
     public function attendance()
     {
         // Get attendance statistics
@@ -121,15 +177,6 @@ class SystemAdminController extends Controller
         ]);
     }
 
-    public function getTrendsData()
-    {
-        return response()->json([
-            'departmentTrends' => $this->getDepartmentAttendanceTrends(),
-            'facultyCompliance' => $this->getFacultyComplianceTrends(),
-            'timestamp' => now()->toISOString(),
-        ]);
-    }
-
     public function refreshDashboard()
     {
         return response()->json([
@@ -137,118 +184,6 @@ class SystemAdminController extends Controller
             'facultyCompliance' => $this->getFacultyComplianceTrends(),
             'systemStats' => $this->getSystemStats(),
             'timestamp' => now()->toISOString(),
-        ]);
-    }
-
-    public function generateWeeklyPdf()
-    {
-        try {
-            // Get weekly attendance data
-            $startOfWeek = now()->startOfWeek();
-            $endOfWeek = now()->endOfWeek();
-            
-            $attendanceData = \App\Models\AttendanceRecord::whereBetween('date', [$startOfWeek, $endOfWeek])
-                ->with(['student.section.program.department', 'schedule.subject'])
-                ->get();
-            
-            $departmentStats = [];
-            $totalRecords = $attendanceData->count();
-            $presentCount = $attendanceData->where('status', 'present')->count();
-            $absentCount = $attendanceData->where('status', 'absent')->count();
-            $lateCount = $attendanceData->where('status', 'late')->count();
-            
-            // Group by department
-            foreach ($attendanceData->groupBy('student.section.program.department.name') as $deptName => $records) {
-                $deptPresent = $records->where('status', 'present')->count();
-                $deptTotal = $records->count();
-                $deptRate = $deptTotal > 0 ? round(($deptPresent / $deptTotal) * 100, 1) : 0;
-                
-                $departmentStats[] = [
-                    'department' => $deptName,
-                    'total_records' => $deptTotal,
-                    'present_count' => $deptPresent,
-                    'attendance_rate' => $deptRate,
-                ];
-            }
-            
-            // Generate PDF using DomPDF
-            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('reports.weekly-summary', [
-                'attendanceData' => $attendanceData,
-                'departmentStats' => $departmentStats,
-                'totalRecords' => $totalRecords,
-                'presentCount' => $presentCount,
-                'absentCount' => $absentCount,
-                'lateCount' => $lateCount,
-                'weekStart' => $startOfWeek->format('M d, Y'),
-                'weekEnd' => $endOfWeek->format('M d, Y'),
-            ]);
-            
-            return $pdf->download('weekly-summary-' . now()->format('Y-m-d') . '.pdf');
-            
-        } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to generate PDF: ' . $e->getMessage()], 500);
-        }
-    }
-
-    public function exportStudentRecordsExcel()
-    {
-        try {
-            // Get all student records with attendance data
-            $students = \App\Models\Student::with([
-                'section.program.department',
-                'attendanceRecords.schedule.subject',
-                'interventions'
-            ])->get();
-            
-            $data = [];
-            
-            foreach ($students as $student) {
-                $attendanceRecords = $student->attendanceRecords;
-                $totalRecords = $attendanceRecords->count();
-                $presentCount = $attendanceRecords->where('status', 'present')->count();
-                $absentCount = $attendanceRecords->where('status', 'absent')->count();
-                $lateCount = $attendanceRecords->where('status', 'late')->count();
-                $attendanceRate = $totalRecords > 0 ? round(($presentCount / $totalRecords) * 100, 1) : 0;
-                
-                $data[] = [
-                    'Student ID' => $student->student_id,
-                    'Name' => $student->name,
-                    'Email' => $student->email,
-                    'Department' => $student->section->program->department->name ?? 'N/A',
-                    'Program' => $student->section->program->name ?? 'N/A',
-                    'Section' => $student->section->name ?? 'N/A',
-                    'Total Records' => $totalRecords,
-                    'Present' => $presentCount,
-                    'Absent' => $absentCount,
-                    'Late' => $lateCount,
-                    'Attendance Rate (%)' => $attendanceRate,
-                    'Interventions Count' => $student->interventions->count(),
-                    'Priority' => $student->priority ?? 'Normal',
-                    'Created At' => $student->created_at->format('Y-m-d H:i:s'),
-                ];
-            }
-            
-            // Generate Excel file using Laravel Excel
-            return \Maatwebsite\Excel\Facades\Excel::download(
-                new \App\Exports\StudentRecordsExport($data),
-                'student-records-' . now()->format('Y-m-d') . '.xlsx'
-            );
-            
-        } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to export Excel: ' . $e->getMessage()], 500);
-        }
-    }
-
-    public function reports()
-    {
-        return Inertia::render('Super/SystemAdmin', [
-            'activeTab' => 'reports',
-            'users' => \App\Models\User::with('roles')->get(),
-            'systemStats' => $this->getSystemStats(),
-            'activityLogs' => $this->getRecentActivityLogs(),
-            'integrations' => $this->getIntegrationStatus(),
-            'systemTools' => $this->getSystemToolsData(),
-            'auditLogs' => AuditLog::with('user')->orderBy('created_at', 'desc')->limit(50)->get(),
         ]);
     }
 
@@ -510,10 +445,27 @@ class SystemAdminController extends Controller
                 'academic_year' => 'required|string|max:10',
                 'semester' => 'required|string|max:50',
                 'adviser_name' => 'nullable|string|max:255',
-                'department_id' => 'required|exists:departments,id',
-                'program_id' => 'required|exists:programs,id',
+                'department_id' => 'required|integer|exists:departments,id',
+                'program_id' => 'required|integer|exists:programs,id',
                 'max_students' => 'nullable|integer|min:1|max:100'
             ]);
+
+            // Verify that the program belongs to the selected department
+            $program = \App\Models\Program::findOrFail($validated['program_id']);
+            if ($program->department_id != $validated['department_id']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'The selected program does not belong to the selected department.'
+                ], 422);
+            }
+
+            // Convert string IDs to integers
+            $validated['department_id'] = (int) $validated['department_id'];
+            $validated['program_id'] = (int) $validated['program_id'];
+            
+            if (isset($validated['max_students'])) {
+                $validated['max_students'] = (int) $validated['max_students'];
+            }
 
             $section = \App\Models\Section::create($validated);
             $section->load(['program.department']);
@@ -523,7 +475,14 @@ class SystemAdminController extends Controller
                 'message' => 'Section created successfully',
                 'section' => $section
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         } catch (\Exception $e) {
+            \Log::error('Section creation error: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to create section: ' . $e->getMessage()
@@ -1329,9 +1288,7 @@ class SystemAdminController extends Controller
     private function getInterventionsData()
     {
         $interventions = \App\Models\Intervention::with([
-            'student.section.program.department',
-            'recordedBy',
-            'responsibleStaff'
+            'student.section.program.department'
         ])
         ->orderBy('created_at', 'desc')
         ->get();
@@ -1342,14 +1299,137 @@ class SystemAdminController extends Controller
             'done' => $interventions->where('status', 'done')->count(),
             'in_progress' => $interventions->where('status', 'in_progress')->count(),
             'no_response' => $interventions->where('status', 'no_response')->count(),
-            'high_priority' => $interventions->where('priority', 'high')->count(),
-            'medium_priority' => $interventions->where('priority', 'medium')->count(),
-            'low_priority' => $interventions->where('priority', 'low')->count(),
         ];
 
         return [
             'data' => $interventions,
             'stats' => $stats,
+        ];
+    }
+
+    private function getManagementData($month = null, $week = null)
+    {
+        $startOfWeek = now()->startOfWeek();
+        $endOfWeek = now()->endOfWeek();
+        
+        // If month and week are provided, calculate the specific week
+        if ($month && $week) {
+            // Parse month (format: "January 2025" or "2025-01")
+            try {
+                if (strpos($month, '-') !== false) {
+                    // Format: "2025-01"
+                    $date = \Carbon\Carbon::createFromFormat('Y-m', $month)->startOfMonth();
+                } else {
+                    // Format: "January 2025"
+                    $date = \Carbon\Carbon::parse($month)->startOfMonth();
+                }
+                // Get the start of the specified week within that month
+                $weeks = [];
+                $current = $date->copy();
+                while ($current->month == $date->month) {
+                    $weekStart = $current->copy()->startOfWeek();
+                    $weekEnd = $current->copy()->endOfWeek();
+                    if ($weekStart->month == $date->month || $weekEnd->month == $date->month) {
+                        $weeks[] = [
+                            'start' => $weekStart,
+                            'end' => $weekEnd,
+                            'number' => count($weeks) + 1,
+                        ];
+                    }
+                    $current->addWeek();
+                }
+                if (isset($weeks[$week - 1])) {
+                    $startOfWeek = $weeks[$week - 1]['start'];
+                    $endOfWeek = $weeks[$week - 1]['end'];
+                }
+            } catch (\Exception $e) {
+                // Fallback to current week if parsing fails
+            }
+        }
+
+        $summaries = \App\Models\WeeklySummary::with(['student.section.program.department'])
+            ->whereBetween('week_start', [$startOfWeek->toDateString(), $endOfWeek->toDateString()])
+            ->get();
+
+        $data = $summaries->map(function ($summary) use ($startOfWeek, $endOfWeek) {
+            $student = $summary->student;
+            $total = (int)$summary->present_count + (int)$summary->late_count + (int)$summary->absent_count;
+            $status = 'Normal';
+            if (($summary->present_count + $summary->late_count) === 0 && $summary->absent_count > 0) {
+                $status = 'PNS';
+            } elseif ($total > 0 && $summary->absent_count > ($total / 2)) {
+                $status = 'SLIP';
+            }
+
+            // Aggregate specific reasons from absent remarks within the week
+            $reasons = \App\Models\AttendanceRecord::where('student_id', $student->id)
+                ->whereBetween('date', [$startOfWeek->toDateString(), $endOfWeek->toDateString()])
+                ->where('status', 'absent')
+                ->whereNotNull('remarks')
+                ->pluck('remarks')
+                ->filter()
+                ->unique()
+                ->values()
+                ->implode(', ');
+
+            $existingRemark = \App\Models\ManagementRemark::where('student_id', $student->id)
+                ->where('week_start', $startOfWeek->toDateString())
+                ->where('week_end', $endOfWeek->toDateString())
+                ->first();
+
+            // Calculate month name and week number
+            $monthName = $startOfWeek->format('F Y'); // e.g., "January 2025"
+            $weekNumber = $startOfWeek->weekOfMonth; // Week number within the month
+            $weekName = 'Week ' . $weekNumber . ' of ' . $startOfWeek->format('F Y');
+            $dateRange = $startOfWeek->format('M d') . ' - ' . $endOfWeek->format('M d, Y');
+
+            return [
+                'id' => $student->id,
+                'student' => [
+                    'first_name' => $student->first_name,
+                    'last_name' => $student->last_name,
+                    'student_number' => $student->student_number,
+                    'email' => $student->email ?? null,
+                ],
+                'section' => $student->section->name ?? null,
+                'department' => optional(optional($student->section)->program)->department->name ?? null,
+                'status' => $status,
+                'specific_reasons' => $reasons,
+                'remarks' => $existingRemark->remark ?? '',
+                'month' => $monthName,
+                'week' => [
+                    'start' => $startOfWeek->toDateString(),
+                    'end' => $endOfWeek->toDateString(),
+                    'label' => $weekName,
+                    'number' => $weekNumber,
+                    'date_range' => $dateRange,
+                ],
+            ];
+        });
+
+        // Get available months and weeks for filters
+        $availableMonths = \App\Models\WeeklySummary::selectRaw('DATE_FORMAT(week_start, "%Y-%m") as month, DATE_FORMAT(week_start, "%M %Y") as month_name')
+            ->distinct()
+            ->orderBy('month', 'desc')
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'value' => $item->month,
+                    'label' => $item->month_name,
+                ];
+            });
+
+        return [
+            'data' => $data,
+            'week' => [
+                'start' => $startOfWeek->toDateString(),
+                'end' => $endOfWeek->toDateString(),
+                'label' => 'Week ' . $startOfWeek->weekOfMonth . ' of ' . $startOfWeek->format('F Y'),
+                'number' => $startOfWeek->weekOfMonth,
+                'date_range' => $startOfWeek->format('M d') . ' - ' . $endOfWeek->format('M d, Y'),
+            ],
+            'month' => $startOfWeek->format('F Y'),
+            'available_months' => $availableMonths,
         ];
     }
 

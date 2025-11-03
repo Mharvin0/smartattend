@@ -842,7 +842,6 @@ export default function AdminPage() {
                         <div className="flex items-center justify-between mb-6">
                             <div>
                                 <h2 className="text-3xl font-bold text-gray-900">Intervention Management</h2>
-                                <p className="text-gray-600 mt-2">Create and manage student interventions</p>
                             </div>
                             <button
                                 onClick={() => setShowInterventionModal(true)}
@@ -904,7 +903,6 @@ export default function AdminPage() {
                         <div className="flex items-center justify-between mb-6">
                             <div>
                                 <h2 className="text-3xl font-bold text-gray-900">Communication Center</h2>
-                                <p className="text-gray-600 mt-2">Send messages to students and advisers</p>
                             </div>
                             <button
                                 onClick={() => setShowCommunication(true)}
@@ -967,7 +965,6 @@ export default function AdminPage() {
                             <div className="flex items-center justify-between">
                                 <div>
                                     <h2 className="text-2xl font-bold text-gray-900">Student Records</h2>
-                                    <p className="text-gray-600 mt-2">View and manage student attendance records</p>
                                 </div>
                                 <div className="flex items-center space-x-2">
                                     <span className="text-sm text-gray-500">
@@ -1155,7 +1152,6 @@ export default function AdminPage() {
                             <div className="flex items-center justify-between">
                                 <div>
                                     <h2 className="text-2xl font-bold text-gray-900">Student Management</h2>
-                                    <p className="text-gray-600 mt-2">Add new students to the system</p>
                                 </div>
                                 <button
                                     onClick={() => setShowStudentForm(true)}

@@ -11,13 +11,13 @@ class Intervention extends Model
 	use HasFactory;
 
 	protected $fillable = [
-		'student_id','date','type','details','action_taken','responsible_staff','follow_up_date','outcome','recorded_by','status','priority','due_date'
+		'student_id','week_start','week_end','details','action_taken','follow_up_date','outcome','status'
 	];
 
 	protected $casts = [
-		'date' => 'date',
+		'week_start' => 'date',
+		'week_end' => 'date',
 		'follow_up_date' => 'date',
-		'due_date' => 'date',
 	];
 
 	// Status constants
@@ -35,15 +35,7 @@ class Intervention extends Model
 		return $this->belongsTo(Student::class);
 	}
 
-	public function recordedBy(): BelongsTo
-	{
-		return $this->belongsTo(User::class, 'recorded_by');
-	}
-
-	public function responsibleStaff(): BelongsTo
-	{
-		return $this->belongsTo(User::class, 'responsible_staff');
-	}
+	// Relationships removed: recordedBy, responsibleStaff (dropped from schema)
 
 	// Scopes for filtering
 	public function scopeByStatus($query, $status)
@@ -51,10 +43,7 @@ class Intervention extends Model
 		return $query->where('status', $status);
 	}
 
-	public function scopeByPriority($query, $priority)
-	{
-		return $query->where('priority', $priority);
-	}
+	// Priority field removed from schema
 
 	public function scopeByStudent($query, $studentId)
 	{
