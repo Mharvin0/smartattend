@@ -155,7 +155,6 @@ export default function SystemAdminDashboard({ auth, users, systemStats, activit
         }
     };
 
-    // Mock analytics data - in real implementation, this would come from the backend
     const analyticsData = {
         performance: {
             labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],

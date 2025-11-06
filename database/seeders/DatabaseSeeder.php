@@ -62,10 +62,10 @@ class DatabaseSeeder extends Seeder
 		);
 		$teacher->syncRoles([$teacherRole]);
 
-		// Seed sample data
 		$this->call([
 			DepartmentProgramSeeder::class,
 			StudentSeeder::class,
+			ManagementDataSeeder::class,
 		]);
 	}
 }

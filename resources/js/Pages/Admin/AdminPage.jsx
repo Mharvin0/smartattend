@@ -47,7 +47,6 @@ export default function AdminPage() {
     const [bulkOperationType, setBulkOperationType] = useState('');
     const [showBulkOperationModal, setShowBulkOperationModal] = useState(false);
     
-    // Export functionality
     const [showExportModal, setShowExportModal] = useState(false);
     const [exportFormat, setExportFormat] = useState('csv');
     const [exportFilters, setExportFilters] = useState({
@@ -57,7 +56,7 @@ export default function AdminPage() {
         year_level: ''
     });
     
-    // Student Management
+    //student Management
     const [showStudentForm, setShowStudentForm] = useState(false);
     const [studentForm, setStudentForm] = useState({
         first_name: '',
@@ -74,7 +73,6 @@ export default function AdminPage() {
         schedule_ids: []
     });
 
-    // Real-time clock update
     useEffect(() => {
         const timer = setInterval(() => {
             setCurrentTime(new Date());
@@ -82,7 +80,6 @@ export default function AdminPage() {
         return () => clearInterval(timer);
     }, []);
 
-    // Live data fetching
     const fetchLiveData = useCallback(async () => {
         try {
             const response = await fetch(route('admin.admin-page.live-data'));
@@ -95,29 +92,28 @@ export default function AdminPage() {
         }
     }, []);
 
-    // Fetch live data every 30 seconds
     useEffect(() => {
         fetchLiveData();
         const interval = setInterval(fetchLiveData, 30000);
         return () => clearInterval(interval);
     }, [fetchLiveData]);
 
-    // Filter programs based on selected department
+    //department
     const filteredPrograms = selectedDepartment 
         ? programs.filter(p => p.department_id == selectedDepartment)
         : programs;
 
-    // Filter sections based on selected program
+    //program
     const filteredSections = selectedProgram 
         ? sections.filter(s => s.program_id == selectedProgram)
         : sections;
 
-    // Filter schedules based on selected section
+    //section
     const filteredSchedules = selectedSection 
         ? schedules.filter(s => s.section_id == selectedSection)
         : schedules;
 
-    // Filter students for intervention modal
+    //students
     const filteredInterventionStudents = students?.filter(student => {
         const matchesDepartment = !selectedDepartment || student.section?.program?.department_id == selectedDepartment;
         const matchesProgram = !selectedProgram || student.section?.program_id == selectedProgram;
@@ -131,7 +127,6 @@ export default function AdminPage() {
         return matchesDepartment && matchesProgram && matchesYearLevel && matchesSection && matchesSearch;
     }) || [];
 
-    // Filter teachers/advisers for communication
     const filteredTeachers = subjects?.filter(subject => {
         const matchesSearch = !teacherSearch || 
             subject.teacher_name?.toLowerCase().includes(teacherSearch.toLowerCase()) ||
@@ -139,7 +134,6 @@ export default function AdminPage() {
         return matchesSearch;
     }) || [];
 
-    // Filter students for communication
     const filteredCommunicationStudents = students?.filter(student => {
         const matchesDepartment = !selectedDepartment || student.section?.program?.department_id == selectedDepartment;
         const matchesProgram = !selectedProgram || student.section?.program_id == selectedProgram;
@@ -153,7 +147,6 @@ export default function AdminPage() {
         return matchesDepartment && matchesProgram && matchesYearLevel && matchesSection && matchesSearch;
     }) || [];
 
-    // Filter students based on selections
     const filteredStudents = students?.filter(student => {
         const matchesDepartment = !selectedDepartment || student.section?.program?.department_id == selectedDepartment;
         const matchesProgram = !selectedProgram || student.section?.program_id == selectedProgram;
@@ -171,7 +164,6 @@ export default function AdminPage() {
                matchesSchedule && matchesSubject && matchesTeacher && matchesSearch;
     }) || [];
 
-    // Filter students for student records section with separate search
     const filteredStudentRecords = students?.filter(student => {
         const matchesDepartment = !selectedDepartment || student.section?.program?.department_id == selectedDepartment;
         const matchesProgram = !selectedProgram || student.section?.program_id == selectedProgram;
@@ -185,19 +177,16 @@ export default function AdminPage() {
         return matchesDepartment && matchesProgram && matchesYearLevel && matchesSection && matchesSearch;
     }) || [];
 
-    // Handle student record view
     const handleViewStudentRecords = (student) => {
         setSelectedStudent(student);
         setShowStudentModal(true);
     };
 
-    // Handle quick attendance marking
     const handleQuickAttendance = (sectionId) => {
         setSelectedSectionForAttendance(sectionId);
         setShowAttendanceModal(true);
     };
 
-    // Handle attendance record update
     const handleAttendanceUpdate = (studentId, status) => {
         setAttendanceRecords(prev => ({
             ...prev,
@@ -205,7 +194,6 @@ export default function AdminPage() {
         }));
     };
 
-    // Save attendance records
     const saveAttendanceRecords = async () => {
         setIsLoading(true);
         try {
@@ -233,7 +221,7 @@ export default function AdminPage() {
                 alert(`Attendance recorded successfully for ${data.records_count} students`);
         setShowAttendanceModal(false);
         setAttendanceRecords({});
-                fetchLiveData(); // Refresh live data
+                fetchLiveData();
             }
         } catch (error) {
             console.error('Failed to save attendance:', error);
@@ -243,19 +231,16 @@ export default function AdminPage() {
         }
     };
 
-    // Handle intervention creation
     const handleCreateIntervention = async (interventionData) => {
         setIsLoading(true);
         try {
-            // Use Inertia router instead of fetch to avoid CSRF issues
             router.post(route('admin.admin-page.intervention'), interventionData, {
                 onSuccess: (page) => {
-                    // Check for success message in session
                     if (page.props.flash?.success) {
                         alert(page.props.flash.success);
                     }
                     setShowInterventionModal(false);
-                    fetchLiveData(); // Refresh live data
+                    fetchLiveData(); 
                 },
                 onError: (errors) => {
                     console.error('Intervention creation failed:', errors);
@@ -272,7 +257,6 @@ export default function AdminPage() {
         }
     };
 
-    // Handle communication sending
     const handleSendCommunication = async (communicationData) => {
         setIsLoading(true);
         try {
@@ -299,7 +283,6 @@ export default function AdminPage() {
         }
     };
 
-    // Handle student selection for bulk operations
     const handleStudentSelection = (studentId, isSelected) => {
         if (isSelected) {
             setSelectedStudentRecords(prev => [...prev, studentId]);
@@ -308,7 +291,6 @@ export default function AdminPage() {
         }
     };
 
-    // Handle select all students
     const handleSelectAllStudents = (isSelected) => {
         if (isSelected) {
             setSelectedStudentRecords(filteredStudentRecords.map(student => student.id));
@@ -317,9 +299,7 @@ export default function AdminPage() {
         }
     };
 
-    // Handle bulk operations
     const handleBulkOperation = async (operationType, operationData = {}) => {
-        // Check if any students are selected
         if (selectedStudentRecords.length === 0) {
             alert('Please select at least one student to perform bulk operations.');
             return;
@@ -352,9 +332,8 @@ export default function AdminPage() {
                 alert(data.message);
                 setSelectedStudentRecords([]);
                 setShowBulkOperations(false);
-                fetchLiveData(); // Refresh live data
+                fetchLiveData();
             } else {
-                // Handle error responses
                 const errorData = await response.json();
                 console.error('Bulk operation failed:', errorData);
                 alert(`Bulk operation failed: ${errorData.message || 'Unknown error'}`);
@@ -367,11 +346,9 @@ export default function AdminPage() {
         }
     };
 
-    // Handle export functionality
     const handleExportRecords = async () => {
         setIsLoading(true);
         try {
-            // Check if we're exporting a single student (when student modal is open)
             const isSingleStudentExport = showStudentModal && selectedStudent;
             
             const response = await fetch(route('admin.admin-page.export-records'), {
@@ -388,13 +365,11 @@ export default function AdminPage() {
             });
 
             if (response.ok) {
-                // Get the filename from the response headers
                 const contentDisposition = response.headers.get('content-disposition');
                 const filename = contentDisposition 
                     ? contentDisposition.split('filename=')[1]?.replace(/"/g, '')
                     : `student_records_${new Date().toISOString().split('T')[0]}.${exportFormat}`;
 
-                // Create blob and download
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -419,7 +394,6 @@ export default function AdminPage() {
         }
     };
 
-    // Handle export filter changes
     const handleExportFilterChange = (field, value) => {
         setExportFilters(prev => ({
             ...prev,
@@ -427,16 +401,13 @@ export default function AdminPage() {
         }));
     };
 
-    // Handle student form submission
     const handleStudentSubmit = async (e) => {
         e.preventDefault();
         setIsLoading(true);
         
         try {
-            // Use Inertia router instead of fetch to avoid CSRF issues
             router.post(route('admin.admin-page.student.store'), studentForm, {
                 onSuccess: (page) => {
-                    // Check for success message in session
                     if (page.props.flash?.success) {
                         alert(page.props.flash.success);
                     }
@@ -455,7 +426,7 @@ export default function AdminPage() {
                         guardian_contact: '',
                         schedule_ids: []
                     });
-                    fetchLiveData(); // Refresh live data
+                    fetchLiveData();
                 },
                 onError: (errors) => {
                     console.error('Student creation failed:', errors);
@@ -472,7 +443,6 @@ export default function AdminPage() {
         }
     };
 
-    // Handle student form input changes
     const handleStudentFormChange = (field, value) => {
         setStudentForm(prev => ({
             ...prev,

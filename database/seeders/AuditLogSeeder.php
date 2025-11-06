@@ -9,7 +9,6 @@ class AuditLogSeeder extends Seeder
 {
     public function run(): void
     {
-        // Create sample audit logs
         $auditLogs = [
             [
                 'event_type' => AuditLog::TYPE_USER_LOGIN,
