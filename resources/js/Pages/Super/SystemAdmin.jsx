@@ -24,6 +24,7 @@ export default function SystemAdmin({
     calendarData,
     departmentTrends,
     facultyCompliance,
+    weeklyStatusProgress: weeklyStatusProgressProp = [],
     teachers: teachersProp = [],
     activeTab: initialActiveTab = 'dashboard',
     pageTitle = 'System Admin Control',
@@ -38,6 +39,7 @@ export default function SystemAdmin({
     const [selectedTool, setSelectedTool] = useState(null);
     const [liveDepartmentTrends, setLiveDepartmentTrends] = useState(departmentTrends);
     const [liveFacultyCompliance, setLiveFacultyCompliance] = useState(facultyCompliance);
+    const [liveWeeklyStatusProgress, setLiveWeeklyStatusProgress] = useState(weeklyStatusProgressProp);
     const [lastRefresh, setLastRefresh] = useState(new Date());
     
     // Auto-refresh dashboard data every 30 seconds
@@ -63,6 +65,9 @@ export default function SystemAdmin({
                 const data = await response.json();
                 setLiveDepartmentTrends(data.departmentTrends);
                 setLiveFacultyCompliance(data.facultyCompliance);
+                if (data.weeklyStatusProgress) {
+                    setLiveWeeklyStatusProgress(data.weeklyStatusProgress);
+                }
                 setLastRefresh(new Date());
             }
         } catch (error) {
@@ -1587,73 +1592,114 @@ export default function SystemAdmin({
                         <div className="flex items-center space-x-2">
                             <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
                             <span className="text-sm text-gray-600">Live Data</span>
+                        </div>
+                    </div>
+
+                    {/* Weekly Status Progress Graph */}
+                    <div className="mb-8">
+                        <h4 className="text-lg font-semibold text-gray-900 mb-4">Weekly Student Status Distribution</h4>
+                        <div className="bg-gray-50 rounded-2xl p-6">
+                            {liveWeeklyStatusProgress && liveWeeklyStatusProgress.length > 0 ? (
+                                <div className="relative h-96">
+                                    {/* Progress Graph - Stacked Percentage Bars */}
+                                    <div className="flex items-end justify-between h-full gap-2">
+                                        {liveWeeklyStatusProgress.map((week, weekIndex) => {
+                                            const maxHeight = 280; // Max height in pixels for 100%
+                                            return (
+                                                <div key={weekIndex} className="flex flex-col items-center flex-1 h-full">
+                                                    <div className="text-xs text-gray-600 mb-2 text-center font-medium">
+                                                        {week.week_label}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500 mb-1 text-center max-w-full">
+                                                        {week.date_label}
+                                                    </div>
+                                                    <div className="w-full relative" style={{ height: `${maxHeight}px` }}>
+                                                        {/* Stacked bar showing percentages */}
+                                                        <div className="absolute bottom-0 w-full flex flex-col-reverse rounded overflow-hidden shadow-sm">
+                                                            {/* Normal Status Bar (Green) */}
+                                                            <div 
+                                                                className="bg-green-500 transition-all duration-500 ease-out relative group border-t border-green-600"
+                                                                style={{ height: `${(week.normal_percentage / 100) * maxHeight}px` }}
+                                                                title={`Normal: ${week.normal_percentage}% (${week.normal_count} students)`}
+                                                            >
+                                                                {week.normal_percentage >= 10 && (
+                                                                    <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white">
+                                                                        {week.normal_percentage.toFixed(1)}%
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {/* SLIP Status Bar (Yellow) */}
+                                                            <div 
+                                                                className="bg-yellow-500 transition-all duration-500 ease-out relative group border-t border-yellow-600"
+                                                                style={{ height: `${(week.slip_percentage / 100) * maxHeight}px` }}
+                                                                title={`SLIP: ${week.slip_percentage}% (${week.slip_count} students)`}
+                                                            >
+                                                                {week.slip_percentage >= 10 && (
+                                                                    <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-gray-800">
+                                                                        {week.slip_percentage.toFixed(1)}%
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {/* PNS Status Bar (Red) */}
+                                                            <div 
+                                                                className="bg-red-500 transition-all duration-500 ease-out relative group border-t border-red-600"
+                                                                style={{ height: `${(week.pns_percentage / 100) * maxHeight}px` }}
+                                                                title={`PNS: ${week.pns_percentage}% (${week.pns_count} students)`}
+                                                            >
+                                                                {week.pns_percentage >= 10 && (
+                                                                    <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white">
+                                                                        {week.pns_percentage.toFixed(1)}%
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-xs text-gray-500 mt-2 text-center">
+                                                        <div className="font-medium">{week.total_students} students</div>
+                                                        <div className="text-gray-400 mt-0.5">
+                                                            N:{week.normal_count} S:{week.slip_count} P:{week.pns_count}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="relative h-96 flex items-center justify-center">
+                                    <div className="text-center">
+                                        <p className="text-gray-500 text-lg mb-2">No weekly status data available</p>
+                                        <p className="text-gray-400 text-sm">Weekly summaries need to be generated to display this graph</p>
+                                    </div>
+                                </div>
+                            )}
+                            {/* Legend */}
+                            {liveWeeklyStatusProgress && liveWeeklyStatusProgress.length > 0 && (
+                                <div className="mt-6 flex items-center justify-center space-x-6">
+                                    <div className="flex items-center space-x-2">
+                                        <div className="w-4 h-4 bg-green-500 rounded"></div>
+                                        <span className="text-sm text-gray-700">Normal</span>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <div className="w-4 h-4 bg-yellow-500 rounded"></div>
+                                        <span className="text-sm text-gray-700">SLIP</span>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <div className="w-4 h-4 bg-red-500 rounded"></div>
+                                        <span className="text-sm text-gray-700">PNS</span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
+            </div>
 
-                    {/* Department Attendance Trends */}
-                    <div className="mb-8">
-                        <h4 className="text-lg font-semibold text-gray-900 mb-4">Department Weekly Attendance Rates</h4>
-                        <div className="bg-gray-50 rounded-2xl p-6">
-                            <div className="relative h-80">
-                                {/* Simple Line Chart for Department Trends */}
-                                <div className="flex items-end justify-between h-full">
-                                    {liveDepartmentTrends?.slice(0, 7).map((day, dayIndex) => {
-                                        const maxRate = Math.max(...(day.departments?.map(d => d.attendance_rate) || [0]));
-                                        return (
-                                            <div key={dayIndex} className="flex flex-col items-center flex-1">
-                                                <div className="text-xs text-gray-600 mb-2">{day.day}</div>
-                                                <div className="space-y-1 w-full">
-                                                    {day.departments?.map((dept, deptIndex) => {
-                                                        const height = maxRate > 0 ? (dept.attendance_rate / maxRate) * 200 : 0;
-                                                        const colors = [
-                                                            'bg-blue-500', 'bg-green-500', 'bg-purple-500', 
-                                                            'bg-orange-500', 'bg-red-500', 'bg-yellow-500',
-                                                            'bg-indigo-500', 'bg-pink-500', 'bg-teal-500',
-                                                            'bg-cyan-500', 'bg-lime-500', 'bg-amber-500'
-                                                        ];
-                                                        const colorClass = colors[deptIndex % colors.length];
-                                                        return (
-                                                            <div key={deptIndex} className="relative">
-                                                                <div 
-                                                                    className={`${colorClass} rounded-t w-3 transition-all duration-500 ease-out`}
-                                                                    style={{ height: `${height}px` }}
-                                                                    title={`${dept.department}: ${dept.attendance_rate}%`}
-                                                                ></div>
-                                    </div>
-                                                        );
-                                                    })}
-                                </div>
-                            </div>
-                                        );
-                                    })}
-                                    </div>
-                                </div>
-                            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                {liveDepartmentTrends?.[0]?.departments?.map((dept, index) => {
-                                    const colors = [
-                                        'text-blue-600', 'text-green-600', 'text-purple-600',
-                                        'text-orange-600', 'text-red-600', 'text-yellow-600',
-                                        'text-indigo-600', 'text-pink-600', 'text-teal-600',
-                                        'text-cyan-600', 'text-lime-600', 'text-amber-600'
-                                    ];
-                                    const colorClass = colors[index % colors.length];
-                                    return (
-                                        <div key={index} className="text-center p-3 bg-white rounded-lg border">
-                                            <div className={`text-lg font-bold ${colorClass}`}>{dept.attendance_rate}%</div>
-                                            <div className="text-sm text-gray-600">{dept.department}</div>
-                                            <div className="text-xs text-gray-500">{dept.total_records} records</div>
-                            </div>
-                                    );
-                                })}
-                                    </div>
-                                </div>
-                            </div>
-
-                    {/* Faculty Compliance Trends */}
-                    <div>
-                        <h4 className="text-lg font-semibold text-gray-900 mb-4">Faculty Compliance Rates</h4>
-                        <div className="bg-gray-50 rounded-2xl p-6">
-                            <div className="relative h-80">
+            {/* Faculty Compliance Trends */}
+            <div className="bg-white rounded-3xl shadow-lg p-8">
+                <h4 className="text-lg font-semibold text-gray-900 mb-4">Faculty Compliance Rates</h4>
+                <div className="bg-gray-50 rounded-2xl p-6">
+                    <div className="relative h-80">
                                 {/* Simple Line Chart for Faculty Compliance */}
                                 <div className="flex items-end justify-between h-full">
                                     {liveFacultyCompliance?.slice(0, 7).map((day, dayIndex) => {
@@ -1663,7 +1709,7 @@ export default function SystemAdmin({
                                                 <div className="text-xs text-gray-600 mb-2">{day.day}</div>
                                                 <div className="space-y-1 w-full">
                                                     {day.teachers?.map((teacher, teacherIndex) => {
-                                                        const height = maxRate > 0 ? (teacher.compliance_rate / maxRate) * 200 : 0;
+                                                        const height = maxRate > 0 ? Math.round((teacher.compliance_rate / maxRate) * 200) : 0;
                                                         const colors = [
                                                             'bg-orange-500', 'bg-red-500', 'bg-yellow-500',
                                                             'bg-blue-500', 'bg-green-500', 'bg-purple-500',
@@ -1678,16 +1724,16 @@ export default function SystemAdmin({
                                                                     style={{ height: `${height}px` }}
                                                                     title={`${teacher.teacher}: ${teacher.compliance_rate}%`}
                                                                 ></div>
-                        </div>
+                                                            </div>
                                                         );
                                                     })}
-                    </div>
-                            </div>
+                                                </div>
+                                            </div>
                                         );
                                     })}
-                            </div>
-                            </div>
-                            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                </div>
+                    </div>
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                                 {liveFacultyCompliance?.[0]?.teachers?.map((teacher, index) => {
                                     const colors = [
                                         'text-orange-600', 'text-red-600', 'text-yellow-600',
@@ -1704,8 +1750,6 @@ export default function SystemAdmin({
                                         </div>
                                     );
                                 })}
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -3003,73 +3047,101 @@ export default function SystemAdmin({
                         <p className="text-sm text-gray-600">Visual tools for attendance trends and analysis</p>
                     </div>
                     
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Line Chart: Weekly Attendance Trends */}
+                    <div className="grid grid-cols-1 gap-6">
+                        {/* Weekly Status Progress Graph */}
                         <div className="bg-gray-50 rounded-lg p-6">
-                            <h4 className="text-md font-medium text-gray-900 mb-4">Weekly Attendance Trends</h4>
-                            <div className="relative h-64">
-                                {/* Simple Line Chart using CSS */}
-                                <div className="flex items-end justify-between h-full">
-                                    {liveDepartmentTrends && liveDepartmentTrends.length > 0 ? (
-                                        liveDepartmentTrends.slice(0, 7).map((dayData, index) => {
-                                            // Calculate average attendance rate for all departments on this day
-                                            const avgRate = dayData.departments && dayData.departments.length > 0 
-                                                ? dayData.departments.reduce((sum, dept) => sum + (dept.attendance_rate || 0), 0) / dayData.departments.length
-                                                : 0;
-                                            const height = Math.max((avgRate / 100) * 200, 10); // Minimum height for visibility
+                            <h4 className="text-md font-medium text-gray-900 mb-4">Weekly Student Status Distribution</h4>
+                            {liveWeeklyStatusProgress && liveWeeklyStatusProgress.length > 0 ? (
+                                <div className="relative h-96">
+                                    {/* Progress Graph - Stacked Percentage Bars */}
+                                    <div className="flex items-end justify-between h-full gap-2">
+                                        {liveWeeklyStatusProgress.map((week, weekIndex) => {
+                                            const maxHeight = 280; // Max height in pixels for 100%
                                             return (
-                                                <div key={index} className="flex flex-col items-center flex-1">
-                                                    <div className="relative">
-                                                        <div 
-                                                            className="bg-blue-500 rounded-t w-6 transition-all duration-500 ease-out"
-                                                            style={{ height: `${height}px` }}
-                                                        ></div>
-                                                        <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs font-medium text-gray-700">
-                                                            {avgRate.toFixed(1)}%
+                                                <div key={weekIndex} className="flex flex-col items-center flex-1 h-full">
+                                                    <div className="text-xs text-gray-600 mb-2 text-center font-medium">
+                                                        {week.week_label}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500 mb-1 text-center max-w-full">
+                                                        {week.date_label}
+                                                    </div>
+                                                    <div className="w-full relative" style={{ height: `${maxHeight}px` }}>
+                                                        {/* Stacked bar showing percentages */}
+                                                        <div className="absolute bottom-0 w-full flex flex-col-reverse rounded overflow-hidden shadow-sm">
+                                                            {/* Normal Status Bar (Green) */}
+                                                            <div 
+                                                                className="bg-green-500 transition-all duration-500 ease-out relative group border-t border-green-600"
+                                                                style={{ height: `${(week.normal_percentage / 100) * maxHeight}px` }}
+                                                                title={`Normal: ${week.normal_percentage}% (${week.normal_count} students)`}
+                                                            >
+                                                                {week.normal_percentage >= 10 && (
+                                                                    <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white">
+                                                                        {week.normal_percentage.toFixed(1)}%
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {/* SLIP Status Bar (Yellow) */}
+                                                            <div 
+                                                                className="bg-yellow-500 transition-all duration-500 ease-out relative group border-t border-yellow-600"
+                                                                style={{ height: `${(week.slip_percentage / 100) * maxHeight}px` }}
+                                                                title={`SLIP: ${week.slip_percentage}% (${week.slip_count} students)`}
+                                                            >
+                                                                {week.slip_percentage >= 10 && (
+                                                                    <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-gray-800">
+                                                                        {week.slip_percentage.toFixed(1)}%
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {/* PNS Status Bar (Red) */}
+                                                            <div 
+                                                                className="bg-red-500 transition-all duration-500 ease-out relative group border-t border-red-600"
+                                                                style={{ height: `${(week.pns_percentage / 100) * maxHeight}px` }}
+                                                                title={`PNS: ${week.pns_percentage}% (${week.pns_count} students)`}
+                                                            >
+                                                                {week.pns_percentage >= 10 && (
+                                                                    <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white">
+                                                                        {week.pns_percentage.toFixed(1)}%
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                    <div className="mt-2 text-xs text-gray-600">
-                                                        {dayData.day || `Day ${index + 1}`}
+                                                    <div className="text-xs text-gray-500 mt-2 text-center">
+                                                        <div className="font-medium">{week.total_students} students</div>
+                                                        <div className="text-gray-400 mt-0.5">
+                                                            N:{week.normal_count} S:{week.slip_count} P:{week.pns_count}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             );
-                                        })
-                                    ) : (
-                                        // Fallback when no data is available
-                                        Array.from({ length: 7 }, (_, index) => {
-                                            const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-                                            const mockRate = 75 + (Math.random() * 20); // Random rate between 75-95%
-                                            const height = (mockRate / 100) * 200;
-                                            return (
-                                                <div key={index} className="flex flex-col items-center flex-1">
-                                                    <div className="relative">
-                                                        <div 
-                                                            className="bg-gray-400 rounded-t w-6 transition-all duration-500 ease-out"
-                                                            style={{ height: `${height}px` }}
-                                                        ></div>
-                                                        <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs font-medium text-gray-700">
-                                                            {mockRate.toFixed(1)}%
-                                                        </div>
-                                                    </div>
-                                                    <div className="mt-2 text-xs text-gray-600">
-                                                        {days[index]}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })
-                                    )}
+                                        })}
+                                    </div>
                                 </div>
-                                <div className="absolute bottom-0 left-0 right-0 h-px bg-gray-300"></div>
-                                <div className="absolute top-0 left-0 right-0 h-px bg-gray-300"></div>
-                            </div>
-                            <div className="mt-4 text-center">
-                                <span className="text-sm text-gray-500">
-                                    {liveDepartmentTrends && liveDepartmentTrends.length > 0 
-                                        ? "Last 7 Days Average Attendance" 
-                                        : "No attendance data available - showing sample data"
-                                    }
-                                </span>
-                            </div>
+                            ) : (
+                                <div className="relative h-96 flex items-center justify-center">
+                                    <div className="text-center">
+                                        <p className="text-gray-500 text-lg mb-2">No weekly status data available</p>
+                                        <p className="text-gray-400 text-sm">Weekly summaries need to be generated to display this graph</p>
+                                    </div>
+                                </div>
+                            )}
+                            {/* Legend */}
+                            {liveWeeklyStatusProgress && liveWeeklyStatusProgress.length > 0 && (
+                                <div className="mt-6 flex items-center justify-center space-x-6">
+                                    <div className="flex items-center space-x-2">
+                                        <div className="w-4 h-4 bg-green-500 rounded"></div>
+                                        <span className="text-sm text-gray-700">Normal</span>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <div className="w-4 h-4 bg-yellow-500 rounded"></div>
+                                        <span className="text-sm text-gray-700">SLIP</span>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <div className="w-4 h-4 bg-red-500 rounded"></div>
+                                        <span className="text-sm text-gray-700">PNS</span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {/* Department Performance Chart */}

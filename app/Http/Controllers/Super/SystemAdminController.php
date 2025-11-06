@@ -57,6 +57,7 @@ class SystemAdminController extends Controller
             'integrations' => $this->getIntegrationStatus(),
             'systemTools' => $this->getSystemToolsData(),
             'auditLogs' => AuditLog::with('user')->orderBy('created_at', 'desc')->limit(50)->get(),
+            'weeklyStatusProgress' => $this->getWeeklyStatusProgress(),
         ]);
     }
 
@@ -174,6 +175,7 @@ class SystemAdminController extends Controller
             'calendarData' => $calendarData,
             'departmentTrends' => $this->getDepartmentAttendanceTrends(),
             'facultyCompliance' => $this->getFacultyComplianceTrends(),
+            'weeklyStatusProgress' => $this->getWeeklyStatusProgress(),
         ]);
     }
 
@@ -183,6 +185,7 @@ class SystemAdminController extends Controller
             'departmentTrends' => $this->getDepartmentAttendanceTrends(),
             'facultyCompliance' => $this->getFacultyComplianceTrends(),
             'systemStats' => $this->getSystemStats(),
+            'weeklyStatusProgress' => $this->getWeeklyStatusProgress(),
             'timestamp' => now()->toISOString(),
         ]);
     }
@@ -1917,5 +1920,69 @@ class SystemAdminController extends Controller
         });
         
         return $compliance;
+    }
+
+    private function getWeeklyStatusProgress()
+    {
+        $today = \Carbon\CarbonImmutable::today();
+        // Use Monday as start of week to match WeeklySummary generation
+        $weeks = collect(range(0, 7))->map(fn($i) => $today->startOfWeek(\Carbon\CarbonImmutable::MONDAY)->subWeeks($i))->reverse()->values();
+        
+        $weeklyStatusData = [];
+        
+        foreach ($weeks as $weekStart) {
+            $weekEnd = $weekStart->endOfWeek(\Carbon\CarbonImmutable::SUNDAY);
+            $rangeStart = $weekStart->toDateString();
+            $rangeEnd = $weekEnd->toDateString();
+            
+            // Get all weekly summaries for this week (where week_start matches this week)
+            $summaries = \App\Models\WeeklySummary::where('week_start', $rangeStart)
+                ->get();
+            
+            // Calculate status for each student based on their weekly summary
+            $normalCount = 0;
+            $pnsCount = 0;
+            $slipCount = 0;
+            $totalStudents = 0;
+            
+            foreach ($summaries as $summary) {
+                $total = (int)$summary->present_count + (int)$summary->late_count + (int)$summary->absent_count;
+                
+                // Only count students with attendance records
+                if ($total > 0) {
+                    $totalStudents++;
+                    
+                    // Determine status based on the same logic used in management
+                    if (($summary->present_count + $summary->late_count) === 0 && $summary->absent_count > 0) {
+                        $pnsCount++;
+                    } elseif ($total > 0 && $summary->absent_count > ($total / 2)) {
+                        $slipCount++;
+                    } else {
+                        $normalCount++;
+                    }
+                }
+            }
+            
+            // Calculate percentages
+            $normalPercentage = $totalStudents > 0 ? round(($normalCount / $totalStudents) * 100, 1) : 0;
+            $pnsPercentage = $totalStudents > 0 ? round(($pnsCount / $totalStudents) * 100, 1) : 0;
+            $slipPercentage = $totalStudents > 0 ? round(($slipCount / $totalStudents) * 100, 1) : 0;
+            
+            $weeklyStatusData[] = [
+                'week_start' => $rangeStart,
+                'week_end' => $rangeEnd,
+                'date_label' => $weekStart->format('M d') . ' - ' . $weekEnd->format('M d, Y'),
+                'week_label' => $weekStart->format('M d'),
+                'normal_percentage' => $normalPercentage,
+                'pns_percentage' => $pnsPercentage,
+                'slip_percentage' => $slipPercentage,
+                'normal_count' => $normalCount,
+                'pns_count' => $pnsCount,
+                'slip_count' => $slipCount,
+                'total_students' => $totalStudents,
+            ];
+        }
+        
+        return $weeklyStatusData;
     }
 }
