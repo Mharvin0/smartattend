@@ -33,22 +33,21 @@ export default function Interventions({
 
     const flash = usePage().props.flash || {};
 
-    // Filter programs based on selected department
+    // department
     const filteredPrograms = selectedDepartment 
         ? programs.filter(p => p.department_id == selectedDepartment)
         : programs;
 
-    // Filter sections based on selected program
+    // program
     const filteredSections = selectedProgram 
         ? sections.filter(s => s.program_id == selectedProgram)
         : sections;
 
-    // Filter schedules based on selected section
+    // section
     const filteredSchedules = selectedSection 
         ? schedules.filter(s => s.section_id == selectedSection)
         : schedules;
 
-    // Apply filters
     const applyFilters = useCallback(() => {
         const queryParams = new URLSearchParams();
         
@@ -70,7 +69,6 @@ export default function Interventions({
         });
     }, [selectedDepartment, selectedProgram, selectedSection, selectedSchedule, studentNumber, studentName, selectedStatus, selectedPriority, dateFrom, dateTo, searchTerm]);
 
-    // Clear all filters
     const clearFilters = useCallback(() => {
         setSelectedDepartment('');
         setSelectedProgram('');
@@ -86,7 +84,6 @@ export default function Interventions({
         router.get(route('admin.interventions'));
     }, []);
 
-    // Debounced search function
     const debouncedSearch = useCallback((value) => {
         if (searchTimeoutRef.current) {
             clearTimeout(searchTimeoutRef.current);
@@ -97,7 +94,6 @@ export default function Interventions({
         }, 500);
     }, [applyFilters]);
 
-    // Cleanup timeout on unmount
     useEffect(() => {
         return () => {
             if (searchTimeoutRef.current) {
@@ -106,7 +102,6 @@ export default function Interventions({
         };
     }, []);
 
-    // Handle intervention selection
     const handleInterventionSelect = (interventionId, isSelected) => {
         if (isSelected) {
             setSelectedInterventions(prev => [...prev, interventionId]);
@@ -115,7 +110,6 @@ export default function Interventions({
         }
     };
 
-    // Handle bulk action
     const handleBulkAction = () => {
         if (!bulkAction || selectedInterventions.length === 0) return;
 
@@ -132,7 +126,6 @@ export default function Interventions({
         });
     };
 
-    // Handle status update
     const handleStatusUpdate = async (interventionId, newStatus, outcome = '') => {
         try {
             const response = await fetch(route('admin.interventions.status', interventionId), {
@@ -149,7 +142,6 @@ export default function Interventions({
 
             if (response.ok) {
                 const data = await response.json();
-                // Refresh the page to show updated data
                 router.reload();
             }
         } catch (error) {
@@ -158,10 +150,23 @@ export default function Interventions({
     };
 
     return (
-        <AuthenticatedLayout header={<h2 className="text-2xl font-bold leading-tight text-gray-800">Interventions Management</h2>}>
+        <AuthenticatedLayout>
             <Head title="Interventions Management" />
-            <div className="min-h-screen bg-gradient-to-br from-brand-primary/10 via-emerald-50/80 to-brand-secondary/5 py-8">
-                <div className="mx-auto max-w-full space-y-8 px-4 sm:px-6 lg:px-8 xl:px-12">
+            <div className="min-h-screen bg-gradient-to-br from-slate-50/80 via-gray-50/60 to-zinc-50/70 py-8">
+                <div className="w-full px-6 py-8 space-y-6">
+                    {/* Header */}
+                    <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 border border-white/20">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h2 className="text-4xl font-bold bg-gradient-to-r from-slate-600 via-gray-600 to-zinc-600 bg-clip-text text-transparent">
+                                    Interventions
+                                </h2>
+                                <p className="text-gray-600 mt-2 text-lg">
+                                    Manage student interventions and support actions
+                                </p>
+                            </div>
+                        </div>
+                    </div>
                     {flash.success && (
                         <div className="pointer-events-none fixed right-6 top-6 z-50 rounded bg-green-600 px-4 py-2 text-sm text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">
                             {flash.success}

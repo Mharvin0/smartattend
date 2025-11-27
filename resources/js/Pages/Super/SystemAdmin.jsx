@@ -75,18 +75,34 @@ export default function SystemAdmin({
         }
     };
     
-    // Teachers management state
-    const [activeSettingsTab, setActiveSettingsTab] = useState('teachers');
-    const [teachers, setTeachers] = useState(teachersProp);
-    const [showTeacherModal, setShowTeacherModal] = useState(false);
-    const [editingTeacher, setEditingTeacher] = useState(null);
-    const [teacherForm, setTeacherForm] = useState({
-        name: '',
+    // Student management state
+    const [activeSettingsTab, setActiveSettingsTab] = useState('students');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedDepartment, setSelectedDepartment] = useState('');
+    const [selectedProgram, setSelectedProgram] = useState('');
+    const [selectedYearLevel, setSelectedYearLevel] = useState('');
+    const [selectedStatus, setSelectedStatus] = useState('');
+    const [showFilters, setShowFilters] = useState(false);
+    const [showAddStudentModal, setShowAddStudentModal] = useState(false);
+    const [showImportModal, setShowImportModal] = useState(false);
+    const [showExportModal, setShowExportModal] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [importFile, setImportFile] = useState(null);
+    const [importType, setImportType] = useState('csv');
+    const [exportFormat, setExportFormat] = useState('csv');
+    const [selectedStudent, setSelectedStudent] = useState(null);
+    const [showStudentModal, setShowStudentModal] = useState(false);
+    const [studentForm, setStudentForm] = useState({
+        first_name: '',
+        last_name: '',
+        student_number: '',
         email: '',
-        password: '',
-        department_id: null,
-        program_id: null,
-        section_ids: []
+        section_id: '',
+        year_level: '',
+        gender: '',
+        birth_date: '',
+        guardian_name: '',
+        guardian_contact: ''
     });
 
     // Management (formerly Interventions) state
@@ -102,10 +118,10 @@ export default function SystemAdmin({
     const [filterSpecificReason, setFilterSpecificReason] = useState('');
     const [filterMonth, setFilterMonth] = useState('');
     const [filterWeek, setFilterWeek] = useState('');
-    const [searchTerm, setSearchTerm] = useState('');
+    const [managementSearchTerm, setManagementSearchTerm] = useState('');
     const [showManagementFilters, setShowManagementFilters] = useState(false);
-    const [showImportModal, setShowImportModal] = useState(false);
-    const [importFile, setImportFile] = useState(null);
+    const [showManagementImportModal, setShowManagementImportModal] = useState(false);
+    const [managementImportFile, setManagementImportFile] = useState(null);
     const [importFileType, setImportFileType] = useState('csv');
     
     // Interventions legacy state (kept for backward compatibility)
@@ -153,21 +169,29 @@ export default function SystemAdmin({
     }, []);
 
 
-    // Fetch teachers data when Settings tab is active
-    useEffect(() => {
-        if (activeTab === 'settings' && teachersProp.length === 0) {
-            // If no teachers data is available, fetch it
-            router.get(route('super.settings'), {}, {
-                preserveState: true,
-                preserveScroll: true,
-            });
-        }
-    }, [activeTab]);
+    // Filter programs by department
+    const filteredPrograms = selectedDepartment 
+        ? programs?.filter(p => p.department_id == selectedDepartment) || []
+        : programs || [];
 
-    // Set Teachers sub-tab as active when coming from Teachers navigation
+    // Filter students
+    const filteredStudents = students?.filter(student => {
+        const matchesDepartment = !selectedDepartment || student.section?.program?.department_id == selectedDepartment;
+        const matchesProgram = !selectedProgram || student.section?.program_id == selectedProgram;
+        const matchesYearLevel = !selectedYearLevel || student.year_level == selectedYearLevel;
+        const matchesStatus = !selectedStatus || student.attendance_status == selectedStatus;
+        const matchesSearch = !searchTerm || 
+            student.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            student.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            student.student_number?.toLowerCase().includes(searchTerm.toLowerCase());
+        
+        return matchesDepartment && matchesProgram && matchesYearLevel && matchesStatus && matchesSearch;
+    }) || [];
+
+    // Set Students sub-tab as active when coming from Students navigation
     useEffect(() => {
-        if (activeTab === 'settings' && window.location.hash === '#teachers') {
-            setActiveSettingsTab('teachers');
+        if (activeTab === 'settings' && window.location.hash === '#students') {
+            setActiveSettingsTab('students');
         }
     }, [activeTab]);
 
@@ -181,132 +205,6 @@ export default function SystemAdmin({
         }
     }, [notification]);
 
-
-    // Teachers management functions
-    const handleCreateTeacher = async () => {
-        setIsLoading(true);
-        try {
-            const response = await fetch(route('super.teachers.store'), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                },
-                body: JSON.stringify(teacherForm),
-            });
-
-            if (response.ok) {
-                const result = await response.json();
-                setTeachers([...teachers, result.teacher]);
-                setShowTeacherModal(false);
-                setTeacherForm({ name: '', email: '', password: '', department_id: null, program_id: null, section_ids: [] });
-                setNotification({ type: 'success', message: 'Teacher created successfully!' });
-            } else {
-                const error = await response.json();
-                throw new Error(error.message || 'Failed to create teacher');
-            }
-        } catch (error) {
-            console.error('Error creating teacher:', error);
-            setNotification({ type: 'error', message: error.message || 'Failed to create teacher. Please try again.' });
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const handleUpdateTeacher = async () => {
-        if (!editingTeacher) return;
-        
-        setIsLoading(true);
-        try {
-            // Prepare data with proper null handling
-            const updateData = {
-                name: teacherForm.name,
-                email: teacherForm.email,
-                password: teacherForm.password || null,
-                department_id: teacherForm.department_id || null,
-                program_id: teacherForm.program_id || null,
-                section_ids: teacherForm.section_ids || []
-            };
-
-            console.log('Updating teacher with data:', updateData);
-            console.log('Teacher ID:', editingTeacher.id);
-            
-            const response = await fetch(route('super.teachers.update', editingTeacher.id), {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                    'Accept': 'application/json',
-                },
-                body: JSON.stringify(updateData),
-            });
-
-            console.log('Response status:', response.status);
-            console.log('Response headers:', response.headers);
-
-            if (response.ok) {
-                const result = await response.json();
-                setTeachers(teachers.map(t => t.id === editingTeacher.id ? result.teacher : t));
-                setShowTeacherModal(false);
-                setEditingTeacher(null);
-                setTeacherForm({ name: '', email: '', password: '', department_id: null, program_id: null, section_ids: [] });
-                setNotification({ type: 'success', message: 'Teacher updated successfully!' });
-            } else {
-                const errorText = await response.text();
-                console.error('Error response:', errorText);
-                throw new Error('Failed to update teacher');
-            }
-        } catch (error) {
-            console.error('Error updating teacher:', error);
-            setNotification({ type: 'error', message: error.message || 'Failed to update teacher. Please try again.' });
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const handleDeleteTeacher = async (teacherId) => {
-        if (!confirm('Are you sure you want to delete this teacher?')) return;
-        
-        setIsLoading(true);
-        try {
-            const response = await fetch(route('super.teachers.destroy', teacherId), {
-                method: 'DELETE',
-                headers: {
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                },
-            });
-
-            if (response.ok) {
-                setTeachers(teachers.filter(t => t.id !== teacherId));
-                setNotification({ type: 'success', message: 'Teacher deleted successfully!' });
-            } else {
-                throw new Error('Failed to delete teacher');
-            }
-        } catch (error) {
-            console.error('Error deleting teacher:', error);
-            setNotification({ type: 'error', message: 'Failed to delete teacher. Please try again.' });
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const openTeacherModal = (teacher = null) => {
-        if (teacher) {
-            setEditingTeacher(teacher);
-            setTeacherForm({
-                name: teacher.name,
-                email: teacher.email,
-                password: '',
-                department_id: teacher.department_id || null,
-                program_id: teacher.program_id || null,
-                section_ids: teacher.sections?.map(s => s.id) || []
-            });
-        } else {
-            setEditingTeacher(null);
-            setTeacherForm({ name: '', email: '', password: '', department_id: null, program_id: null, section_ids: [] });
-        }
-        setShowTeacherModal(true);
-    };
 
     // Intervention CRUD functions
     const handleCreateIntervention = async () => {
@@ -1079,8 +977,8 @@ export default function SystemAdmin({
             }
             
             // Search filter (student name and student number only)
-            if (searchTerm) {
-                const searchLower = searchTerm.toLowerCase();
+            if (managementSearchTerm) {
+                const searchLower = managementSearchTerm.toLowerCase();
                 const studentName = `${record.student?.first_name || ''} ${record.student?.last_name || ''}`.toLowerCase();
                 const studentNumber = (record.student?.student_number || '').toLowerCase();
                 
@@ -1134,8 +1032,8 @@ export default function SystemAdmin({
                                 <label className="block text-sm font-medium text-gray-700">Search (Name or Student No.)</label>
                                 <input
                                     type="text"
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    value={managementSearchTerm}
+                                    onChange={(e) => setManagementSearchTerm(e.target.value)}
                                     placeholder="e.g. Juan Dela Cruz or 2020-00001"
                                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
                                 />
@@ -1251,10 +1149,10 @@ export default function SystemAdmin({
                                 setFilterSpecificReason('');
                                 setFilterMonth('');
                                 setFilterWeek('');
-                                setSearchTerm('');
+                                setManagementSearchTerm('');
                             }}
                             className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary"
-                            disabled={!filterDepartment && !filterSection && !filterStatus && !filterSpecificReason && !filterMonth && !filterWeek && !searchTerm}
+                            disabled={!filterDepartment && !filterSection && !filterStatus && !filterSpecificReason && !filterMonth && !filterWeek && !managementSearchTerm}
                         >
                             Clear Filters
                         </button>
@@ -1328,7 +1226,7 @@ export default function SystemAdmin({
                                     Print
                                 </button>
                                 <button
-                                    onClick={() => setShowImportModal(true)}
+                                    onClick={() => setShowManagementImportModal(true)}
                                     className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-brand-primary hover:bg-brand-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary"
                                 >
                                     <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1399,16 +1297,37 @@ export default function SystemAdmin({
                                     key: 'actions',
                                     label: 'Actions',
                                     render: (_, record) => (
-                                        <button
-                                            onClick={() => {
-                                                setRemarkRecord(record);
-                                                setRemarkText(record.remarks || '');
-                                                setShowRemarkModal(true);
-                                            }}
-                                            className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-                                        >
-                                            Add/Edit Remark
-                                        </button>
+                                        <div className="flex items-center space-x-2">
+                                            <button
+                                                onClick={() => {
+                                                    setRemarkRecord(record);
+                                                    setRemarkText(record.remarks || '');
+                                                    setShowRemarkModal(true);
+                                                }}
+                                                className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                                            >
+                                                Add/Edit Remark
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    if (confirm(`Are you sure you want to delete the remark for ${record.student?.first_name} ${record.student?.last_name}?`)) {
+                                                        // Delete remark logic - you may need to add a delete route
+                                                        // Use direct URL to avoid Ziggy route errors
+                                                        router.delete(`/super/management/remarks/${record.id}`, {
+                                                            onSuccess: () => {
+                                                                setManagementData(prev => prev.filter(item => item.id !== record.id));
+                                                            },
+                                                            onError: (errors) => {
+                                                                alert('Failed to delete remark: ' + (errors.message || 'Unknown error'));
+                                                            }
+                                                        });
+                                                    }
+                                                }}
+                                                className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
+                                            >
+                                                Delete
+                                            </button>
+                                        </div>
                                     )
                                 },
                             ]}
@@ -1418,7 +1337,7 @@ export default function SystemAdmin({
                 </div>
 
                 {/* Import Modal */}
-                {showImportModal && (
+                {showManagementImportModal && (
                     <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
                         <div className="bg-white rounded-lg shadow-lg w-full max-w-md">
                             <div className="px-6 py-4 border-b">
@@ -1441,7 +1360,7 @@ export default function SystemAdmin({
                                     <input
                                         type="file"
                                         accept={importFileType === 'csv' ? '.csv' : '.xml'}
-                                        onChange={(e) => setImportFile(e.target.files[0])}
+                                        onChange={(e) => setManagementImportFile(e.target.files[0])}
                                         className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-brand-primary file:text-white hover:file:bg-brand-primary/90"
                                     />
                                 </div>
@@ -1452,8 +1371,8 @@ export default function SystemAdmin({
                             <div className="px-6 py-4 border-t flex justify-end space-x-2">
                                 <button
                                     onClick={() => {
-                                        setShowImportModal(false);
-                                        setImportFile(null);
+                                        setShowManagementImportModal(false);
+                                        setManagementImportFile(null);
                                     }}
                                     className="px-4 py-2 rounded border hover:bg-gray-50"
                                 >
@@ -1461,14 +1380,14 @@ export default function SystemAdmin({
                                 </button>
                                 <button
                                     onClick={async () => {
-                                        if (!importFile) {
+                                        if (!managementImportFile) {
                                             setNotification({ type: 'error', message: 'Please select a file to import.' });
                                             return;
                                         }
                                         // TODO: Implement import logic
-                                        setNotification({ type: 'info', message: 'Import functionality will be implemented. File selected: ' + importFile.name });
-                                        setShowImportModal(false);
-                                        setImportFile(null);
+                                        setNotification({ type: 'info', message: 'Import functionality will be implemented. File selected: ' + managementImportFile.name });
+                                        setShowManagementImportModal(false);
+                                        setManagementImportFile(null);
                                     }}
                                     className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
                                 >
@@ -1521,25 +1440,21 @@ export default function SystemAdmin({
                                             week_end: remarkRecord.week.end,
                                             remark: remarkText,
                                         };
-                                        try {
-                                            const response = await fetch(route('super.management.remarks.store'), {
-                                                method: 'POST',
-                                                headers: {
-                                                    'Content-Type': 'application/json',
-                                                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-                                                },
-                                                body: JSON.stringify(payload)
-                                            });
-                                            if (response.ok) {
+                                        // Use direct URL to avoid Ziggy route errors
+                                        router.post('/super/management/remarks', payload, {
+                                            onSuccess: () => {
                                                 // Update local state
                                                 setManagementData(prev => prev.map(item => (
                                                     item.id === remarkRecord.id ? { ...item, remarks: remarkText } : item
                                                 )));
                                                 setShowRemarkModal(false);
+                                                setRemarkText('');
+                                                setRemarkRecord(null);
+                                            },
+                                            onError: (errors) => {
+                                                alert('Failed to save remark: ' + (errors.message || 'Unknown error'));
                                             }
-                                        } catch (e) {
-                                            console.error('Failed to save remark', e);
-                                        }
+                                        });
                                     }}
                                     className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
                                 >
@@ -1556,10 +1471,18 @@ export default function SystemAdmin({
     const renderAttendance = () => (
         <div className="space-y-6">
             {/* Attendance Header */}
-            <div className="bg-white rounded-3xl shadow-lg p-8">
-                <div className="mb-6">
-                    <h2 className="text-3xl font-bold text-gray-900">Attendance Management</h2>
+            <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 border border-white/20">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h2 className="text-4xl font-bold bg-gradient-to-r from-slate-600 via-gray-600 to-zinc-600 bg-clip-text text-transparent">
+                            Attendance
+                        </h2>
+                        <p className="text-gray-600 mt-2 text-lg">
+                            Monitor and manage student attendance records
+                        </p>
+                    </div>
                 </div>
+            </div>
 
                 {/* Attendance Statistics */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -1644,7 +1567,7 @@ export default function SystemAdmin({
                                                             <div 
                                                                 className="bg-red-500 transition-all duration-500 ease-out relative group border-t border-red-600"
                                                                 style={{ height: `${(week.pns_percentage / 100) * maxHeight}px` }}
-                                                                title={`PNS: ${week.pns_percentage}% (${week.pns_count} students)`}
+                                                                title={`Probable No-Show: ${week.pns_percentage}% (${week.pns_count} students)`}
                                                             >
                                                                 {week.pns_percentage >= 10 && (
                                                                     <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white">
@@ -1686,14 +1609,13 @@ export default function SystemAdmin({
                                     </div>
                                     <div className="flex items-center space-x-2">
                                         <div className="w-4 h-4 bg-red-500 rounded"></div>
-                                        <span className="text-sm text-gray-700">PNS</span>
+                                        <span className="text-sm text-gray-700" title="Probable No-Show">Probable No-Show</span>
                                     </div>
                                 </div>
                             )}
                         </div>
                     </div>
                 </div>
-            </div>
 
             {/* Faculty Compliance Trends */}
             <div className="bg-white rounded-3xl shadow-lg p-8">
@@ -1979,11 +1901,27 @@ export default function SystemAdmin({
                                     key: 'section_code',
                                     label: 'Section Code',
                                     render: (_, record) => {
-                                        const programCode = record.program?.code || record.program?.name || record.program || 'No Program';
+                                        // Generate section code: Program Code + Year Level (first digit) + "-" + Section Name
+                                        // Example: BSA1-02, BSIT3-03
+                                        const programCode = record.program?.code || '';
+                                        let yearLevelDigit = '';
+                                        
+                                        // Extract first digit from year level (e.g., "1" from "1st Year" or "1")
+                                        if (record.year_level) {
+                                            const yearLevelStr = String(record.year_level);
+                                            const match = yearLevelStr.match(/^(\d)/);
+                                            yearLevelDigit = match ? match[1] : yearLevelStr.charAt(0);
+                                        }
+                                        
+                                        // Construct section code
+                                        const sectionCode = programCode && yearLevelDigit && record.name
+                                            ? `${programCode}${yearLevelDigit}-${record.name}`
+                                            : record.name || 'N/A';
+                                        
                                         return (
                                             <div>
                                                 <div className="font-medium text-gray-900">
-                                                    {programCode}-{record.year_level}{record.name}
+                                                    {sectionCode}
                                                 </div>
                                                 <div className="text-sm text-gray-500">{record.academic_year} • {record.semester}</div>
                                             </div>
@@ -2048,50 +1986,403 @@ export default function SystemAdmin({
         </div>
     );
 
+    const handleAddStudent = async (e) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        router.post(route('super.students.store'), studentForm, {
+            onSuccess: () => {
+                setShowAddStudentModal(false);
+                setStudentForm({
+                    first_name: '',
+                    last_name: '',
+                    student_number: '',
+                    email: '',
+                    section_id: '',
+                    year_level: '',
+                    gender: '',
+                    birth_date: '',
+                    guardian_name: '',
+                    guardian_contact: ''
+                });
+                router.reload();
+            },
+            onError: () => {
+                setIsSubmitting(false);
+            },
+            onFinish: () => {
+                setIsSubmitting(false);
+            }
+        });
+    };
+
+    const handleImportStudents = async (e) => {
+        e.preventDefault();
+        if (!importFile) return;
+        
+        setIsSubmitting(true);
+        const formData = new FormData();
+        formData.append('file', importFile);
+        formData.append('type', importType);
+        
+        router.post(route('super.students.import'), formData, {
+            forceFormData: true,
+            onSuccess: () => {
+                setShowImportModal(false);
+                setImportFile(null);
+                router.reload();
+            },
+            onError: () => {
+                setIsSubmitting(false);
+            },
+            onFinish: () => {
+                setIsSubmitting(false);
+            }
+        });
+    };
+
+    const handleExportStudents = async (e) => {
+        e.preventDefault();
+        
+        setIsSubmitting(true);
+        const formData = new FormData();
+        formData.append('format', exportFormat);
+        
+        // Add filters if they are set
+        if (selectedDepartment) formData.append('department_id', selectedDepartment);
+        if (selectedProgram) formData.append('program_id', selectedProgram);
+        if (selectedYearLevel) formData.append('year_level', selectedYearLevel);
+        
+        try {
+            const response = await fetch(route('super.students.export'), {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                },
+                body: formData
+            });
+
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const contentDisposition = response.headers.get('Content-Disposition');
+                const filename = contentDisposition 
+                    ? contentDisposition.split('filename=')[1].replace(/"/g, '')
+                    : `students_${new Date().toISOString()}.${exportFormat}`;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                setShowExportModal(false);
+                setNotification({ type: 'success', message: 'Students exported successfully!' });
+            } else {
+                throw new Error('Export failed');
+            }
+        } catch (error) {
+            setNotification({ type: 'error', message: 'Failed to export students. Please try again.' });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     const renderSettings = () => (
         <div className="space-y-6">
-            {/* Settings Navigation */}
-            <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex space-x-4">
-                    {/* Temporarily disabled - System Tools */}
-                    {/* <button 
-                        onClick={() => setActiveSettingsTab('tools')}
-                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                            activeSettingsTab === 'tools'
-                                ? 'bg-blue-500 text-white'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                    >
-                        System Tools
-                    </button> */}
-                            <button 
-                        onClick={() => setActiveSettingsTab('teachers')}
-                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                            activeSettingsTab === 'teachers'
-                                ? 'bg-blue-500 text-white'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                    >
-                        Teachers Management
-                            </button>
-                    {/* Temporarily disabled - Sections Management */}
-                    {/* <button
-                        onClick={() => setActiveSettingsTab('sections')}
-                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                            activeSettingsTab === 'sections'
-                                ? 'bg-blue-500 text-white'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                    >
-                        Sections Management
-                    </button> */}
+            {/* Settings Navigation - Removed tab buttons, content shows directly */}
+
+            {/* Student Tab - Always show when settings tab is active */}
+            {activeTab === 'settings' && (
+                <div className="space-y-6">
+                    {/* Header */}
+                    <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 border border-white/20">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h2 className="text-4xl font-bold bg-gradient-to-r from-slate-600 via-gray-600 to-zinc-600 bg-clip-text text-transparent">
+                                    Student
+                                </h2>
+                                <p className="text-gray-600 mt-2 text-lg">
+                                    Manage and monitor student priorities and attendance
+                                </p>
+                            </div>
+                            <div className="flex items-center space-x-4">
+                                <button
+                                    onClick={() => setShowAddStudentModal(true)}
+                                    className="bg-gradient-to-r from-green-500 to-green-600 text-white px-6 py-3 rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-300 font-medium flex items-center"
+                                >
+                                    <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                    </svg>
+                                    Add Student
+                                </button>
+                                <button
+                                    onClick={() => setShowImportModal(true)}
+                                    className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 rounded-xl hover:from-blue-600 hover:to-blue-700 transition-all duration-300 font-medium flex items-center"
+                                >
+                                    <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                    </svg>
+                                    Import Students
+                                </button>
+                                <button
+                                    onClick={() => setShowExportModal(true)}
+                                    className="bg-gradient-to-r from-purple-500 to-purple-600 text-white px-6 py-3 rounded-xl hover:from-purple-600 hover:to-purple-700 transition-all duration-300 font-medium flex items-center"
+                                >
+                                    <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    Export Students
+                                </button>
+                                <span className="inline-flex items-center px-4 py-2 rounded-full text-sm bg-blue-100 text-blue-800 font-medium">
+                                    <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+                                    </svg>
+                                    {filteredStudents.length} Students
+                                </span>
+                            </div>
                         </div>
+                    </div>
+
+                    {/* Filters */}
+                    <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-6 border border-white/20">
+                        <div className="flex items-center justify-between mb-6">
+                            <h3 className="text-lg font-medium text-gray-900">Filters</h3>
+                            <button
+                                onClick={() => setShowFilters(!showFilters)}
+                                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                            >
+                                <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                                </svg>
+                                {showFilters ? 'Hide Filters' : 'Show Filters'}
+                            </button>
+                        </div>
+
+                        {showFilters && (
+                            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                {/* Search */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Search (Name or Student No.)</label>
+                                    <input
+                                        type="text"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        placeholder="e.g. Juan Dela Cruz or 2020-00001"
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                    />
+                                </div>
+
+                                {/* Department Filter */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Department</label>
+                                    <select
+                                        value={selectedDepartment}
+                                        onChange={(e) => {
+                                            setSelectedDepartment(e.target.value);
+                                            setSelectedProgram('');
+                                        }}
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                    >
+                                        <option value="">All Departments</option>
+                                        {departments?.map(dept => (
+                                            <option key={dept.id} value={dept.id}>{dept.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Program Filter */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Program</label>
+                                    <select
+                                        value={selectedProgram}
+                                        onChange={(e) => setSelectedProgram(e.target.value)}
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                        disabled={!selectedDepartment}
+                                    >
+                                        <option value="">All Programs</option>
+                                        {filteredPrograms.map(program => (
+                                            <option key={program.id} value={program.id}>{program.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Year Level Filter */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Year Level</label>
+                                    <select
+                                        value={selectedYearLevel}
+                                        onChange={(e) => setSelectedYearLevel(e.target.value)}
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                    >
+                                        <option value="">All Year Levels</option>
+                                        <option value="1st Year">1st Year</option>
+                                        <option value="2nd Year">2nd Year</option>
+                                        <option value="3rd Year">3rd Year</option>
+                                        <option value="4th Year">4th Year</option>
+                                    </select>
+                                </div>
+
+                                {/* Status Filter */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Status</label>
+                                    <select
+                                        value={selectedStatus}
+                                        onChange={(e) => setSelectedStatus(e.target.value)}
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                    >
+                                        <option value="">All Status</option>
+                                        <option value="Normal">Normal</option>
+                                        <option value="SLIP">SLIP</option>
+                                        <option value="PNS">Probable No-Show (PNS)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="mt-4 flex justify-between">
+                            <button
+                                onClick={() => {
+                                    setSelectedDepartment('');
+                                    setSelectedProgram('');
+                                    setSelectedYearLevel('');
+                                    setSelectedStatus('');
+                                    setSearchTerm('');
+                                }}
+                                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                disabled={!selectedDepartment && !selectedProgram && !selectedYearLevel && !selectedStatus && !searchTerm}
+                            >
+                                Clear Filters
+                            </button>
+                            <div className="text-sm text-gray-500">
+                                Showing {filteredStudents.length} of {students?.length || 0} students
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Students Table */}
+                    <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl border border-white/20 overflow-hidden">
+                        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                            <h3 className="text-lg font-semibold text-gray-900">Student List</h3>
+                        </div>
+                        <div className="overflow-x-auto w-full">
+                            <table className="w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student ID</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Section</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Program</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Year Level</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Absences</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                    {filteredStudents.map((student) => (
+                                        <tr key={student.id} className="hover:bg-gray-50">
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                {student.student_id || student.student_number}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                {student.first_name} {student.last_name}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {student.email}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {student.section?.name || student.section || 'N/A'}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {student.section?.program?.name || student.program || 'N/A'}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                    {student.year_level || 'N/A'}
+                                                            </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                {student.attendance_status && (
+                                                    <span 
+                                                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                                            student.attendance_status === 'Normal'
+                                                                ? 'bg-green-100 text-green-800'
+                                                                : student.attendance_status === 'SLIP'
+                                                                ? 'bg-yellow-100 text-yellow-800'
+                                                                : 'bg-red-100 text-red-800'
+                                                        }`}
+                                                        title={student.attendance_status === 'PNS' ? 'Probable No-Show: No attendance at all' : ''}
+                                                    >
+                                                        {student.attendance_status === 'PNS' ? 'Probable No-Show' : student.attendance_status}
+                                                </span>
+                                            )}
+                                        </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {student.absence_count || 0}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                            <div className="flex items-center space-x-2">
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedStudent(student);
+                                                        setShowStudentModal(true);
+                                                    }}
+                                                    className="text-blue-600 hover:text-blue-900 font-medium flex items-center"
+                                                >
+                                                    <svg className="h-4 w-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                    </svg>
+                                                    View
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        if (confirm(`Are you sure you want to delete ${student.first_name} ${student.last_name}?`)) {
+                                                            router.delete(`/super/students/${student.id}`, {
+                                                                onSuccess: () => {
+                                                                    router.reload();
+                                                                },
+                                                                onError: (errors) => {
+                                                                    alert('Failed to delete student: ' + (errors.message || 'Unknown error'));
+                                                                }
+                                                            });
+                                                        }
+                                                    }}
+                                                    className="text-red-600 hover:text-red-900 font-medium flex items-center"
+                                                >
+                                                    <svg className="h-4 w-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        </div>
+                    </div>
                 </div>
+            )}
 
             {/* System Tools Tab */}
             {activeSettingsTab === 'tools' && (
                 <div className="bg-white rounded-lg shadow p-8">
-                    <h2 className="text-2xl font-bold text-gray-900 mb-8">System Administration Tools</h2>
+                    {/* Header */}
+                    <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 border border-white/20 mb-6">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h2 className="text-4xl font-bold bg-gradient-to-r from-slate-600 via-gray-600 to-zinc-600 bg-clip-text text-transparent">
+                                    System Admin
+                                </h2>
+                                <p className="text-gray-600 mt-2 text-lg">
+                                    System administration tools and utilities
+                                </p>
+                            </div>
+                        </div>
+                    </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {/* Cache Management */}
@@ -2228,93 +2519,6 @@ export default function SystemAdmin({
                 </div>
             )}
 
-            {/* Teachers Management Tab */}
-            {activeSettingsTab === 'teachers' && (
-                <div className="bg-white rounded-lg shadow p-8">
-                    <div className="flex justify-between items-center mb-6">
-                        <h2 className="text-2xl font-bold text-gray-900">Teachers Management</h2>
-                        <button
-                            onClick={() => openTeacherModal()}
-                            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors"
-                        >
-                            Add New Teacher
-                        </button>
-                    </div>
-
-                    {/* Teachers Table */}
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                                <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Program</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sections</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                                {teachers.map((teacher) => (
-                                    <tr key={teacher.id}>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                            {teacher.name}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            {teacher.email}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            {teacher.department?.name || 'N/A'}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            {teacher.program?.name || 'N/A'}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            {teacher.sections && teacher.sections.length > 0 ? (
-                                                <div className="space-y-1">
-                                                    <div className="text-xs text-gray-600">
-                                                        {teacher.sections.length} section{teacher.sections.length !== 1 ? 's' : ''} assigned
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-1">
-                                                        {teacher.sections.slice(0, 3).map((section) => (
-                                                            <span key={section.id} className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
-                                                                {section.name}
-                                                            </span>
-                                                        ))}
-                                                        {teacher.sections.length > 3 && (
-                                                            <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-                                                                +{teacher.sections.length - 3} more
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-                                                    Unassigned
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                            <button
-                                                onClick={() => openTeacherModal(teacher)}
-                                                className="text-blue-600 hover:text-blue-900 mr-3"
-                                            >
-                                                Edit
-                                            </button>
-                                            <button
-                                                onClick={() => handleDeleteTeacher(teacher.id)}
-                                                className="text-red-600 hover:text-red-900"
-                                            >
-                                                Delete
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            )}
 
             {/* Temporarily disabled - Sections Management Tab */}
             {/* {activeSettingsTab === 'sections' && (
@@ -2374,157 +2578,6 @@ export default function SystemAdmin({
                                     <div className="text-gray-500">No logs available</div>
                                 )}
                             </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Teacher Modal */}
-            {showTeacherModal && (
-                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-                    <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-                        <div className="mt-3">
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-lg font-medium text-gray-900">
-                                    {editingTeacher ? 'Edit Teacher' : 'Add New Teacher'}
-                                </h3>
-                                <button
-                                    onClick={() => setShowTeacherModal(false)}
-                                    className="text-gray-400 hover:text-gray-600"
-                                >
-                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </div>
-                            
-                            <form className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                                    <input
-                                        type="text"
-                                        value={teacherForm.name}
-                                        onChange={(e) => setTeacherForm({...teacherForm, name: e.target.value})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        required
-                                    />
-                                </div>
-                                
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                                    <input
-                                        type="email"
-                                        value={teacherForm.email}
-                                        onChange={(e) => setTeacherForm({...teacherForm, email: e.target.value})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        required
-                                    />
-                                </div>
-                                
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                                    <input
-                                        type="password"
-                                        value={teacherForm.password}
-                                        onChange={(e) => setTeacherForm({...teacherForm, password: e.target.value})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        required={!editingTeacher}
-                                    />
-                                </div>
-                                
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                                    <select
-                                        value={teacherForm.department_id || ''}
-                                        onChange={(e) => setTeacherForm({...teacherForm, department_id: e.target.value ? parseInt(e.target.value) : null, program_id: null, section_ids: []})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    >
-                                        <option value="">Select Department</option>
-                                        {departments?.map((dept) => (
-                                            <option key={dept.id} value={dept.id}>{dept.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Program</label>
-                                    <select
-                                        value={teacherForm.program_id || ''}
-                                        onChange={(e) => setTeacherForm({...teacherForm, program_id: e.target.value ? parseInt(e.target.value) : null, section_ids: []})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        disabled={!teacherForm.department_id}
-                                    >
-                                        <option value="">Select Program</option>
-                                        {programs?.filter(prog => prog.department_id == teacherForm.department_id).map((prog) => (
-                                            <option key={prog.id} value={prog.id}>{prog.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Sections</label>
-                                    <select
-                                        multiple
-                                        value={teacherForm.section_ids}
-                                        onChange={(e) => {
-                                            const values = Array.from(e.target.selectedOptions, option => parseInt(option.value));
-                                            setTeacherForm({...teacherForm, section_ids: values});
-                                        }}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        disabled={!teacherForm.department_id}
-                                    >
-                                        <option value="" disabled>
-                                            {teacherForm.section_ids.length === 0 ? 'No sections assigned' : `${teacherForm.section_ids.length} section(s) selected`}
-                                        </option>
-                                        {sections?.filter(section => {
-                                            // Filter by program_id if program is selected
-                                            if (teacherForm.program_id) {
-                                                return section.program_id == teacherForm.program_id;
-                                            }
-                                            // If no program selected but department is selected, show all sections from that department
-                                            if (teacherForm.department_id && section.program?.department_id) {
-                                                return section.program.department_id == teacherForm.department_id;
-                                            }
-                                            // If no filters, show all sections
-                                            return true;
-                                        }).map((section) => (
-                                            <option key={section.id} value={section.id}>
-                                                {section.name} - {section.year_level} Year {section.program ? `(${section.program.name})` : ''}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <div className="mt-2 flex justify-between items-center">
-                                        <p className="text-xs text-gray-500">Hold Ctrl/Cmd to select multiple sections</p>
-                                        {teacherForm.section_ids.length > 0 && (
-                                            <button
-                                                type="button"
-                                                onClick={() => setTeacherForm({...teacherForm, section_ids: []})}
-                                                className="text-xs text-red-600 hover:text-red-800"
-                                            >
-                                                Clear All
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                                
-                                <div className="flex justify-end space-x-3 pt-4">
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowTeacherModal(false)}
-                                        className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 transition-colors"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={editingTeacher ? handleUpdateTeacher : handleCreateTeacher}
-                                        disabled={isLoading}
-                                        className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:bg-blue-300 transition-colors"
-                                    >
-                                        {isLoading ? 'Saving...' : (editingTeacher ? 'Update' : 'Create')}
-                                    </button>
-                                </div>
-                            </form>
                         </div>
                     </div>
                 </div>
@@ -3096,7 +3149,7 @@ export default function SystemAdmin({
                                                             <div 
                                                                 className="bg-red-500 transition-all duration-500 ease-out relative group border-t border-red-600"
                                                                 style={{ height: `${(week.pns_percentage / 100) * maxHeight}px` }}
-                                                                title={`PNS: ${week.pns_percentage}% (${week.pns_count} students)`}
+                                                                title={`Probable No-Show: ${week.pns_percentage}% (${week.pns_count} students)`}
                                                             >
                                                                 {week.pns_percentage >= 10 && (
                                                                     <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white">
@@ -3138,7 +3191,7 @@ export default function SystemAdmin({
                                     </div>
                                     <div className="flex items-center space-x-2">
                                         <div className="w-4 h-4 bg-red-500 rounded"></div>
-                                        <span className="text-sm text-gray-700">PNS</span>
+                                        <span className="text-sm text-gray-700" title="Probable No-Show">Probable No-Show</span>
                                     </div>
                                 </div>
                             )}
@@ -3428,8 +3481,8 @@ export default function SystemAdmin({
         <AuthenticatedLayout>
             <Head title={pageTitle} />
             
-            <div className="py-12">
-                <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
+            <div className="py-8">
+                <div className="w-full px-6">
                     {/* Notification */}
                     {notification && (
                         <div className={`mb-6 p-4 rounded-lg ${
@@ -3450,6 +3503,399 @@ export default function SystemAdmin({
                     {activeTab === 'settings' && renderSettings()}
                 </div>
             </div>
+
+            {/* Add Student Modal */}
+            {showAddStudentModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative">
+                        <div className="p-8">
+                            <div className="flex items-center justify-between mb-6">
+                                <h2 className="text-2xl font-bold text-gray-900">Add New Student</h2>
+                                <button
+                                    onClick={() => setShowAddStudentModal(false)}
+                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                >
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <form onSubmit={handleAddStudent} className="space-y-6">
+                                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-4">
+                                    <p className="text-sm text-gray-600 flex items-center">
+                                        <svg className="h-4 w-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        Please fill in all required fields marked with *
+                                    </p>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">First Name *</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={studentForm.first_name}
+                                            onChange={(e) => setStudentForm({...studentForm, first_name: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                            placeholder="Enter first name"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Last Name *</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={studentForm.last_name}
+                                            onChange={(e) => setStudentForm({...studentForm, last_name: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                            placeholder="Enter last name"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Student Number *</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={studentForm.student_number}
+                                            onChange={(e) => setStudentForm({...studentForm, student_number: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                            placeholder="e.g., 2024-00001"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Email *</label>
+                                        <input
+                                            type="email"
+                                            required
+                                            value={studentForm.email}
+                                            onChange={(e) => setStudentForm({...studentForm, email: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                            placeholder="student@example.com"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Section *</label>
+                                        <select
+                                            required
+                                            value={studentForm.section_id}
+                                            onChange={(e) => setStudentForm({...studentForm, section_id: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        >
+                                            <option value="">Select Section</option>
+                                            {sections?.map(section => (
+                                                <option key={section.id} value={section.id}>{section.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Year Level *</label>
+                                        <select
+                                            required
+                                            value={studentForm.year_level}
+                                            onChange={(e) => setStudentForm({...studentForm, year_level: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        >
+                                            <option value="">Select Year Level</option>
+                                            <option value="1st Year">1st Year</option>
+                                            <option value="2nd Year">2nd Year</option>
+                                            <option value="3rd Year">3rd Year</option>
+                                            <option value="4th Year">4th Year</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Gender</label>
+                                        <select
+                                            value={studentForm.gender}
+                                            onChange={(e) => setStudentForm({...studentForm, gender: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        >
+                                            <option value="">Select Gender</option>
+                                            <option value="Male">Male</option>
+                                            <option value="Female">Female</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Birth Date</label>
+                                        <input
+                                            type="date"
+                                            value={studentForm.birth_date}
+                                            onChange={(e) => setStudentForm({...studentForm, birth_date: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Guardian Name</label>
+                                    <input
+                                        type="text"
+                                        value={studentForm.guardian_name}
+                                        onChange={(e) => setStudentForm({...studentForm, guardian_name: e.target.value})}
+                                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        placeholder="Guardian's full name"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Guardian Contact</label>
+                                    <input
+                                        type="text"
+                                        value={studentForm.guardian_contact}
+                                        onChange={(e) => setStudentForm({...studentForm, guardian_contact: e.target.value})}
+                                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        placeholder="Phone number or email"
+                                    />
+                                </div>
+                                <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowAddStudentModal(false)}
+                                        className="px-6 py-3 border-2 border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 font-medium transition-all"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={isSubmitting}
+                                        className="px-8 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl hover:from-green-600 hover:to-green-700 disabled:opacity-50 font-semibold shadow-lg transition-all flex items-center"
+                                    >
+                                        {isSubmitting ? (
+                                            <>
+                                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 4.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647A7.962 7.962 0 0112 20a7.962 7.962 0 01-8-8z"></path>
+                                                </svg>
+                                                Adding...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                                </svg>
+                                                Add Student
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Import Students Modal */}
+            {showImportModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full relative">
+                        <div className="p-8">
+                            <div className="flex items-center justify-between mb-6">
+                                <h2 className="text-2xl font-bold text-gray-900">Import Students</h2>
+                                <button
+                                    onClick={() => setShowImportModal(false)}
+                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                >
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <form onSubmit={handleImportStudents} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">File Type</label>
+                                    <select
+                                        value={importType}
+                                        onChange={(e) => setImportType(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                        <option value="csv">CSV</option>
+                                        <option value="xml">XML</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Select File</label>
+                                    <input
+                                        type="file"
+                                        required
+                                        accept={importType === 'csv' ? '.csv' : '.xml'}
+                                        onChange={(e) => setImportFile(e.target.files[0])}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                    <p className="mt-1 text-sm text-gray-500">
+                                        {importType === 'csv' 
+                                            ? 'CSV format: first_name, last_name, student_number, email, section_id, year_level'
+                                            : 'XML format: Follow the standard student import structure'
+                                        }
+                                    </p>
+                                </div>
+                                <div className="flex justify-end space-x-3 pt-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowImportModal(false)}
+                                        className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={isSubmitting || !importFile}
+                                        className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                                    >
+                                        {isSubmitting ? 'Importing...' : 'Import Students'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Student View Modal */}
+            {showStudentModal && selectedStudent && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto relative">
+                        <div className="p-8">
+                            {/* Modal Header */}
+                            <div className="flex items-center justify-between mb-6">
+                                <div className="flex items-center space-x-4">
+                                    <div className="h-16 w-16 bg-blue-600 rounded-full flex items-center justify-center">
+                                        <span className="text-white font-bold text-xl">
+                                            {selectedStudent.first_name?.[0]}{selectedStudent.last_name?.[0]}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <h2 className="text-2xl font-bold text-gray-900">
+                                            {selectedStudent.first_name} {selectedStudent.last_name}
+                                        </h2>
+                                        <p className="text-gray-600">{selectedStudent.student_number || selectedStudent.student_id}</p>
+                                        <p className="text-sm text-gray-500">
+                                            {selectedStudent.section?.name || 'No Section'} - {selectedStudent.section?.program?.name || 'No Program'}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        setShowStudentModal(false);
+                                        setSelectedStudent(null);
+                                    }}
+                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                >
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            {/* Student Information */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                                <div className="bg-gray-50 rounded-2xl p-6">
+                                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                                        <svg className="h-5 w-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                        </svg>
+                                        Contact Information
+                                    </h3>
+                                    <div className="space-y-2">
+                                        <p><span className="font-medium">Email:</span> {selectedStudent.email || 'Not provided'}</p>
+                                        <p><span className="font-medium">Guardian:</span> {selectedStudent.guardian_name || 'Not provided'}</p>
+                                        <p><span className="font-medium">Guardian Contact:</span> {selectedStudent.guardian_contact || 'Not provided'}</p>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-50 rounded-2xl p-6">
+                                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                                        <svg className="h-5 w-5 text-green-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
+                                        </svg>
+                                        Academic Information
+                                    </h3>
+                                    <div className="space-y-2">
+                                        <p><span className="font-medium">Student ID:</span> {selectedStudent.student_number || selectedStudent.student_id}</p>
+                                        <p><span className="font-medium">Section:</span> {selectedStudent.section?.name || 'N/A'}</p>
+                                        <p><span className="font-medium">Program:</span> {selectedStudent.section?.program?.name || 'N/A'}</p>
+                                        <p><span className="font-medium">Department:</span> {selectedStudent.section?.program?.department?.name || 'N/A'}</p>
+                                        <p><span className="font-medium">Year Level:</span> {selectedStudent.year_level || 'N/A'}</p>
+                                        <p><span className="font-medium">Status:</span>
+                                            <span className={`ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                                selectedStudent.attendance_status === 'Normal'
+                                                    ? 'bg-green-100 text-green-800'
+                                                    : selectedStudent.attendance_status === 'SLIP'
+                                                    ? 'bg-yellow-100 text-yellow-800'
+                                                    : 'bg-red-100 text-red-800'
+                                            }`}>
+                                                {selectedStudent.attendance_status || 'Normal'}
+                                            </span>
+                                        </p>
+                                        <p><span className="font-medium">Absence Count:</span> {selectedStudent.absence_count || 0}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Export Students Modal */}
+            {showExportModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full relative">
+                        <div className="p-8">
+                            <div className="flex items-center justify-between mb-6">
+                                <h2 className="text-2xl font-bold text-gray-900">Export Students</h2>
+                                <button
+                                    onClick={() => setShowExportModal(false)}
+                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                >
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <form onSubmit={handleExportStudents} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Export Format</label>
+                                    <select
+                                        value={exportFormat}
+                                        onChange={(e) => setExportFormat(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                        <option value="csv">CSV</option>
+                                        <option value="xml">XML</option>
+                                    </select>
+                                </div>
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    <p className="text-sm text-gray-600">
+                                        {selectedDepartment || selectedProgram || selectedYearLevel || selectedStatus
+                                            ? 'Export will include only filtered students based on your current filters.'
+                                            : 'Export will include all students.'}
+                                    </p>
+                                </div>
+                                <div className="flex justify-end space-x-3 pt-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowExportModal(false)}
+                                        className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={isSubmitting}
+                                        className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                                    >
+                                        {isSubmitting ? 'Exporting...' : 'Export Students'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            )}
         </AuthenticatedLayout>
     );
 }

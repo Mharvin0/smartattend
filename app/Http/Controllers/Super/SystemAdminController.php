@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Services\AuditLogService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class SystemAdminController extends Controller
@@ -104,10 +105,7 @@ class SystemAdminController extends Controller
     {
         // Explicitly check for Super Admin role
         if (!auth()->user()->hasRole('Super Admin')) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized: Only Super Admins can add remarks.'
-            ], 403);
+            return back()->withErrors(['message' => 'Unauthorized: Only Super Admins can add remarks.']);
         }
 
         $request->validate([
@@ -129,10 +127,17 @@ class SystemAdminController extends Controller
             ]
         );
 
-        return response()->json([
-            'success' => true,
-            'remark' => $remark->load(['student', 'creator']),
-        ]);
+        // Return redirect back with success message for Inertia
+        return back()->with('success', 'Remark saved successfully.');
+    }
+
+    public function destroyManagementRemark($id)
+    {
+        $remark = \App\Models\ManagementRemark::findOrFail($id);
+        $remark->delete();
+        
+        // Return redirect back with success message for Inertia
+        return back()->with('success', 'Remark deleted successfully.');
     }
 
     public function attendance()
@@ -192,10 +197,17 @@ class SystemAdminController extends Controller
 
     public function settings()
     {
-        // Get teachers with their assignments
-        $teachers = \App\Models\User::role('Teacher')
-            ->with(['department', 'program', 'sections'])
-            ->get();
+        // Get students with their sections and programs
+        $students = \App\Models\Student::with(['section.program.department', 'weeklySummaries'])
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->get()
+            ->map(function ($student) {
+                $student->updatePriority(); // Ensure priority is up-to-date
+                // Calculate attendance status (Normal, SLIP, PNS)
+                $student->attendance_status = $student->calculateAttendanceStatus();
+                return $student;
+            });
 
         return Inertia::render('Super/SystemAdmin', [
             'activeTab' => 'settings',
@@ -205,7 +217,7 @@ class SystemAdminController extends Controller
             'integrations' => $this->getIntegrationStatus(),
             'systemTools' => $this->getSystemToolsData(),
             'auditLogs' => AuditLog::with('user')->orderBy('created_at', 'desc')->limit(50)->get(),
-            'teachers' => $teachers,
+            'students' => $students,
             'departments' => \App\Models\Department::orderBy('name')->get(['id', 'name']),
             'programs' => \App\Models\Program::with('department')->orderBy('name')->get(['id', 'name', 'department_id']),
             'sections' => \App\Models\Section::with(['program.department'])->orderBy('name')->get(['id', 'name', 'program_id']),
@@ -1984,5 +1996,383 @@ class SystemAdminController extends Controller
         }
         
         return $weeklyStatusData;
+    }
+
+    // Student Management Methods
+    public function storeStudent(Request $request)
+    {
+        $validated = $request->validate([
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
+            'student_number' => 'required|string|unique:students,student_number',
+            'email' => 'required|email|unique:students,email',
+            'section_id' => 'required|exists:sections,id',
+            'year_level' => 'required|string',
+            'gender' => 'nullable|string',
+            'birth_date' => 'nullable|date',
+            'guardian_name' => 'nullable|string|max:255',
+            'guardian_contact' => 'nullable|string|max:255',
+        ]);
+
+        $student = \App\Models\Student::create([
+            'first_name' => $validated['first_name'],
+            'last_name' => $validated['last_name'],
+            'student_number' => $validated['student_number'],
+            'student_id' => $validated['student_number'],
+            'email' => $validated['email'],
+            'section_id' => $validated['section_id'],
+            'year_level' => $validated['year_level'],
+            'gender' => $validated['gender'] ?? null,
+            'birth_date' => $validated['birth_date'] ?? null,
+            'guardian_name' => $validated['guardian_name'] ?? null,
+            'guardian_contact' => $validated['guardian_contact'] ?? null,
+            'status' => 'Active',
+        ]);
+
+        $student->updatePriority();
+
+        return redirect()->route('super.settings', ['#students'])->with('success', 'Student created successfully!');
+    }
+
+    public function destroyStudent($id)
+    {
+        $student = \App\Models\Student::findOrFail($id);
+        $student->delete(); // Soft delete
+        
+        // Return redirect back with success message for Inertia
+        return back()->with('success', 'Student deleted successfully.');
+    }
+
+    // Student Import/Export Methods
+    public function importStudents(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:csv,xml|max:10240',
+            'type' => 'required|in:csv,xml',
+        ]);
+
+        $file = $request->file('file');
+        $type = $request->input('type');
+        $imported = 0;
+        $errors = [];
+
+        try {
+            if ($type === 'csv') {
+                $data = array_map('str_getcsv', file($file->getRealPath()));
+                $headers = array_shift($data);
+
+                foreach ($data as $row) {
+                    if (count($row) < 6) continue;
+                    
+                    try {
+                        $student = \App\Models\Student::create([
+                            'first_name' => $row[0] ?? '',
+                            'last_name' => $row[1] ?? '',
+                            'student_number' => $row[2] ?? '',
+                            'student_id' => $row[2] ?? '',
+                            'email' => $row[3] ?? '',
+                            'section_id' => $row[4] ?? null,
+                            'year_level' => $row[5] ?? '1st Year',
+                            'status' => 'Active',
+                        ]);
+                        $student->updatePriority();
+                        $imported++;
+                    } catch (\Exception $e) {
+                        $errors[] = "Row " . ($imported + count($errors) + 1) . ": " . $e->getMessage();
+                    }
+                }
+            } else {
+                // XML import
+                $xml = simplexml_load_file($file->getRealPath());
+                foreach ($xml->student as $studentXml) {
+                    try {
+                        $student = \App\Models\Student::create([
+                            'first_name' => (string)$studentXml->first_name,
+                            'last_name' => (string)$studentXml->last_name,
+                            'student_number' => (string)$studentXml->student_number,
+                            'student_id' => (string)$studentXml->student_number,
+                            'email' => (string)$studentXml->email,
+                            'section_id' => isset($studentXml->section_id) ? (int)$studentXml->section_id : null,
+                            'year_level' => (string)$studentXml->year_level ?? '1st Year',
+                            'status' => 'Active',
+                        ]);
+                        $student->updatePriority();
+                        $imported++;
+                    } catch (\Exception $e) {
+                        $errors[] = "Student " . ($imported + count($errors) + 1) . ": " . $e->getMessage();
+                    }
+                }
+            }
+
+            $message = "Successfully imported {$imported} students.";
+            if (count($errors) > 0) {
+                $message .= " " . count($errors) . " errors occurred.";
+            }
+
+            return redirect()->route('super.settings', ['#students'])->with('success', $message)->with('errors', $errors);
+        } catch (\Exception $e) {
+            return redirect()->route('super.settings', ['#students'])->with('error', 'Import failed: ' . $e->getMessage());
+        }
+    }
+
+    public function exportStudents(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'format' => ['required', 'string', 'in:csv,xml'],
+                'student_id' => ['nullable', 'exists:students,id'],
+                'department_id' => ['nullable', 'exists:departments,id'],
+                'program_id' => ['nullable', 'exists:programs,id'],
+                'section_id' => ['nullable', 'exists:sections,id'],
+                'year_level' => ['nullable', 'string'],
+            ]);
+
+            // Build query with filters
+            $query = \App\Models\Student::with(['section.program.department']);
+
+            // If exporting a single student, filter by student_id
+            if ($validated['student_id']) {
+                $query->where('id', $validated['student_id']);
+            } else {
+                // Apply other filters only if not exporting a single student
+                if ($validated['department_id']) {
+                    $query->whereHas('section.program', function($q) use ($validated) {
+                        $q->where('department_id', $validated['department_id']);
+                    });
+                }
+
+                if ($validated['program_id']) {
+                    $query->whereHas('section', function($q) use ($validated) {
+                        $q->where('program_id', $validated['program_id']);
+                    });
+                }
+
+                if ($validated['section_id']) {
+                    $query->where('section_id', $validated['section_id']);
+                }
+
+                if ($validated['year_level']) {
+                    $query->where('year_level', $validated['year_level']);
+                }
+            }
+
+            $students = $query->get();
+
+            if ($validated['format'] === 'csv') {
+                return $this->exportStudentsToCsv($students, $validated['student_id'] ?? null);
+            } else {
+                return $this->exportStudentsToXml($students, $validated['student_id'] ?? null);
+            }
+
+        } catch (\Exception $e) {
+            \Log::error('Export failed: ' . $e->getMessage(), [
+                'request_data' => $request->all(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Export failed: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    private function exportStudentsToCsv($students, $studentId = null)
+    {
+        if ($studentId) {
+            $student = $students->first();
+            $filename = 'student_' . ($student->student_number ?? $student->id) . '_' . date('Y-m-d_H-i-s') . '.csv';
+        } else {
+            $filename = 'student_records_' . date('Y-m-d_H-i-s') . '.csv';
+        }
+        
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ];
+
+        $callback = function() use ($students) {
+            $file = fopen('php://output', 'w');
+            
+            // CSV Headers
+            fputcsv($file, [
+                'Student ID',
+                'Student Number',
+                'First Name',
+                'Last Name',
+                'Email',
+                'Gender',
+                'Birth Date',
+                'Department',
+                'Program',
+                'Section',
+                'Year Level',
+                'Guardian Name',
+                'Guardian Contact',
+                'Status',
+                'Priority',
+                'Absence Count',
+                'Created At',
+                'Updated At'
+            ]);
+
+            // CSV Data
+            foreach ($students as $student) {
+                fputcsv($file, [
+                    $student->id,
+                    $student->student_number,
+                    $student->first_name,
+                    $student->last_name,
+                    $student->email,
+                    $student->gender,
+                    $student->birth_date,
+                    $student->section?->program?->department?->name ?? 'N/A',
+                    $student->section?->program?->name ?? 'N/A',
+                    $student->section?->name ?? 'N/A',
+                    $student->year_level ?? 'N/A',
+                    $student->guardian_name,
+                    $student->guardian_contact,
+                    $student->status ?? 'Active',
+                    $student->priority ?? 'Safe',
+                    $student->absence_count ?? 0,
+                    $student->created_at?->format('Y-m-d H:i:s'),
+                    $student->updated_at?->format('Y-m-d H:i:s')
+                ]);
+            }
+
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    private function exportStudentsToXml($students, $studentId = null)
+    {
+        if ($studentId) {
+            $student = $students->first();
+            $filename = 'student_' . ($student->student_number ?? $student->id) . '_' . date('Y-m-d_H-i-s') . '.xml';
+        } else {
+            $filename = 'student_records_' . date('Y-m-d_H-i-s') . '.xml';
+        }
+        
+        $xml = new \SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?><students></students>');
+        
+        foreach ($students as $student) {
+            $studentNode = $xml->addChild('student');
+            $studentNode->addChild('id', htmlspecialchars($student->id));
+            $studentNode->addChild('student_number', htmlspecialchars($student->student_number));
+            $studentNode->addChild('first_name', htmlspecialchars($student->first_name));
+            $studentNode->addChild('last_name', htmlspecialchars($student->last_name));
+            $studentNode->addChild('email', htmlspecialchars($student->email));
+            $studentNode->addChild('gender', htmlspecialchars($student->gender));
+            $studentNode->addChild('birth_date', htmlspecialchars($student->birth_date));
+            $studentNode->addChild('department', htmlspecialchars($student->section?->program?->department?->name ?? 'N/A'));
+            $studentNode->addChild('program', htmlspecialchars($student->section?->program?->name ?? 'N/A'));
+            $studentNode->addChild('section', htmlspecialchars($student->section?->name ?? 'N/A'));
+            $studentNode->addChild('year_level', htmlspecialchars($student->year_level ?? 'N/A'));
+            $studentNode->addChild('guardian_name', htmlspecialchars($student->guardian_name));
+            $studentNode->addChild('guardian_contact', htmlspecialchars($student->guardian_contact));
+            $studentNode->addChild('status', htmlspecialchars($student->status ?? 'Active'));
+            $studentNode->addChild('priority', htmlspecialchars($student->priority ?? 'Safe'));
+            $studentNode->addChild('absence_count', htmlspecialchars($student->absence_count ?? 0));
+            $studentNode->addChild('created_at', htmlspecialchars($student->created_at?->format('Y-m-d H:i:s')));
+            $studentNode->addChild('updated_at', htmlspecialchars($student->updated_at?->format('Y-m-d H:i:s')));
+        }
+
+        $headers = [
+            'Content-Type' => 'application/xml',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ];
+
+        return response($xml->asXML(), 200, $headers);
+    }
+
+    // Cleanup Duplicate Departments and Programs
+    public function cleanupDuplicates()
+    {
+        try {
+            $deletedDepartments = 0;
+            $deletedPrograms = 0;
+
+            // Remove duplicate departments (by code, keeping the first one)
+            $departmentDuplicates = DB::table('departments')
+                ->select('code', DB::raw('COUNT(*) as count'))
+                ->whereNull('deleted_at')
+                ->groupBy('code')
+                ->having('count', '>', 1)
+                ->get();
+
+            foreach ($departmentDuplicates as $dup) {
+                $departments = \App\Models\Department::where('code', $dup->code)
+                    ->whereNull('deleted_at')
+                    ->orderBy('created_at', 'asc')
+                    ->get();
+                
+                // Keep the first one, delete the rest
+                if ($departments->count() > 1) {
+                    $keep = $departments->first();
+                    $toDelete = $departments->skip(1);
+                    
+                    foreach ($toDelete as $dept) {
+                        // Move any programs from deleted department to the kept one
+                        \App\Models\Program::where('department_id', $dept->id)
+                            ->update(['department_id' => $keep->id]);
+                        
+                        // Update code to make it unique before soft deleting
+                        $dept->code = $dept->code . '_deleted_' . $dept->id;
+                        $dept->save();
+                        $dept->delete(); // Soft delete
+                        $deletedDepartments++;
+                    }
+                }
+            }
+
+            // Remove duplicate programs (by code within same department, keeping the first one)
+            $programDuplicates = DB::table('programs')
+                ->select('code', 'department_id', DB::raw('COUNT(*) as count'))
+                ->whereNull('deleted_at')
+                ->groupBy('code', 'department_id')
+                ->having('count', '>', 1)
+                ->get();
+
+            foreach ($programDuplicates as $dup) {
+                $programs = \App\Models\Program::where('code', $dup->code)
+                    ->where('department_id', $dup->department_id)
+                    ->whereNull('deleted_at')
+                    ->orderBy('created_at', 'asc')
+                    ->get();
+                
+                // Keep the first one, delete the rest
+                if ($programs->count() > 1) {
+                    $keep = $programs->first();
+                    $toDelete = $programs->skip(1);
+                    
+                    foreach ($toDelete as $program) {
+                        // Move any sections from deleted program to the kept one
+                        \App\Models\Section::where('program_id', $program->id)
+                            ->update(['program_id' => $keep->id]);
+                        
+                        // Update code to make it unique before soft deleting
+                        $program->code = $program->code . '_deleted_' . $program->id;
+                        $program->save();
+                        $program->delete(); // Soft delete
+                        $deletedPrograms++;
+                    }
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => "Cleanup completed: {$deletedDepartments} duplicate departments and {$deletedPrograms} duplicate programs removed.",
+                'deleted_departments' => $deletedDepartments,
+                'deleted_programs' => $deletedPrograms,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Cleanup duplicates failed: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Cleanup failed: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }

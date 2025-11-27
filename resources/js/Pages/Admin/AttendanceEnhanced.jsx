@@ -246,16 +246,6 @@ export default function AttendanceEnhanced({
         };
     }, []);
 
-    // Load data when tab changes
-    useEffect(() => {
-        if (activeTab === 'analytics') {
-            loadAnalytics();
-        } else if (activeTab === 'department-rates') {
-            loadDepartmentRates();
-        } else if (activeTab === 'faculty-compliance') {
-            loadFacultyCompliance();
-        }
-    }, [activeTab, loadAnalytics, loadDepartmentRates, loadFacultyCompliance]);
 
     const statusOptions = [
         { value: 'present', label: 'Present', color: 'text-green-600', bg: 'bg-green-100' },
@@ -266,10 +256,6 @@ export default function AttendanceEnhanced({
 
     const tabs = [
         { id: 'overview', name: 'Overview', icon: '📊' },
-        { id: 'analytics', name: 'Analytics', icon: '📈' },
-        { id: 'department-rates', name: 'Department Rates', icon: '🏢' },
-        { id: 'faculty-compliance', name: 'Faculty Compliance', icon: '👨‍🏫' },
-        { id: 'reports', name: 'Automated Reports', icon: '📄' },
     ];
 
     const getComplianceStatusColor = (status) => {
@@ -290,10 +276,23 @@ export default function AttendanceEnhanced({
     };
 
     return (
-        <AuthenticatedLayout header={<h2 className="text-2xl font-bold leading-tight text-gray-800">Enhanced Attendance Management</h2>}>
+        <AuthenticatedLayout>
             <Head title="Enhanced Attendance Management" />
-            <div className="min-h-screen bg-gradient-to-br from-brand-primary/10 via-emerald-50/80 to-brand-secondary/5 py-8">
-                <div className="mx-auto max-w-full space-y-8 px-4 sm:px-6 lg:px-8 xl:px-12">
+            <div className="min-h-screen bg-gradient-to-br from-slate-50/80 via-gray-50/60 to-zinc-50/70 py-8">
+                <div className="w-full px-6 py-8 space-y-6">
+                    {/* Header */}
+                    <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 border border-white/20">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h2 className="text-4xl font-bold bg-gradient-to-r from-slate-600 via-gray-600 to-zinc-600 bg-clip-text text-transparent">
+                                    Enhanced Attendance
+                                </h2>
+                                <p className="text-gray-600 mt-2 text-lg">
+                                    Advanced attendance tracking and analytics
+                                </p>
+                            </div>
+                        </div>
+                    </div>
                     {flash.success && (
                         <div className="pointer-events-none fixed right-6 top-6 z-50 rounded bg-green-600 px-4 py-2 text-sm text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">
                             {flash.success}
@@ -523,8 +522,8 @@ export default function AttendanceEnhanced({
                         {activeTab === 'overview' && (
                             <div>
                                 <h3 className="text-lg font-medium text-gray-900 mb-6">Recent Attendance Records</h3>
-                                <div className="overflow-x-auto">
-                                    <table className="min-w-full divide-y divide-gray-200">
+                                <div className="overflow-x-auto w-full">
+                                    <table className="w-full divide-y divide-gray-200">
                                         <thead className="bg-gray-50">
                                             <tr>
                                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
@@ -566,293 +565,6 @@ export default function AttendanceEnhanced({
                             </div>
                         )}
 
-                        {activeTab === 'analytics' && (
-                            <div>
-                                <h3 className="text-lg font-medium text-gray-900 mb-6">Attendance Analytics</h3>
-                                {isLoading ? (
-                                    <div className="text-center py-8">
-                                        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary"></div>
-                                        <p className="mt-2 text-gray-500">Loading analytics...</p>
-                                    </div>
-                                ) : analyticsData ? (
-                                    <div className="space-y-6">
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                            <div className="bg-green-50 p-4 rounded-lg">
-                                                <p className="text-sm font-medium text-green-600">Present</p>
-                                                <p className="text-2xl font-bold text-green-900">{analyticsData.stats.present}</p>
-                                                <p className="text-sm text-green-600">{analyticsData.stats.present_percentage}%</p>
-                                            </div>
-                                            <div className="bg-yellow-50 p-4 rounded-lg">
-                                                <p className="text-sm font-medium text-yellow-600">Late</p>
-                                                <p className="text-2xl font-bold text-yellow-900">{analyticsData.stats.late}</p>
-                                            </div>
-                                            <div className="bg-red-50 p-4 rounded-lg">
-                                                <p className="text-sm font-medium text-red-600">Absent</p>
-                                                <p className="text-2xl font-bold text-red-900">{analyticsData.stats.absent}</p>
-                                                <p className="text-sm text-red-600">{analyticsData.stats.absent_percentage}%</p>
-                                            </div>
-                                            <div className="bg-blue-50 p-4 rounded-lg">
-                                                <p className="text-sm font-medium text-blue-600">Excused</p>
-                                                <p className="text-2xl font-bold text-blue-900">{analyticsData.stats.excused}</p>
-                                            </div>
-                                        </div>
-                                        
-                                        {analyticsData.topAbsentStudents && analyticsData.topAbsentStudents.length > 0 && (
-                                            <div>
-                                                <h4 className="text-md font-medium text-gray-900 mb-4">Top Absent Students</h4>
-                                                <div className="overflow-x-auto">
-                                                    <table className="min-w-full divide-y divide-gray-200">
-                                                        <thead className="bg-gray-50">
-                                                            <tr>
-                                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
-                                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Absences</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="bg-white divide-y divide-gray-200">
-                                                            {analyticsData.topAbsentStudents.map((student) => (
-                                                                <tr key={student.student_id}>
-                                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                                                        {student.student?.first_name} {student.student?.last_name}
-                                                                    </td>
-                                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                                        {student.absent_count}
-                                                                    </td>
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div className="text-center py-8">
-                                        <p className="text-gray-500">No analytics data available</p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {activeTab === 'department-rates' && (
-                            <div>
-                                <h3 className="text-lg font-medium text-gray-900 mb-6">Department & Program Attendance Rates</h3>
-                                {isLoading ? (
-                                    <div className="text-center py-8">
-                                        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary"></div>
-                                        <p className="mt-2 text-gray-500">Loading department rates...</p>
-                                    </div>
-                                ) : departmentRates ? (
-                                    <div className="space-y-6">
-                                        {departmentRates.departments.map((department) => (
-                                            <div key={department.id} className="border border-gray-200 rounded-lg p-6">
-                                                <div className="flex items-center justify-between mb-4">
-                                                    <div>
-                                                        <h4 className="text-lg font-medium text-gray-900">{department.name}</h4>
-                                                        <p className="text-sm text-gray-500">{department.code}</p>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <p className={`text-2xl font-bold ${getAttendanceRateColor(department.attendance_rate)}`}>
-                                                            {department.attendance_rate}%
-                                                        </p>
-                                                        <p className="text-sm text-gray-500">{department.total_records} records</p>
-                                                    </div>
-                                                </div>
-                                                
-                                                <div className="grid grid-cols-4 gap-4 mb-4">
-                                                    <div className="text-center">
-                                                        <p className="text-sm text-gray-500">Present</p>
-                                                        <p className="text-lg font-semibold text-green-600">{department.present}</p>
-                                                    </div>
-                                                    <div className="text-center">
-                                                        <p className="text-sm text-gray-500">Late</p>
-                                                        <p className="text-lg font-semibold text-yellow-600">{department.late}</p>
-                                                    </div>
-                                                    <div className="text-center">
-                                                        <p className="text-sm text-gray-500">Absent</p>
-                                                        <p className="text-lg font-semibold text-red-600">{department.absent}</p>
-                                                    </div>
-                                                    <div className="text-center">
-                                                        <p className="text-sm text-gray-500">Excused</p>
-                                                        <p className="text-lg font-semibold text-blue-600">{department.excused}</p>
-                                                    </div>
-                                                </div>
-
-                                                {department.programs && department.programs.length > 0 && (
-                                                    <div>
-                                                        <h5 className="text-md font-medium text-gray-900 mb-3">Programs</h5>
-                                                        <div className="space-y-3">
-                                                            {department.programs.map((program) => (
-                                                                <div key={program.id} className="bg-gray-50 p-4 rounded-lg">
-                                                                    <div className="flex items-center justify-between">
-                                                                        <div>
-                                                                            <p className="font-medium text-gray-900">{program.name}</p>
-                                                                            <p className="text-sm text-gray-500">{program.code} • {program.sections_count} sections • {program.total_students} students</p>
-                                                                        </div>
-                                                                        <div className="text-right">
-                                                                            <p className={`text-lg font-bold ${getAttendanceRateColor(program.attendance_rate)}`}>
-                                                                                {program.attendance_rate}%
-                                                                            </p>
-                                                                            <p className="text-sm text-gray-500">{program.total_records} records</p>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <div className="text-center py-8">
-                                        <p className="text-gray-500">No department data available</p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {activeTab === 'faculty-compliance' && (
-                            <div>
-                                <h3 className="text-lg font-medium text-gray-900 mb-6">Faculty Attendance Compliance Tracker</h3>
-                                {isLoading ? (
-                                    <div className="text-center py-8">
-                                        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary"></div>
-                                        <p className="mt-2 text-gray-500">Loading faculty compliance...</p>
-                                    </div>
-                                ) : facultyCompliance ? (
-                                    <div className="space-y-6">
-                                        {/* Summary Cards */}
-                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                            <div className="bg-blue-50 p-4 rounded-lg">
-                                                <p className="text-sm font-medium text-blue-600">Total Teachers</p>
-                                                <p className="text-2xl font-bold text-blue-900">{facultyCompliance.summary.total_teachers}</p>
-                                            </div>
-                                            <div className="bg-green-50 p-4 rounded-lg">
-                                                <p className="text-sm font-medium text-green-600">Avg Compliance</p>
-                                                <p className="text-2xl font-bold text-green-900">{facultyCompliance.summary.average_compliance.toFixed(1)}%</p>
-                                            </div>
-                                            <div className="bg-yellow-50 p-4 rounded-lg">
-                                                <p className="text-sm font-medium text-yellow-600">Avg Timeliness</p>
-                                                <p className="text-2xl font-bold text-yellow-900">{facultyCompliance.summary.average_timeliness.toFixed(1)}%</p>
-                                            </div>
-                                            <div className="bg-purple-50 p-4 rounded-lg">
-                                                <p className="text-sm font-medium text-purple-600">Compliant Teachers</p>
-                                                <p className="text-2xl font-bold text-purple-900">{facultyCompliance.summary.compliant_teachers}</p>
-                                            </div>
-                                        </div>
-
-                                        {/* Faculty Table */}
-                                        <div className="overflow-x-auto">
-                                            <table className="min-w-full divide-y divide-gray-200">
-                                                <thead className="bg-gray-50">
-                                                    <tr>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Teacher</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sections</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Compliance Rate</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timeliness Rate</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Records</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="bg-white divide-y divide-gray-200">
-                                                    {facultyCompliance.teachers.map((teacher) => (
-                                                        <tr key={teacher.id}>
-                                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                                <div>
-                                                                    <div className="text-sm font-medium text-gray-900">{teacher.name}</div>
-                                                                    <div className="text-sm text-gray-500">{teacher.email}</div>
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                                {teacher.total_sections}
-                                                            </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                                {teacher.compliance_rate}%
-                                                            </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                                {teacher.timeliness_rate}%
-                                                            </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getComplianceStatusColor(teacher.status)}`}>
-                                                                    {teacher.status.replace('_', ' ').toUpperCase()}
-                                                                </span>
-                                                            </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                                {teacher.actual_records}/{teacher.expected_records}
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="text-center py-8">
-                                        <p className="text-gray-500">No faculty compliance data available</p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {activeTab === 'reports' && (
-                            <div>
-                                <h3 className="text-lg font-medium text-gray-900 mb-6">Automated Attendance Reports</h3>
-                                <div className="space-y-6">
-                                    <div className="bg-blue-50 p-6 rounded-lg">
-                                        <h4 className="text-lg font-medium text-blue-900 mb-2">📊 Weekly Reports</h4>
-                                        <p className="text-blue-700 mb-4">Generate comprehensive weekly attendance summaries for departments or the entire university. Perfect for weekly meetings and progress tracking.</p>
-                                        <div className="flex space-x-4">
-                                            <button
-                                                onClick={() => generateReport('weekly', 'pdf')}
-                                                disabled={reportLoading}
-                                                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
-                                            >
-                                                {reportLoading ? 'Generating...' : '📄 Generate PDF'}
-                                            </button>
-                                            <button
-                                                onClick={() => generateReport('weekly', 'excel')}
-                                                disabled={reportLoading}
-                                                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
-                                            >
-                                                {reportLoading ? 'Generating...' : '📊 Generate Excel'}
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-green-50 p-6 rounded-lg">
-                                        <h4 className="text-lg font-medium text-green-900 mb-2">📈 Monthly Reports</h4>
-                                        <p className="text-green-700 mb-4">Create detailed monthly attendance reports suitable for CHED submissions and administrative reviews. Includes trends, analytics, and compliance metrics.</p>
-                                        <div className="flex space-x-4">
-                                            <button
-                                                onClick={() => generateReport('monthly', 'pdf')}
-                                                disabled={reportLoading}
-                                                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
-                                            >
-                                                {reportLoading ? 'Generating...' : '📄 Generate PDF'}
-                                            </button>
-                                            <button
-                                                onClick={() => generateReport('monthly', 'excel')}
-                                                disabled={reportLoading}
-                                                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
-                                            >
-                                                {reportLoading ? 'Generating...' : '📊 Generate Excel'}
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-yellow-50 p-6 rounded-lg">
-                                        <h4 className="text-lg font-medium text-yellow-900 mb-2">ℹ️ Report Features</h4>
-                                        <ul className="text-yellow-700 space-y-2">
-                                            <li>• <strong>Department/Program Breakdown:</strong> Detailed attendance rates by academic unit</li>
-                                            <li>• <strong>Faculty Compliance:</strong> Teacher attendance recording compliance metrics</li>
-                                            <li>• <strong>Student Analytics:</strong> Top absent students and attendance trends</li>
-                                            <li>• <strong>CHED Compliance:</strong> Formatted for regulatory submissions</li>
-                                            <li>• <strong>Automated Scheduling:</strong> Set up recurring report generation</li>
-                                        </ul>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
                     </div>
                 </div>
             </div>

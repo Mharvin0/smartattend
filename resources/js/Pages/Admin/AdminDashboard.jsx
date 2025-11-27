@@ -333,14 +333,26 @@ export default function AdminDashboard() {
     );
 
     return (
-        <AuthenticatedLayout header={<h2 className="text-2xl font-bold leading-tight text-gray-800">Admin Dashboard</h2>}>
+        <AuthenticatedLayout>
             <Head title="Admin Dashboard" />
             
-            <div className="min-h-screen bg-gradient-to-br from-emerald-50/80 via-teal-50/60 to-cyan-50/80 py-8">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="min-h-screen bg-gradient-to-br from-slate-50/80 via-gray-50/60 to-zinc-50/70 py-8">
+                <div className="w-full px-6 py-8 space-y-6">
+                    {/* Header */}
+                    <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 border border-white/20">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h2 className="text-4xl font-bold bg-gradient-to-r from-slate-600 via-gray-600 to-zinc-600 bg-clip-text text-transparent">
+                                    Admin Dashboard
+                                </h2>
+                                <p className="text-gray-600 mt-2 text-lg">
+                                    Overview and analytics for attendance management
+                                </p>
+                            </div>
+                        </div>
+                    </div>
                     {/* Navigation Tabs */}
-                    <div className="mb-8">
-                        <div className="bg-white rounded-2xl shadow-lg p-2">
+                    <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-2 border border-white/20">
                             <nav className="flex space-x-1">
                                 <button
                                     onClick={() => setActiveTab('overview')}
@@ -363,7 +375,6 @@ export default function AdminDashboard() {
                                     Analytics
                                 </button>
                             </nav>
-                        </div>
                     </div>
 
                     {/* Tab Content */}

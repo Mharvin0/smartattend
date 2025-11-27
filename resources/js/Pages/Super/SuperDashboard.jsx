@@ -172,12 +172,11 @@ export default function SuperDashboard({ auth, users, systemStats, activityLogs,
     return (
         <AuthenticatedLayout
             user={auth.user}
-            header={<h2 className="font-semibold text-xl text-gray-800 leading-tight">Super Admin Dashboard</h2>}
         >
-            <Head title="Super Admin Control" />
+            <Head title="System Admin Control Center" />
             
-            <div className="min-h-screen bg-gradient-to-br from-purple-50/80 via-indigo-50/60 to-blue-50/70 py-8">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="min-h-screen bg-gradient-to-br from-slate-50/80 via-gray-50/60 to-zinc-50/70 py-8">
+                <div className="w-full px-6 py-8 space-y-6">
                     {flash.success && (
                         <div className="pointer-events-none fixed right-6 top-6 z-50 rounded bg-green-600 px-4 py-2 text-sm text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">{flash.success}</div>
                     )}
@@ -208,8 +207,8 @@ export default function SuperDashboard({ auth, users, systemStats, activityLogs,
                         <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 border border-white/20">
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 bg-clip-text text-transparent">
-                                        Super Admin Control Center
+                                    <h1 className="text-4xl font-bold bg-gradient-to-r from-slate-600 via-gray-600 to-zinc-600 bg-clip-text text-transparent">
+                                        System Admin Control Center
                                     </h1>
                                     <p className="text-gray-600 mt-2 text-lg">
                                         Comprehensive system management and monitoring dashboard

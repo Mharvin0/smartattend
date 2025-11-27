@@ -143,18 +143,35 @@ export default function Sections({ sections, programs, programsList, yearLevels,
 	};
 
 	return (
-		<AuthenticatedLayout header={<h2 className="text-2xl font-bold leading-tight text-gray-800">Sections</h2>}>
+		<AuthenticatedLayout>
 			<Head title="Sections" />
-			<div className="min-h-screen bg-gradient-to-br from-brand-primary/10 via-emerald-50/80 to-brand-secondary/5 py-8">
-				<div className="mx-auto max-w-full space-y-10 px-4 sm:px-6 lg:px-8 xl:px-12">
+			<div className="min-h-screen bg-gradient-to-br from-slate-50/80 via-gray-50/60 to-zinc-50/70 py-8">
+				<div className="w-full px-6 py-8 space-y-6">
+					{/* Header */}
+					<div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 border border-white/20">
+						<div className="flex items-center justify-between">
+							<div>
+								<h2 className="text-4xl font-bold bg-gradient-to-r from-slate-600 via-gray-600 to-zinc-600 bg-clip-text text-transparent">
+									Sections
+								</h2>
+								<p className="text-gray-600 mt-2 text-lg">
+									Manage academic sections and class groupings
+								</p>
+							</div>
+							<div>
+								<Link href={route('admin.sections.import')} className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 rounded-xl hover:from-blue-600 hover:to-blue-700 transition-all duration-300 font-medium flex items-center">
+									<svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+									</svg>
+									Import Sections CSV
+								</Link>
+							</div>
+						</div>
+					</div>
 					{flash.success && (
 						<div className="pointer-events-none fixed right-6 top-6 z-50 rounded bg-green-600 px-4 py-2 text-sm text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">{flash.success}</div>
 					)}
 
-					<div className="flex items-center justify-between">
-						<div></div>
-						<Link href={route('admin.sections.import')} className="btn-secondary">Import Sections CSV</Link>
-					</div>
 
 					<div className="card">
 						<div className="mb-6">

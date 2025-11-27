@@ -27,11 +27,9 @@ export default function Departments({ departments }) {
 
 	const flash = usePage().props.flash || {};
 
-	// Auto-hide notifications after 5 seconds
 	useEffect(() => {
 		if (flash.success || flash.error) {
 			const timer = setTimeout(() => {
-				// Clear flash messages by reloading the page without flash
 				router.reload({ only: ['departments'] });
 			}, 5000);
 			return () => clearTimeout(timer);
@@ -127,10 +125,23 @@ export default function Departments({ departments }) {
 	};
 
 	return (
-		<AuthenticatedLayout header={<h2 className="text-2xl font-bold leading-tight text-gray-800">Departments & Programs</h2>}>
+		<AuthenticatedLayout>
 			<Head title="Departments & Programs" />
-			<div className="min-h-screen bg-gradient-to-br from-brand-primary/10 via-emerald-50/80 to-brand-secondary/5 py-8">
-				<div className="mx-auto max-w-full space-y-10 px-4 sm:px-6 lg:px-8 xl:px-12">
+			<div className="min-h-screen bg-gradient-to-br from-slate-50/80 via-gray-50/60 to-zinc-50/70">
+				<div className="w-full px-6 py-8 space-y-6">
+					{/* Header */}
+					<div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 border border-white/20">
+						<div className="flex items-center justify-between">
+							<div>
+								<h2 className="text-4xl font-bold bg-gradient-to-r from-slate-600 via-gray-600 to-zinc-600 bg-clip-text text-transparent">
+									Departments
+								</h2>
+								<p className="text-gray-600 mt-2 text-lg">
+									Manage departments and their programs
+								</p>
+							</div>
+						</div>
+					</div>
 					{flash.success && (
 						<div className="pointer-events-none fixed right-6 top-6 z-50 flex items-center gap-3 rounded-lg bg-green-600 px-4 py-3 text-sm text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">
 							<svg className="h-5 w-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

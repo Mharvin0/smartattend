@@ -111,9 +111,11 @@ Route::middleware('auth')->group(function () {
 
         // Students
         Route::get('/students', [\App\Http\Controllers\Admin\StudentController::class, 'index'])->name('students');
-        Route::get('/students/{student}', [\App\Http\Controllers\Admin\StudentController::class, 'show'])->name('students.show');
+        Route::post('/students', [\App\Http\Controllers\Admin\StudentController::class, 'store'])->name('students.store');
+        Route::post('/students/import', [\App\Http\Controllers\Admin\StudentController::class, 'import'])->name('students.import');
         Route::post('/students/update-priority', [\App\Http\Controllers\Admin\StudentController::class, 'updatePriority'])->name('students.update-priority');
-        Route::post('/students/update-all-priorities', [\App\Http\Controllers\Admin\StudentController::class, 'updateAllPriorities'])->name('students.update-all-priorities');
+        Route::delete('/students/{student}', [\App\Http\Controllers\Admin\StudentController::class, 'destroy'])->name('students.destroy');
+        Route::get('/students/{student}', [\App\Http\Controllers\Admin\StudentController::class, 'show'])->name('students.show');
     });
 
     // Teacher routes - Only for Teacher role
@@ -166,8 +168,18 @@ Route::middleware('auth')->group(function () {
         Route::delete('/schedules/{schedule}', [ScheduleAdminController::class, 'destroy'])->name('schedules.destroy');
         Route::get('/settings', [SystemAdminController::class, 'settings'])->name('settings');
         
+        // Student Management
+        Route::post('/students', [SystemAdminController::class, 'storeStudent'])->name('students.store');
+        Route::delete('/students/{id}', [SystemAdminController::class, 'destroyStudent'])->name('students.destroy');
+        Route::post('/students/import', [SystemAdminController::class, 'importStudents'])->name('students.import');
+        Route::post('/students/export', [SystemAdminController::class, 'exportStudents'])->name('students.export');
+        
+        // Cleanup Duplicates
+        Route::post('/cleanup-duplicates', [SystemAdminController::class, 'cleanupDuplicates'])->name('cleanup.duplicates');
+        
         // Management remarks
         Route::post('/management/remarks', [SystemAdminController::class, 'storeManagementRemark'])->name('management.remarks.store');
+        Route::delete('/management/remarks/{id}', [SystemAdminController::class, 'destroyManagementRemark'])->name('management.remarks.destroy');
 
         // Teacher Management Routes
         Route::post('/teachers', [SystemAdminController::class, 'storeTeacher'])->name('teachers.store');
