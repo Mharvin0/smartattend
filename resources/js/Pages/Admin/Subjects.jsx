@@ -3,8 +3,8 @@ import { Head, useForm, usePage, router } from '@inertiajs/react';
 import DataTable from '@/Components/DataTable';
 import { useState, useEffect } from 'react';
 
-export default function Subjects({ subjects, sections, departments, programs, yearLevels, semesters }) {
-	const { data, setData, post, processing } = useForm({ 
+export default function Subjects({ subjects, sections, departments, programs, teachers = [], yearLevels, semesters }) {
+	const { data, setData, post, processing, reset } = useForm({ 
 		code: '', 
 		name: '', 
 		department: '',
@@ -17,7 +17,32 @@ export default function Subjects({ subjects, sections, departments, programs, ye
 		program_id: ''
 	});
 	const flash = usePage().props.flash || {};
-	const submit = (e) => { e.preventDefault(); post(route('admin.subjects')); };
+	const submit = (e) => { 
+		e.preventDefault();
+		
+		// Convert program code to program name for backend
+		const programName = data.program ? availablePrograms[data.program] || data.program : '';
+		
+		// Convert empty adviser string to null
+		const adviserValue = data.adviser && data.adviser.trim() !== '' ? data.adviser : null;
+		
+		// Submit with transformed data using router.post directly
+		router.post(route('admin.subjects.store'), {
+			...data,
+			program: programName,
+			adviser: adviserValue,
+		}, {
+			preserveState: false,
+			onSuccess: () => {
+				reset();
+				setAvailablePrograms({});
+				setAvailableSections(sections);
+			},
+			onError: (errors) => {
+				console.error('Validation errors:', errors);
+			}
+		});
+	};
 
 	// State for program filtering
 	const [availablePrograms, setAvailablePrograms] = useState({});
@@ -334,13 +359,16 @@ export default function Subjects({ subjects, sections, departments, programs, ye
 
 							<div>
 								<label className="block text-sm font-medium text-gray-700">Adviser</label>
-								<input
-									type="text"
+								<select
 									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
-									placeholder="e.g. Dr. John Doe"
-									value={data.adviser}
+									value={data.adviser || ''}
 									onChange={(e) => setData('adviser', e.target.value)}
-								/>
+								>
+									<option value="">Select Adviser</option>
+									{teachers.map((teacher) => (
+										<option key={teacher.id} value={teacher.name}>{teacher.name}</option>
+									))}
+								</select>
 							</div>
 
 							<div className="md:col-span-2 lg:col-span-4">
@@ -541,7 +569,7 @@ export default function Subjects({ subjects, sections, departments, programs, ye
 												program: editingSubject.program,
 												year_level: editingSubject.year_level,
 												semester: editingSubject.semester,
-												adviser: editingSubject.adviser,
+												adviser: editingSubject.adviser && editingSubject.adviser.trim() !== '' ? editingSubject.adviser : null,
 												section_id: editingSubject.section_id
 											}, {
 												onSuccess: () => {
@@ -637,12 +665,16 @@ export default function Subjects({ subjects, sections, departments, programs, ye
 												</div>
 												<div>
 													<label className="block text-sm font-medium text-gray-700 mb-2">Adviser</label>
-													<input
-														type="text"
+													<select
 														value={editingSubject.adviser || ''}
 														onChange={(e) => setEditingSubject({...editingSubject, adviser: e.target.value})}
 														className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-													/>
+													>
+														<option value="">Select Adviser</option>
+														{teachers.map((teacher) => (
+															<option key={teacher.id} value={teacher.name}>{teacher.name}</option>
+														))}
+													</select>
 												</div>
 											</div>
 											

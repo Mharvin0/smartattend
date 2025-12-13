@@ -30,9 +30,9 @@ class SectionController extends Controller
             ->orderBy('name')
             ->get();
 
-        // Get teachers for adviser selection
-        $teachers = \App\Models\User::role('Teacher')
-            ->with(['department', 'program'])
+        // Get Teachers for adviser selection
+        $teachers = \App\Models\Teacher::with(['department', 'optionalDepartment'])
+            ->orderBy('name')
             ->get();
 
         return Inertia::render('Admin/Sections', [
@@ -89,7 +89,7 @@ class SectionController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'year_level' => ['required', 'string', 'max:255'],
             'adviser_name' => ['required', 'string', 'max:255'],
-            'adviser_id' => ['nullable', 'integer', 'exists:users,id'],
+            'adviser_id' => ['nullable', 'integer', 'exists:teachers,id'],
             'program' => ['required', 'string', 'max:255'],
             'department' => ['nullable', 'string', 'max:255'],
             'semester' => ['required', 'string', 'max:255'],

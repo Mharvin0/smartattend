@@ -280,7 +280,11 @@ export default function Sections({ sections, programs, programsList, yearLevels,
 								>
 									<option value="">Select Adviser</option>
 									{teachers
-										.filter(teacher => teacher.department_id == data.department_id)
+										.filter(teacher => {
+											// Show teachers if they belong to the selected department (primary or optional)
+											return teacher.department_id == data.department_id || 
+											       teacher.optional_department_id == data.department_id;
+										})
 										.map((teacher) => (
 											<option key={teacher.id} value={teacher.id}>
 												{teacher.name} ({teacher.email})

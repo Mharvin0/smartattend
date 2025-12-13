@@ -56,7 +56,7 @@ class Section extends Model
 
     public function adviser(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'adviser_id');
+        return $this->belongsTo(\App\Models\Teacher::class, 'adviser_id');
     }
 
     public function getStudentsCountAttribute(): int

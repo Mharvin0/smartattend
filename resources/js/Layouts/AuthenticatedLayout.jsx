@@ -81,15 +81,15 @@ export default function AuthenticatedLayout({ header, children }) {
 							</NavItem>
 
 							<NavItem
-								href={route('admin.interventions')}
-								active={route().current('admin.interventions*')}
+								href={route('admin.tracking')}
+								active={route().current('admin.tracking*')}
 								icon={
 									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
 									</svg>
 								}
 							>
-								Interventions
+								Student Tracking
 							</NavItem>
 
 							<NavItem
@@ -109,7 +109,7 @@ export default function AuthenticatedLayout({ header, children }) {
 								active={route().current('admin.students*')}
 								icon={
 									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
 									</svg>
 								}
 							>
@@ -170,6 +170,28 @@ export default function AuthenticatedLayout({ header, children }) {
 								onToggle={() => setSettingsOpen(!settingsOpen)}
 							>
 								<NavItem
+									href={route('super.settings') + '#students'}
+									active={route().current('super.settings*')}
+									icon={
+										<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+										</svg>
+									}
+								>
+									Student
+								</NavItem>
+								<NavItem
+									href={route('super.teachers')}
+									active={route().current('super.teachers*')}
+									icon={
+										<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+										</svg>
+									}
+								>
+									Teachers/Advisers
+								</NavItem>
+								<NavItem
 									href={route('super.sections')}
 									active={route().current('super.sections*')}
 									icon={
@@ -179,18 +201,6 @@ export default function AuthenticatedLayout({ header, children }) {
 									}
 								>
 									Sections
-								</NavItem>
-								<NavItem
-									href={route('super.settings') + '#students'}
-									active={route().current('super.settings*')}
-									icon={
-										<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5z" />
-											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
-										</svg>
-									}
-								>
-									Student
 								</NavItem>
 								<NavItem
 									href={route('super.subjects')}
@@ -236,27 +246,27 @@ export default function AuthenticatedLayout({ header, children }) {
 								>
 									Users
 								</NavItem>
-								<NavItem
-									href={route('super.system-admin')}
-									active={route().current('super.system-admin*')}
-									icon={
-										<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-										</svg>
-									}
-								>
-									System Admin
-								</NavItem>
+							<NavItem
+								href={route('super.system-admin')}
+								active={route().current('super.system-admin*')}
+								icon={
+									<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+									</svg>
+								}
+							>
+								System Admin
+							</NavItem>
 							</DropdownNav>
 						</>
 					)}
 
-					{roles.includes('Teacher') && !roles.includes('Admin') && !roles.includes('Super Admin') && (
+					{roles.includes('CSDL') && !roles.includes('Admin') && !roles.includes('Super Admin') && (
 						<>
 							<NavItem
-								href={route('teacher.dashboard')}
-								active={route().current('teacher.dashboard*')}
+								href={route('csdl.dashboard')}
+								active={route().current('csdl.dashboard*')}
 								icon={
 									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
@@ -264,31 +274,31 @@ export default function AuthenticatedLayout({ header, children }) {
 									</svg>
 								}
 							>
-								My Dashboard
+								Dashboard
 							</NavItem>
 
 							<NavItem
-								href={route('teacher.classes')}
-								active={route().current('teacher.classes*')}
+								href={route('csdl.csdl-page')}
+								active={route().current('csdl.csdl-page*')}
 								icon={
 									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
 									</svg>
 								}
 							>
-								My Classes
+								Student Tracking
 							</NavItem>
 
 							<NavItem
-								href={route('teacher.students')}
-								active={route().current('teacher.students*')}
+								href={route('csdl.reports')}
+								active={route().current('csdl.reports*')}
 								icon={
 									<svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
 									</svg>
 								}
 							>
-								My Students
+								Reports
 							</NavItem>
 						</>
 					)}

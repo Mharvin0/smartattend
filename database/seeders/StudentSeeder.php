@@ -3,6 +3,8 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use App\Models\Student;
 use App\Models\Section;
 use App\Models\Program;
@@ -16,25 +18,9 @@ class StudentSeeder extends Seeder
      */
     public function run(): void
     {
-        $this->command->info('Clearing all existing student records...');
-        
-        try {
-            \DB::table('attendance_histories')->whereNotNull('student_id')->delete();
-        } catch (\Exception $e) {
-        }
-        
-        try {
-            \DB::table('attendance_records')->whereNotNull('student_id')->delete();
-        } catch (\Exception $e) {
-        }
-        
-        try {
-            \DB::table('interventions')->whereNotNull('student_id')->delete();
-        } catch (\Exception $e) {
-        }
-        
-        Student::query()->delete();
-        
+        $this->command->info('Clearing students, sections, subjects, schedules, and related attendance data...');
+        $this->clearAcademicTables();
+
         $departments = Department::with('programs')->get();
         
         if ($departments->isEmpty()) {
@@ -131,5 +117,29 @@ class StudentSeeder extends Seeder
         }
 
         $this->command->info("Created {$sectionsCreated} sections and {$studentsCreated} students across multiple departments and programs.");
+    }
+
+    private function clearAcademicTables(): void
+    {
+        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+
+        foreach ([
+            'weekly_summaries',
+            'attendance_histories',
+            'attendance_records',
+            'interventions',
+            'management_remarks',
+            'teacher_sections',
+            'schedules',
+            'subjects',
+            'students',
+            'sections',
+        ] as $table) {
+            if (Schema::hasTable($table)) {
+                DB::table($table)->truncate();
+            }
+        }
+
+        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
     }
 }

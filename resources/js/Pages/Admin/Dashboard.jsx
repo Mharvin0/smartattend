@@ -12,7 +12,6 @@ export default function Dashboard() {
 	const [selectedStatus, setSelectedStatus] = useState('');
 	const canvasRef = useRef(null);
 
-	// Filter records based on search and filters
 	const filteredRecords = recentRecords?.filter(record => {
 		const matchesSearch = !searchTerm || 
 			record.student?.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||

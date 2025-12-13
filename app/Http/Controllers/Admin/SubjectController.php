@@ -7,6 +7,7 @@ use App\Models\Section;
 use App\Models\Subject;
 use App\Models\Department;
 use App\Models\Program;
+use App\Models\Teacher;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -24,12 +25,14 @@ class SubjectController extends Controller
 		
 		$departments = Department::where('is_active', true)->get(['id','name']);
 		$programs = Program::where('is_active', true)->get(['id','name','code','department_id']);
+		$teachers = Teacher::orderBy('name')->get(['id','name','email']);
 		
 		return Inertia::render('Admin/Subjects', [ 
 			'subjects' => $subjects, 
 			'sections' => $sections,
 			'departments' => $departments,
 			'programs' => $programs,
+			'teachers' => $teachers,
 			'yearLevels' => Section::getYearLevels(),
 			'semesters' => Section::getSemesters(),
 		]);
@@ -44,7 +47,7 @@ class SubjectController extends Controller
 			'program' => ['required','string','max:255'],
 			'year_level' => ['required','string','max:255'],
 			'semester' => ['required','string','max:255'],
-			'adviser' => ['required','string','max:255'],
+			'adviser' => ['nullable','string','max:255'],
 			'section_id' => ['nullable','integer','exists:sections,id'],
 			'department_id' => ['nullable','integer','exists:departments,id'],
 			'program_id' => ['nullable','integer','exists:programs,id'],
@@ -62,7 +65,7 @@ class SubjectController extends Controller
 			'program' => ['required','string','max:255'],
 			'year_level' => ['required','string','max:255'],
 			'semester' => ['required','string','max:255'],
-			'adviser' => ['required','string','max:255'],
+			'adviser' => ['nullable','string','max:255'],
 			'section_id' => ['nullable','integer','exists:sections,id'],
 			'department_id' => ['nullable','integer','exists:departments,id'],
 			'program_id' => ['nullable','integer','exists:programs,id'],

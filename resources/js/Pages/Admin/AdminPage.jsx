@@ -96,67 +96,6 @@ export default function AdminPage() {
             })
             .catch(err => console.error('Failed to load department rates:', err));
 
-        // Load faculty compliance
-        fetch(route('admin.attendance.faculty-compliance'))
-            .then(res => res.json())
-            .then(data => {
-                const container = document.getElementById('faculty-compliance-container');
-                if (container && data.teachers) {
-                    const summary = data.summary || {};
-                    container.innerHTML = `
-                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                            <div class="bg-blue-50 p-4 rounded-lg">
-                                <p class="text-sm font-medium text-blue-600">Total Teachers</p>
-                                <p class="text-2xl font-bold text-blue-900">${summary.total_teachers || 0}</p>
-                            </div>
-                            <div class="bg-green-50 p-4 rounded-lg">
-                                <p class="text-sm font-medium text-green-600">Avg Compliance</p>
-                                <p class="text-2xl font-bold text-green-900">${(summary.average_compliance || 0).toFixed(1)}%</p>
-                        </div>
-                            <div class="bg-yellow-50 p-4 rounded-lg">
-                                <p class="text-sm font-medium text-yellow-600">Avg Timeliness</p>
-                                <p class="text-2xl font-bold text-yellow-900">${(summary.average_timeliness || 0).toFixed(1)}%</p>
-                            </div>
-                            <div class="bg-purple-50 p-4 rounded-lg">
-                                <p class="text-sm font-medium text-purple-600">Compliant Teachers</p>
-                                <p class="text-2xl font-bold text-purple-900">${summary.compliant_teachers || 0}</p>
-                            </div>
-                        </div>
-                        <div class="overflow-x-auto">
-                            <table class="min-w-full divide-y divide-gray-200">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Teacher</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sections</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Compliance</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Timeliness</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
-                                    ${data.teachers.map(teacher => `
-                                        <tr>
-                                            <td class="px-6 py-4 whitespace-nowrap">
-                                                <div class="text-sm font-medium text-gray-900">${teacher.name}</div>
-                                                <div class="text-sm text-gray-500">${teacher.email}</div>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${teacher.total_sections || 0}</td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${teacher.compliance_rate || 0}%</td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${teacher.timeliness_rate || 0}%</td>
-                                            <td class="px-6 py-4 whitespace-nowrap">
-                                                <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${teacher.status === 'excellent' ? 'bg-green-100 text-green-800' : teacher.status === 'good' ? 'bg-blue-100 text-blue-800' : teacher.status === 'fair' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}">
-                                                    ${(teacher.status || 'N/A').replace('_', ' ').toUpperCase()}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    `;
-                }
-            })
-            .catch(err => console.error('Failed to load faculty compliance:', err));
     }, []);
 
 
@@ -267,14 +206,6 @@ export default function AdminPage() {
                             <h3 className="text-xl font-bold text-gray-900 mb-6">Department Attendance Rates</h3>
                             <div id="department-rates-container" className="space-y-4">
                                 <p className="text-gray-500 text-center py-8">Loading department rates...</p>
-                            </div>
-                            </div>
-                            
-                        {/* Faculty Compliance */}
-                        <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 border border-white/20">
-                            <h3 className="text-xl font-bold text-gray-900 mb-6">Faculty Compliance</h3>
-                            <div id="faculty-compliance-container" className="space-y-4">
-                                <p className="text-gray-500 text-center py-8">Loading faculty compliance...</p>
                             </div>
                             </div>
                             </div>

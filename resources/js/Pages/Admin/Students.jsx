@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import SecondaryButton from '@/Components/SecondaryButton';
-import { Users, Eye, X, Mail, GraduationCap, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
 
 export default function Students({ students = [], departments = [], programs = [], sections = [], statuses = [], priorities = [], stats = {}, filters = {} }) {
     const [searchTerm, setSearchTerm] = useState(filters.search || '');
@@ -14,21 +13,30 @@ export default function Students({ students = [], departments = [], programs = [
     const [showStudentModal, setShowStudentModal] = useState(false);
     const [showAddStudentModal, setShowAddStudentModal] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
+    const [showExportModal, setShowExportModal] = useState(false);
     const [showFilters, setShowFilters] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [importFile, setImportFile] = useState(null);
     const [importType, setImportType] = useState('csv');
+    const [exportFormat, setExportFormat] = useState('csv');
     const [studentForm, setStudentForm] = useState({
         first_name: '',
         last_name: '',
         student_number: '',
         email: '',
+        phone: '',
         section_id: '',
         year_level: '',
         gender: '',
         birth_date: '',
         guardian_name: '',
         guardian_contact: ''
+    });
+    const [showSendToCSDLModal, setShowSendToCSDLModal] = useState(false);
+    const [selectedStudentForCSDL, setSelectedStudentForCSDL] = useState(null);
+    const [csdlForm, setCsdlForm] = useState({
+        type: 'call',
+        notes: ''
     });
 
     // Filter programs by department
@@ -80,6 +88,7 @@ export default function Students({ students = [], departments = [], programs = [
                     last_name: '',
                     student_number: '',
                     email: '',
+                    phone: '',
                     section_id: '',
                     year_level: '',
                     gender: '',
@@ -123,18 +132,66 @@ export default function Students({ students = [], departments = [], programs = [
         });
     };
 
-    const getStatusIcon = (status) => {
-        switch (status) {
-            case 'Normal':
-                return <CheckCircle className="h-4 w-4" />;
-            case 'SLIP':
-                return <Clock className="h-4 w-4" />;
-            case 'PNS':
-                return <AlertTriangle className="h-4 w-4" />;
-            default:
-                return <CheckCircle className="h-4 w-4" />;
+    const handleExportStudents = async (e) => {
+        e.preventDefault();
+        
+        setIsSubmitting(true);
+        const formData = new FormData();
+        formData.append('format', exportFormat);
+        
+        // Add filters if they are set
+        if (selectedDepartment) formData.append('department_id', selectedDepartment);
+        if (selectedProgram) formData.append('program_id', selectedProgram);
+        if (selectedYearLevel) formData.append('year_level', selectedYearLevel);
+        if (selectedStatus) formData.append('status', selectedStatus);
+        
+        try {
+            const response = await fetch(route('admin.students.export'), {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                },
+                body: formData
+            });
+
+            if (response.ok) {
+                const contentType = response.headers.get('Content-Type');
+                if (contentType && contentType.includes('application/json')) {
+                    // Handle JSON error response
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Export failed');
+                }
+                
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const contentDisposition = response.headers.get('Content-Disposition');
+                const filename = contentDisposition 
+                    ? contentDisposition.split('filename=')[1].replace(/"/g, '').split(';')[0]
+                    : `students_${new Date().toISOString().split('T')[0]}.${exportFormat}`;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                setShowExportModal(false);
+            } else {
+                // Try to get error message from response
+                const contentType = response.headers.get('Content-Type');
+                if (contentType && contentType.includes('application/json')) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `Export failed with status ${response.status}`);
+                }
+                throw new Error(`Export failed with status ${response.status}`);
+            }
+        } catch (error) {
+            alert('Failed to export students. Please try again.');
+        } finally {
+            setIsSubmitting(false);
         }
     };
+
 
     return (
         <AuthenticatedLayout>
@@ -146,9 +203,9 @@ export default function Students({ students = [], departments = [], programs = [
                     <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 border border-white/20">
                         <div className="flex items-center justify-between">
                             <div>
-                                <h1 className="text-4xl font-bold bg-gradient-to-r from-slate-600 via-gray-600 to-zinc-600 bg-clip-text text-transparent">
-                                    Student Management
-                                </h1>
+                                <h2 className="text-4xl font-bold bg-gradient-to-r from-slate-600 via-gray-600 to-zinc-600 bg-clip-text text-transparent">
+                                    Student
+                                </h2>
                                 <p className="text-gray-600 mt-2 text-lg">
                                     Manage and monitor student priorities and attendance
                                 </p>
@@ -172,66 +229,26 @@ export default function Students({ students = [], departments = [], programs = [
                                     </svg>
                                     Import Students
                                 </button>
+                                <button
+                                    onClick={() => setShowExportModal(true)}
+                                    className="bg-gradient-to-r from-purple-500 to-purple-600 text-white px-6 py-3 rounded-xl hover:from-purple-600 hover:to-purple-700 transition-all duration-300 font-medium flex items-center"
+                                >
+                                    <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    Export Students
+                                </button>
                                 <span className="inline-flex items-center px-4 py-2 rounded-full text-sm bg-blue-100 text-blue-800 font-medium">
-                                    <Users className="h-4 w-4 mr-2" />
-                                    {students.length} Students
+                                    <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+                                    </svg>
+                                    {filteredStudents.length} Students
                                 </span>
                             </div>
                         </div>
                     </div>
 
-                    {/* Statistics Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                        <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-6 border border-white/20">
-                            <div className="flex items-center">
-                                <div className="h-12 w-12 bg-blue-500 rounded-xl flex items-center justify-center">
-                                    <Users className="h-6 w-6 text-white" />
-                                </div>
-                                <div className="ml-4">
-                                    <p className="text-sm font-medium text-gray-500">Total Students</p>
-                                    <p className="text-2xl font-semibold text-gray-900">{stats.total_students || 0}</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-6 border border-white/20">
-                            <div className="flex items-center">
-                                <div className="h-12 w-12 bg-green-500 rounded-xl flex items-center justify-center">
-                                    <CheckCircle className="h-6 w-6 text-white" />
-                                </div>
-                                <div className="ml-4">
-                                    <p className="text-sm font-medium text-gray-500">Normal</p>
-                                    <p className="text-2xl font-semibold text-gray-900">{stats.normal_count || 0}</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-6 border border-white/20">
-                            <div className="flex items-center">
-                                <div className="h-12 w-12 bg-yellow-500 rounded-xl flex items-center justify-center">
-                                    <Clock className="h-6 w-6 text-white" />
-                                </div>
-                                <div className="ml-4">
-                                    <p className="text-sm font-medium text-gray-500">SLIP</p>
-                                    <p className="text-2xl font-semibold text-gray-900">{stats.slip_count || 0}</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-6 border border-white/20">
-                            <div className="flex items-center">
-                                <div className="h-12 w-12 bg-red-500 rounded-xl flex items-center justify-center">
-                                    <AlertTriangle className="h-6 w-6 text-white" />
-                                </div>
-                                <div className="ml-4">
-                                    <p className="text-sm font-medium text-gray-500">Probable No-Show</p>
-                                    <p className="text-2xl font-semibold text-gray-900">{stats.pns_count || 0}</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                {/* Filters */}
+                    {/* Filters */}
                 <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-6 border border-white/20">
                     <div className="flex items-center justify-between mb-6">
                         <h3 className="text-lg font-medium text-gray-900">Filters</h3>
@@ -336,130 +353,172 @@ export default function Students({ students = [], departments = [], programs = [
                             Clear Filters
                         </button>
                         <div className="text-sm text-gray-500">
-                            Showing {filteredStudents.length} of {students.length} students
+                            Showing {filteredStudents.length} of {students?.length || 0} students
                         </div>
                     </div>
                 </div>
 
                     {/* Students List */}
-                    <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl border border-white/20 overflow-hidden">
-                        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                    <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl border border-white/20 overflow-hidden flex flex-col">
+                        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex-shrink-0">
                             <h3 className="text-lg font-semibold text-gray-900">Student List</h3>
                         </div>
-                        <div className="overflow-x-auto w-full">
-                            <table className="w-full divide-y divide-gray-200">
-                                <thead className="bg-gray-50">
-                                    <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Student ID
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Name
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Email
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Section
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Program
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Year Level
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Status
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Absences
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Actions
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody className="bg-white divide-y divide-gray-200">
-                                    {filteredStudents.map((student) => (
-                                        <tr key={student.id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                                {student.student_id || student.student_number}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                {student.name || `${student.first_name} ${student.last_name}`}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {student.email}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {student.section?.name || (typeof student.section === 'string' ? student.section : 'N/A')}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {student.section?.program?.name || (typeof student.program === 'string' ? student.program : 'N/A')}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                                    {student.year_level}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                {student.attendance_status && (
-                                                    <span 
-                                                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                                            student.attendance_status === 'Normal'
-                                                                ? 'bg-green-100 text-green-800'
-                                                                : student.attendance_status === 'SLIP'
-                                                                ? 'bg-yellow-100 text-yellow-800'
-                                                                : 'bg-red-100 text-red-800'
-                                                        }`}
-                                                        title={student.attendance_status === 'PNS' ? 'Probable No-Show: No attendance at all' : ''}
-                                                    >
-                                                        {getStatusIcon(student.attendance_status)}
-                                                        <span className="ml-1">
-                                                            {student.attendance_status === 'PNS' ? 'Probable No-Show' : student.attendance_status}
-                                                        </span>
-                                                    </span>
-                                                )}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {student.absence_count || 0}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                                <div className="flex items-center space-x-2">
-                                                    <button
-                                                        onClick={() => handleViewStudent(student)}
-                                                        className="text-blue-600 hover:text-blue-900 font-medium flex items-center"
-                                                    >
-                                                        <Eye className="h-4 w-4 inline mr-1" />
-                                                        View
-                                                    </button>
-                                                    <button
-                                                        onClick={() => {
-                                                            if (confirm(`Are you sure you want to delete ${student.first_name} ${student.last_name}?`)) {
-                                                                // Use direct URL to avoid Ziggy route errors
-                                                                router.delete(`/admin/students/${student.id}`, {
-                                                                    onSuccess: () => {
-                                                                        router.reload();
-                                                                    },
-                                                                    onError: (errors) => {
-                                                                        alert('Failed to delete student: ' + (errors.message || 'Unknown error'));
-                                                                    }
-                                                                });
-                                                            }
-                                                        }}
-                                                        className="text-red-600 hover:text-red-900 font-medium flex items-center"
-                                                    >
-                                                        <svg className="h-4 w-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                        </svg>
-                                                        Delete
-                                                    </button>
+                        <div className="overflow-x-auto overflow-y-auto flex-1 table-scroll" style={{ maxHeight: 'calc(100vh - 400px)' }}>
+                            <div className="inline-block min-w-full align-middle">
+                                <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                                    <table className="min-w-full divide-y divide-gray-300">
+                                        <thead className="bg-gray-50 sticky top-0 z-10">
+                                            <tr>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">
+                                                    Student ID
+                                                </th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">
+                                                    Name
+                                                </th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">
+                                                    Email
+                                                </th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">
+                                                    Phone
+                                                </th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">
+                                                    Section
+                                                </th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">
+                                                    Program
+                                                </th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">
+                                                    Year Level
+                                                </th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">
+                                                    Status
+                                                </th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">
+                                                    Absences
+                                                </th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap sticky right-0 bg-gray-50">
+                                                    Actions
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-200 bg-white">
+                                    {filteredStudents.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="10" className="px-6 py-12 text-center text-sm text-gray-500">
+                                                <div className="flex flex-col items-center">
+                                                    <svg className="h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+                                                    </svg>
+                                                    <p className="text-lg font-medium text-gray-900">No students found</p>
+                                                    <p className="text-sm text-gray-500 mt-1">Try adjusting your filters</p>
                                                 </div>
                                             </td>
                                         </tr>
-                                    ))}
+                                    ) : (
+                                        filteredStudents.map((student) => (
+                                            <tr key={student.id} className="hover:bg-gray-50 transition-colors duration-150">
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                    {student.student_id || student.student_number}
+                                                </td>
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                    <div className="font-medium">{student.name || `${student.first_name} ${student.last_name}`}</div>
+                                                </td>
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    <div className="max-w-xs truncate" title={student.email || 'N/A'}>
+                                                        {student.email || 'N/A'}
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {student.phone || 'N/A'}
+                                                </td>
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {student.section?.name || (typeof student.section === 'string' ? student.section : 'N/A')}
+                                                </td>
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    <div className="max-w-xs truncate" title={student.section?.program?.name || (typeof student.program === 'string' ? student.program : 'N/A')}>
+                                                        {student.section?.program?.name || (typeof student.program === 'string' ? student.program : 'N/A')}
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-4 whitespace-nowrap">
+                                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                        {student.year_level}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-4 whitespace-nowrap">
+                                                    {student.attendance_status && (
+                                                        <span 
+                                                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                                                student.attendance_status === 'Normal'
+                                                                    ? 'bg-green-100 text-green-800'
+                                                                    : student.attendance_status === 'SLIP'
+                                                                    ? 'bg-yellow-100 text-yellow-800'
+                                                                    : 'bg-red-100 text-red-800'
+                                                            }`}
+                                                            title={student.attendance_status === 'PNS' ? 'Probable No-Show: No attendance at all' : ''}
+                                                        >
+                                                            {student.attendance_status === 'PNS' ? 'Probable No-Show' : student.attendance_status}
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
+                                                    <span className="font-medium">{student.absence_count || 0}</span>
+                                                </td>
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium sticky right-0 bg-white hover:bg-gray-50">
+                                                    <div className="flex items-center space-x-1">
+                                                        <button
+                                                            onClick={() => {
+                                                                setSelectedStudent(student);
+                                                                setShowStudentModal(true);
+                                                            }}
+                                                            className="p-2 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-md transition-colors duration-150"
+                                                            title="View Details"
+                                                        >
+                                                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                            </svg>
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                setSelectedStudentForCSDL(student);
+                                                                setShowSendToCSDLModal(true);
+                                                            }}
+                                                            className="p-2 text-green-600 hover:text-green-900 hover:bg-green-50 rounded-md transition-colors duration-150"
+                                                            title="Send to CSDL"
+                                                        >
+                                                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                                            </svg>
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                if (confirm(`Are you sure you want to delete ${student.first_name} ${student.last_name}?`)) {
+                                                                    router.delete(`/admin/students/${student.id}`, {
+                                                                        onSuccess: () => {
+                                                                            router.reload();
+                                                                        },
+                                                                        onError: (errors) => {
+                                                                            alert('Failed to delete student: ' + (errors.message || 'Unknown error'));
+                                                                        }
+                                                                    });
+                                                                }
+                                                            }}
+                                                            className="p-2 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-md transition-colors duration-150"
+                                                            title="Delete Student"
+                                                        >
+                                                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
                                 </tbody>
-                            </table>
+                                    </table>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -467,7 +526,14 @@ export default function Students({ students = [], departments = [], programs = [
 
             {/* Student Details Modal */}
             {showStudentModal && selectedStudent && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+                <div 
+                    className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                            closeStudentModal();
+                        }
+                    }}
+                >
                     <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto relative">
                         <div className="p-8">
                             {/* Modal Header */}
@@ -475,24 +541,29 @@ export default function Students({ students = [], departments = [], programs = [
                                 <div className="flex items-center space-x-4">
                                     <div className="h-16 w-16 bg-blue-600 rounded-full flex items-center justify-center">
                                         <span className="text-white font-bold text-xl">
-                                            {selectedStudent.name ? selectedStudent.name.split(' ').map(n => n[0]).join('') : 'S'}
+                                            {selectedStudent.first_name?.[0]}{selectedStudent.last_name?.[0]}
                                         </span>
                                     </div>
                                     <div>
                                         <h2 className="text-2xl font-bold text-gray-900">
-                                            {selectedStudent.name}
+                                            {selectedStudent.first_name} {selectedStudent.last_name}
                                         </h2>
-                                        <p className="text-gray-600">{selectedStudent.student_id}</p>
+                                        <p className="text-gray-600">{selectedStudent.student_number || selectedStudent.student_id}</p>
                                         <p className="text-sm text-gray-500">
-                                            {selectedStudent.section?.name || (typeof selectedStudent.section === 'string' ? selectedStudent.section : 'No Section')} - {selectedStudent.section?.program?.name || (typeof selectedStudent.program === 'string' ? selectedStudent.program : 'No Program')}
+                                            {selectedStudent.section?.name || 'No Section'} - {selectedStudent.section?.program?.name || 'No Program'}
                                         </p>
                                     </div>
                                 </div>
                                 <button
-                                    onClick={closeStudentModal}
+                                    onClick={() => {
+                                        setShowStudentModal(false);
+                                        setSelectedStudent(null);
+                                    }}
                                     className="text-gray-400 hover:text-gray-600 transition-colors"
                                 >
-                                    <X className="h-6 w-6" />
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
                                 </button>
                             </div>
 
@@ -500,36 +571,33 @@ export default function Students({ students = [], departments = [], programs = [
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                                 <div className="bg-gray-50 rounded-2xl p-6">
                                     <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                                        <Mail className="h-5 w-5 text-blue-600 mr-2" />
+                                        <svg className="h-5 w-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                        </svg>
                                         Contact Information
                                     </h3>
                                     <div className="space-y-2">
-                                        <p><span className="font-medium">Email:</span> {selectedStudent.email}</p>
-                                        <p><span className="font-medium">Phone:</span> Not provided</p>
-                                        <p><span className="font-medium">Address:</span> Not provided</p>
+                                        <p><span className="font-medium">Email:</span> {selectedStudent.email || 'N/A'}</p>
+                                        <p><span className="font-medium">Phone:</span> {selectedStudent.phone || 'N/A'}</p>
+                                        <p><span className="font-medium">Guardian:</span> {selectedStudent.guardian_name || 'N/A'}</p>
+                                        <p><span className="font-medium">Guardian Contact:</span> {selectedStudent.guardian_contact || 'N/A'}</p>
                                     </div>
                                 </div>
 
                                 <div className="bg-gray-50 rounded-2xl p-6">
                                     <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                                        <GraduationCap className="h-5 w-5 text-green-600 mr-2" />
+                                        <svg className="h-5 w-5 text-green-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
+                                        </svg>
                                         Academic Information
                                     </h3>
                                     <div className="space-y-2">
-                                        <p><span className="font-medium">Student ID:</span> {selectedStudent.student_id}</p>
-                                        <p><span className="font-medium">Section:</span> {selectedStudent.section?.name || (typeof selectedStudent.section === 'string' ? selectedStudent.section : 'N/A')}</p>
-                                        <p><span className="font-medium">Program:</span> {selectedStudent.section?.program?.name || (typeof selectedStudent.program === 'string' ? selectedStudent.program : 'N/A')}</p>
-                                        <p><span className="font-medium">Department:</span> {selectedStudent.section?.program?.department?.name || (typeof selectedStudent.department === 'string' ? selectedStudent.department : 'N/A')}</p>
-                                        <p><span className="font-medium">Year Level:</span> {selectedStudent.year_level}</p>
-                                        <p><span className="font-medium">Status:</span>
-                                            <span className={`ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                                selectedStudent.status === 'Active'
-                                                    ? 'bg-green-100 text-green-800'
-                                                    : 'bg-red-100 text-red-800'
-                                            }`}>
-                                                {selectedStudent.status}
-                                            </span>
-                                        </p>
+                                        <p><span className="font-medium">Student ID:</span> {selectedStudent.student_number || selectedStudent.student_id}</p>
+                                        <p><span className="font-medium">Section:</span> {selectedStudent.section?.name || 'N/A'}</p>
+                                        <p><span className="font-medium">Program:</span> {selectedStudent.section?.program?.name || 'N/A'}</p>
+                                        <p><span className="font-medium">Department:</span> {selectedStudent.section?.program?.department?.name || 'N/A'}</p>
+                                        <p><span className="font-medium">Year Level:</span> {selectedStudent.year_level || 'N/A'}</p>
                                         <p><span className="font-medium">Status:</span>
                                             <span className={`ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                                                 selectedStudent.attendance_status === 'Normal'
@@ -538,20 +606,7 @@ export default function Students({ students = [], departments = [], programs = [
                                                     ? 'bg-yellow-100 text-yellow-800'
                                                     : 'bg-red-100 text-red-800'
                                             }`}>
-                                                {getStatusIcon(selectedStudent.attendance_status)}
-                                                <span className="ml-1">{selectedStudent.attendance_status || 'Normal'}</span>
-                                            </span>
-                                        </p>
-                                        <p><span className="font-medium">Priority:</span>
-                                            <span className={`ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                                selectedStudent.priority === 'Safe'
-                                                    ? 'bg-green-100 text-green-800'
-                                                    : selectedStudent.priority === 'Call Needed'
-                                                    ? 'bg-yellow-100 text-yellow-800'
-                                                    : 'bg-red-100 text-red-800'
-                                            }`}>
-                                                {getStatusIcon(selectedStudent.priority === 'Safe' ? 'Normal' : selectedStudent.priority === 'Call Needed' ? 'SLIP' : 'PNS')}
-                                                <span className="ml-1">{selectedStudent.priority}</span>
+                                                {selectedStudent.attendance_status || 'Normal'}
                                             </span>
                                         </p>
                                         <p><span className="font-medium">Absence Count:</span> {selectedStudent.absence_count || 0}</p>
@@ -559,33 +614,6 @@ export default function Students({ students = [], departments = [], programs = [
                                 </div>
                             </div>
 
-                            {/* Status Alert */}
-                            {selectedStudent.attendance_status && selectedStudent.attendance_status !== 'Normal' && (
-                                <div className={`mb-8 p-6 rounded-2xl ${
-                                    selectedStudent.attendance_status === 'SLIP' 
-                                        ? 'bg-yellow-50 border border-yellow-200' 
-                                        : 'bg-red-50 border border-red-200'
-                                }`}>
-                                    <div className="flex items-center">
-                                        {getStatusIcon(selectedStudent.attendance_status)}
-                                        <div className="ml-3">
-                                            <h3 className={`text-lg font-semibold ${
-                                                selectedStudent.attendance_status === 'SLIP' ? 'text-yellow-800' : 'text-red-800'
-                                            }`}>
-                                                {selectedStudent.attendance_status === 'SLIP' ? 'Action Required' : 'Immediate Attention Required'}
-                                            </h3>
-                                            <p className={`text-sm ${
-                                                selectedStudent.attendance_status === 'SLIP' ? 'text-yellow-700' : 'text-red-700'
-                                            }`}>
-                                                {selectedStudent.attendance_status === 'SLIP' 
-                                                    ? 'This student has more than 50% absences this week and requires attention.'
-                                                    : 'This student has no attendance at all (Probable No-Show - PNS).'
-                                                }
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
 
                             {/* Modal Footer */}
                             <div className="flex justify-end space-x-3">
@@ -600,7 +628,14 @@ export default function Students({ students = [], departments = [], programs = [
 
             {/* Add Student Modal */}
             {showAddStudentModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+                <div 
+                    className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                            setShowAddStudentModal(false);
+                        }
+                    }}
+                >
                     <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative">
                         <div className="p-8">
                             <div className="flex items-center justify-between mb-6">
@@ -609,13 +644,15 @@ export default function Students({ students = [], departments = [], programs = [
                                     onClick={() => setShowAddStudentModal(false)}
                                     className="text-gray-400 hover:text-gray-600 transition-colors"
                                 >
-                                    <X className="h-6 w-6" />
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
                                 </button>
                             </div>
                             <form onSubmit={handleAddStudent} className="space-y-4">
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
                                         <input
                                             type="text"
                                             required
@@ -625,7 +662,7 @@ export default function Students({ students = [], departments = [], programs = [
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
                                         <input
                                             type="text"
                                             required
@@ -637,17 +674,22 @@ export default function Students({ students = [], departments = [], programs = [
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Student Number *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Student Number</label>
                                         <input
                                             type="text"
                                             required
+                                            inputMode="numeric"
+                                            pattern="[0-9-]+"
                                             value={studentForm.student_number}
-                                            onChange={(e) => setStudentForm({...studentForm, student_number: e.target.value})}
+                                            onChange={(e) => {
+                                                const sanitized = e.target.value.replace(/[^0-9-]/g, '');
+                                                setStudentForm({...studentForm, student_number: sanitized});
+                                            }}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
                                         <input
                                             type="email"
                                             required
@@ -657,11 +699,26 @@ export default function Students({ students = [], departments = [], programs = [
                                         />
                                     </div>
                                 </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                                    <input
+                                        type="tel"
+                                        inputMode="numeric"
+                                        pattern="[0-9]{11}"
+                                        maxLength={11}
+                                        value={studentForm.phone}
+                                        onChange={(e) => {
+                                            const sanitized = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
+                                            setStudentForm({...studentForm, phone: sanitized});
+                                        }}
+                                        placeholder="e.g. 09123456789"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Section *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Section</label>
                                         <select
-                                            required
                                             value={studentForm.section_id}
                                             onChange={(e) => setStudentForm({...studentForm, section_id: e.target.value})}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -673,9 +730,8 @@ export default function Students({ students = [], departments = [], programs = [
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Year Level *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Year Level</label>
                                         <select
-                                            required
                                             value={studentForm.year_level}
                                             onChange={(e) => setStudentForm({...studentForm, year_level: e.target.value})}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -723,9 +779,15 @@ export default function Students({ students = [], departments = [], programs = [
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Guardian Contact</label>
                                     <input
-                                        type="text"
+                                        type="tel"
+                                        inputMode="numeric"
+                                        pattern="[0-9]{11}"
+                                        maxLength={11}
                                         value={studentForm.guardian_contact}
-                                        onChange={(e) => setStudentForm({...studentForm, guardian_contact: e.target.value})}
+                                        onChange={(e) => {
+                                            const sanitized = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
+                                            setStudentForm({...studentForm, guardian_contact: sanitized});
+                                        }}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                     />
                                 </div>
@@ -749,7 +811,14 @@ export default function Students({ students = [], departments = [], programs = [
 
             {/* Import Students Modal */}
             {showImportModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+                <div 
+                    className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                            setShowImportModal(false);
+                        }
+                    }}
+                >
                     <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full relative">
                         <div className="p-8">
                             <div className="flex items-center justify-between mb-6">
@@ -758,7 +827,9 @@ export default function Students({ students = [], departments = [], programs = [
                                     onClick={() => setShowImportModal(false)}
                                     className="text-gray-400 hover:text-gray-600 transition-colors"
                                 >
-                                    <X className="h-6 w-6" />
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
                                 </button>
                             </div>
                             <form onSubmit={handleImportStudents} className="space-y-4">
@@ -799,6 +870,167 @@ export default function Students({ students = [], departments = [], programs = [
                                         className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                                     >
                                         {isSubmitting ? 'Importing...' : 'Import Students'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Export Students Modal */}
+            {showExportModal && (
+                <div 
+                    className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                            setShowExportModal(false);
+                        }
+                    }}
+                >
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full relative">
+                        <div className="p-8">
+                            <div className="flex items-center justify-between mb-6">
+                                <h2 className="text-2xl font-bold text-gray-900">Export Students</h2>
+                                <button
+                                    onClick={() => setShowExportModal(false)}
+                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                >
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <form onSubmit={handleExportStudents} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Export Format</label>
+                                    <select
+                                        value={exportFormat}
+                                        onChange={(e) => setExportFormat(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                        <option value="csv">CSV</option>
+                                        <option value="xml">XML</option>
+                                    </select>
+                                </div>
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    <p className="text-sm text-gray-600">
+                                        {selectedDepartment || selectedProgram || selectedYearLevel || selectedStatus
+                                            ? 'Export will include only filtered students based on your current filters.'
+                                            : 'Export will include all students.'}
+                                    </p>
+                                </div>
+                                <div className="flex justify-end space-x-3 pt-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowExportModal(false)}
+                                        className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={isSubmitting}
+                                        className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                                    >
+                                        {isSubmitting ? 'Exporting...' : 'Export Students'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Send to CSDL Modal */}
+            {showSendToCSDLModal && selectedStudentForCSDL && (
+                <div 
+                    className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                            setShowSendToCSDLModal(false);
+                            setSelectedStudentForCSDL(null);
+                            setCsdlForm({ type: 'call', notes: '' });
+                        }
+                    }}
+                >
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full">
+                        <div className="p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-xl font-bold text-gray-900">Send to CSDL</h2>
+                                <button
+                                    onClick={() => {
+                                        setShowSendToCSDLModal(false);
+                                        setSelectedStudentForCSDL(null);
+                                        setCsdlForm({ type: 'call', notes: '' });
+                                    }}
+                                    className="text-gray-400 hover:text-gray-600"
+                                >
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <div className="mb-4">
+                                <p className="text-sm text-gray-600 mb-2">
+                                    Student: <span className="font-semibold">{selectedStudentForCSDL.first_name} {selectedStudentForCSDL.last_name}</span>
+                                </p>
+                            </div>
+                            <form onSubmit={(e) => {
+                                e.preventDefault();
+                                router.post(route('admin.students.send-to-csdl', selectedStudentForCSDL.id), csdlForm, {
+                                    onSuccess: () => {
+                                        setShowSendToCSDLModal(false);
+                                        setSelectedStudentForCSDL(null);
+                                        setCsdlForm({ type: 'call', notes: '' });
+                                        router.reload();
+                                    },
+                                    onError: () => {
+                                        alert('Failed to send student to CSDL');
+                                    }
+                                });
+                            }}>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Type *</label>
+                                    <select
+                                        required
+                                        value={csdlForm.type}
+                                        onChange={(e) => setCsdlForm({...csdlForm, type: e.target.value})}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                        <option value="call">Call</option>
+                                        <option value="home_visit">Home Visit</option>
+                                    </select>
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
+                                    <textarea
+                                        value={csdlForm.notes}
+                                        onChange={(e) => setCsdlForm({...csdlForm, notes: e.target.value})}
+                                        rows={3}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="Optional notes for CSDL..."
+                                    />
+                                </div>
+                                <div className="flex justify-end space-x-3">
+                                    <SecondaryButton
+                                        type="button"
+                                        onClick={() => {
+                                            setShowSendToCSDLModal(false);
+                                            setSelectedStudentForCSDL(null);
+                                            setCsdlForm({ type: 'call', notes: '' });
+                                        }}
+                                    >
+                                        Cancel
+                                    </SecondaryButton>
+                                    <button
+                                        type="submit"
+                                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"
+                                    >
+                                        <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                        </svg>
+                                        Send to CSDL
                                     </button>
                                 </div>
                             </form>

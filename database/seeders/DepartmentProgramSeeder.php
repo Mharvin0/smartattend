@@ -14,6 +14,8 @@ class DepartmentProgramSeeder extends Seeder
      */
     public function run(): void
     {
+        $this->deduplicateExistingData();
+
         $departmentsData = [
             [
                 'name' => 'College of Management and Accountancy',
@@ -88,15 +90,101 @@ class DepartmentProgramSeeder extends Seeder
         foreach ($departmentsData as $departmentData) {
             $programs = $departmentData['programs'];
             unset($departmentData['programs']);
-            
-            $department = Department::create($departmentData);
+
+            // Restore soft-deleted department if it exists to avoid unique key collisions.
+            $department = Department::withTrashed()->where('code', $departmentData['code'])->first();
+            if ($department) {
+                if ($department->trashed()) {
+                    $department->restore();
+                }
+                $department->update([
+                    'name' => $departmentData['name'],
+                    'description' => $departmentData['description'],
+                ]);
+            } else {
+                $department = Department::create($departmentData);
+            }
             
             foreach ($programs as $programData) {
                 $programData['department_id'] = $department->id;
                 $programData['description'] = null;
                 $programData['is_active'] = true;
-                Program::create($programData);
+
+                $program = Program::withTrashed()
+                    ->where('code', $programData['code'])
+                    ->where('department_id', $department->id)
+                    ->first();
+
+                if ($program) {
+                    if ($program->trashed()) {
+                        $program->restore();
+                    }
+                    $program->update([
+                        'name' => $programData['name'],
+                        'duration_years' => $programData['duration_years'],
+                        'description' => $programData['description'],
+                        'is_active' => $programData['is_active'],
+                    ]);
+                } else {
+                    Program::create($programData);
+                }
             }
+        }
+    }
+
+    /**
+     * Remove duplicate departments/programs while preserving a single record per code.
+     */
+    private function deduplicateExistingData(): void
+    {
+        $duplicateDeptCodes = Department::withTrashed()
+            ->select('code')
+            ->groupBy('code')
+            ->havingRaw('COUNT(*) > 1')
+            ->pluck('code');
+
+        foreach ($duplicateDeptCodes as $code) {
+            $canonical = Department::withTrashed()
+                ->where('code', $code)
+                ->orderByRaw('deleted_at IS NULL DESC')
+                ->orderBy('id')
+                ->first();
+
+            Department::withTrashed()
+                ->where('code', $code)
+                ->where('id', '!=', $canonical->id)
+                ->get()
+                ->each(function (Department $duplicate) use ($canonical) {
+                    Program::withTrashed()
+                        ->where('department_id', $duplicate->id)
+                        ->update(['department_id' => $canonical->id]);
+                    // Hard delete to avoid soft-delete unique collisions.
+                    $duplicate->forceDelete();
+                });
+        }
+
+        $duplicatePrograms = Program::withTrashed()
+            ->select('code', 'department_id')
+            ->groupBy('code', 'department_id')
+            ->havingRaw('COUNT(*) > 1')
+            ->get();
+
+        foreach ($duplicatePrograms as $duplicate) {
+            $canonical = Program::withTrashed()
+                ->where('code', $duplicate->code)
+                ->where('department_id', $duplicate->department_id)
+                ->orderByRaw('deleted_at IS NULL DESC')
+                ->orderBy('id')
+                ->first();
+
+            Program::withTrashed()
+                ->where('code', $duplicate->code)
+                ->where('department_id', $duplicate->department_id)
+                ->where('id', '!=', $canonical->id)
+                ->get()
+                ->each(function (Program $duplicateProgram) {
+                    $duplicateProgram->forceDelete();
+                });
         }
     }
 }

@@ -5,13 +5,16 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Student extends Model
 {
+    use SoftDeletes;
     protected $fillable = [
         'first_name',
         'last_name',
         'email',
+        'phone',
         'student_number',
         'department_id',
         'program_id',
@@ -30,6 +33,10 @@ class Student extends Model
     protected $casts = [
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+    ];
+
+    protected $appends = [
+        'attendance_status',
     ];
 
     public function section(): BelongsTo
@@ -60,6 +67,11 @@ class Student extends Model
     public function weeklySummaries(): HasMany
     {
         return $this->hasMany(WeeklySummary::class);
+    }
+
+    public function studentTracking(): HasMany
+    {
+        return $this->hasMany(StudentTracking::class);
     }
 
     public function schedules()
@@ -192,14 +204,36 @@ class Student extends Model
     // Attendance Status calculation methods (Normal, SLIP, PNS)
     public function calculateAttendanceStatus()
     {
+        // Get the current absence_count (should already be calculated by updatePriority())
+        $absenceCount = $this->absence_count ?? 0;
+        
+        // If student has 0 absences, they should be Normal (Safe)
+        if ($absenceCount === 0) {
+            return 'Normal';
+        }
+        
+        // PNS: If total absences >= 8 (based on priority calculation)
+        // This check must come before SLIP check
+        if ($absenceCount >= 8) {
+            return 'PNS';
+        }
+        
         // Get all attendance records for this student with their schedules and subjects
         $attendanceRecords = $this->attendanceRecords()
             ->with('schedule.subject')
             ->get();
         
-        // PNS: No attendance at all
+        // If no attendance records but absence_count > 0, there's a data inconsistency
+        // Trust absence_count: if >= 8 it's PNS, if < 4 it's Normal, otherwise it might be SLIP
         if ($attendanceRecords->isEmpty()) {
-            return 'PNS';
+            if ($absenceCount >= 8) {
+                return 'PNS';
+            } elseif ($absenceCount < 4) {
+                return 'Normal';
+            } else {
+                // 4-7 absences but no records - likely SLIP
+                return 'SLIP';
+            }
         }
         
         // Group absences by subject
@@ -214,28 +248,34 @@ class Student extends Model
             }
         }
         
-        // If no absences at all, return Normal
+        // If no absences per subject but absence_count > 0, trust absence_count
         if (empty($absencesPerSubject)) {
-            return 'Normal';
+            if ($absenceCount >= 8) {
+                return 'PNS';
+            } elseif ($absenceCount < 4) {
+                return 'Normal';
+            } else {
+                // 4-7 absences - likely SLIP
+                return 'SLIP';
+            }
         }
         
-        // Check each subject's absence count
+        // Check each subject's absence count for SLIP
+        // SLIP: At least one subject has 4 or more absences (but less than 9)
         $hasSlip = false;
-        foreach ($absencesPerSubject as $subjectId => $absenceCount) {
-            // SLIP: Absences more than 4 and less than 9 per subject (5-8 absences)
-            // But we'll interpret "more than 4" as >= 4 for practical purposes (4-8 absences)
-            if ($absenceCount >= 4 && $absenceCount < 9) {
+        foreach ($absencesPerSubject as $subjectId => $subjectAbsenceCount) {
+            if ($subjectAbsenceCount >= 4 && $subjectAbsenceCount < 9) {
                 $hasSlip = true;
                 break; // If any subject qualifies for SLIP, student is SLIP
             }
         }
         
-        // SLIP: At least one subject has 4 or more absences
+        // SLIP: At least one subject has 4-8 absences
         if ($hasSlip) {
             return 'SLIP';
         }
         
-        // Normal: All subjects have less than 4 absences
+        // Normal: All subjects have less than 4 absences and total absences < 8
         return 'Normal';
     }
 

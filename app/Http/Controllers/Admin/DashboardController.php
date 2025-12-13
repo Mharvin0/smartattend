@@ -24,13 +24,18 @@ class DashboardController extends Controller
 				return redirect()->route('login');
 			}
 			
+			// Explicitly block CSDL users from admin routes
+			if ($user->hasRole('CSDL') && !$user->hasRole('Admin') && !$user->hasRole('Super Admin')) {
+				return redirect()->route('csdl.dashboard');
+			}
+			
 			// Check if user has admin role
-			if (!$user->hasRole('Admin')) {
+			if (!$user->hasRole('Admin') && !$user->hasRole('Super Admin')) {
 				// Redirect based on their actual role
 				if ($user->hasRole('Super Admin')) {
 					return redirect()->route('super.dashboard');
-				} elseif ($user->hasRole('Teacher')) {
-					return redirect()->route('teacher.dashboard');
+				} elseif ($user->hasRole('CSDL')) {
+				 return redirect()->route('csdl.dashboard');
 				}
 				// Otherwise, show 403 error
 				abort(403, 'Access denied. Admin role required.');

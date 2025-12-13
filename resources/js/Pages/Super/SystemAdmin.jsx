@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import DataTable from '@/Components/DataTable';
+import { Phone, Home, Users, Calendar, CheckCircle, XCircle, Clock, AlertCircle, Download } from 'lucide-react';
 // route is available globally
 
 export default function SystemAdmin({ 
@@ -11,21 +12,22 @@ export default function SystemAdmin({
     integrations, 
     systemTools, 
     auditLogs,
-    management,
+    studentsNeedingCalls = [],
+    recentTracking = [],
+    stats = {},
     interventions,
     departments,
     programs,
     sections,
     students = [],
+    teachers: teachersProp = [],
     attendanceStats,
     todayAttendance,
     trends,
     recentRecords,
     calendarData,
     departmentTrends,
-    facultyCompliance,
     weeklyStatusProgress: weeklyStatusProgressProp = [],
-    teachers: teachersProp = [],
     activeTab: initialActiveTab = 'dashboard',
     pageTitle = 'System Admin Control',
     availableMonths = []
@@ -38,11 +40,9 @@ export default function SystemAdmin({
     const [notification, setNotification] = useState(null);
     const [selectedTool, setSelectedTool] = useState(null);
     const [liveDepartmentTrends, setLiveDepartmentTrends] = useState(departmentTrends);
-    const [liveFacultyCompliance, setLiveFacultyCompliance] = useState(facultyCompliance);
     const [liveWeeklyStatusProgress, setLiveWeeklyStatusProgress] = useState(weeklyStatusProgressProp);
     const [lastRefresh, setLastRefresh] = useState(new Date());
     
-    // Auto-refresh dashboard data every 30 seconds
     useEffect(() => {
         const interval = setInterval(() => {
             refreshDashboardData();
@@ -64,7 +64,6 @@ export default function SystemAdmin({
             if (response.ok) {
                 const data = await response.json();
                 setLiveDepartmentTrends(data.departmentTrends);
-                setLiveFacultyCompliance(data.facultyCompliance);
                 if (data.weeklyStatusProgress) {
                     setLiveWeeklyStatusProgress(data.weeklyStatusProgress);
                 }
@@ -75,9 +74,20 @@ export default function SystemAdmin({
         }
     };
     
-    // Student management state
+    // Student management 
     const [activeSettingsTab, setActiveSettingsTab] = useState('students');
     const [searchTerm, setSearchTerm] = useState('');
+    
+    // Teacher/Adviser management 
+    const [showAddTeacherModal, setShowAddTeacherModal] = useState(false);
+    const [showEditTeacherModal, setShowEditTeacherModal] = useState(false);
+    const [selectedTeacher, setSelectedTeacher] = useState(null);
+    const [teacherForm, setTeacherForm] = useState({
+        name: '',
+        email: '',
+        department_id: '',
+        optional_department_id: ''
+    });
     const [selectedDepartment, setSelectedDepartment] = useState('');
     const [selectedProgram, setSelectedProgram] = useState('');
     const [selectedYearLevel, setSelectedYearLevel] = useState('');
@@ -91,40 +101,124 @@ export default function SystemAdmin({
     const [importType, setImportType] = useState('csv');
     const [exportFormat, setExportFormat] = useState('csv');
     const [selectedStudent, setSelectedStudent] = useState(null);
+    const [editStudentForm, setEditStudentForm] = useState({
+        first_name: '',
+        last_name: '',
+        email: '',
+        phone: '',
+        guardian_name: '',
+        guardian_contact: '',
+        year_level: '',
+        status: 'Normal',
+        absence_count: 0,
+    });
+    const [isSavingStudent, setIsSavingStudent] = useState(false);
+    const studentStatusOptions = ['Normal', 'SLIP', 'PNS'];
     const [showStudentModal, setShowStudentModal] = useState(false);
     const [studentForm, setStudentForm] = useState({
         first_name: '',
         last_name: '',
         student_number: '',
         email: '',
+        phone: '',
+        department_id: '',
+        program_id: '',
         section_id: '',
+        teacher_id: '',
         year_level: '',
         gender: '',
         birth_date: '',
         guardian_name: '',
         guardian_contact: ''
     });
+    const [studentFormFilteredPrograms, setStudentFormFilteredPrograms] = useState([]);
+    const [studentFormFilteredSections, setStudentFormFilteredSections] = useState([]);
+    const [sectionTeachers, setSectionTeachers] = useState([]);
+    
+    // Handle department change - filter programs
+    useEffect(() => {
+        if (studentForm.department_id) {
+            const filtered = programs?.filter(p => p.department_id == studentForm.department_id) || [];
+            setStudentFormFilteredPrograms(filtered);
+            if (studentForm.program_id && !filtered.find(p => p.id == studentForm.program_id)) {
+                setStudentForm(prev => ({ ...prev, program_id: '', section_id: '', teacher_id: '' }));
+            }
+        } else {
+            setStudentFormFilteredPrograms([]);
+            setStudentForm(prev => ({ ...prev, program_id: '', section_id: '', teacher_id: '' }));
+        }
+    }, [studentForm.department_id, programs]);
 
-    // Management (formerly Interventions) state
-    const [managementData, setManagementData] = useState((management && management.data) ? management.data : []);
-    const [showRemarkModal, setShowRemarkModal] = useState(false);
-    const [remarkRecord, setRemarkRecord] = useState(null);
-    const [remarkText, setRemarkText] = useState('');
+    useEffect(() => {
+        if (studentForm.program_id) {
+            const filtered = sections?.filter(s => s.program_id == studentForm.program_id) || [];
+            setStudentFormFilteredSections(filtered);
+            if (studentForm.section_id && !filtered.find(s => s.id == studentForm.section_id)) {
+                setStudentForm(prev => ({ ...prev, section_id: '', teacher_id: '' }));
+            }
+        } else {
+            setStudentFormFilteredSections([]);
+            setStudentForm(prev => ({ ...prev, section_id: '', teacher_id: '' }));
+        }
+    }, [studentForm.program_id, sections]);
+
+    useEffect(() => {
+        if (studentForm.department_id) {
+            fetch(route('super.departments.get-teachers', { id: studentForm.department_id }), {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    setSectionTeachers(data.teachers || []);
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching teachers:', error);
+                setSectionTeachers([]);
+            });
+        } else {
+            setSectionTeachers([]);
+            setStudentForm(prev => ({ ...prev, teacher_id: '' }));
+        }
+    }, [studentForm.department_id]);
     
-    // Management filters
-    const [filterDepartment, setFilterDepartment] = useState('');
-    const [filterSection, setFilterSection] = useState('');
-    const [filterStatus, setFilterStatus] = useState('');
-    const [filterSpecificReason, setFilterSpecificReason] = useState('');
-    const [filterMonth, setFilterMonth] = useState('');
-    const [filterWeek, setFilterWeek] = useState('');
-    const [managementSearchTerm, setManagementSearchTerm] = useState('');
-    const [showManagementFilters, setShowManagementFilters] = useState(false);
-    const [showManagementImportModal, setShowManagementImportModal] = useState(false);
-    const [managementImportFile, setManagementImportFile] = useState(null);
-    const [importFileType, setImportFileType] = useState('csv');
+    const [showSendToCSDLModal, setShowSendToCSDLModal] = useState(false);
+    const [selectedStudentForCSDL, setSelectedStudentForCSDL] = useState(null);
+    const [csdlForm, setCsdlForm] = useState({
+        type: 'call',
+        notes: ''
+    });
+
+    // Student Tracking 
+    const [selectedStudentForTracking, setSelectedStudentForTracking] = useState(null);
+    const [showTrackingModal, setShowTrackingModal] = useState(false);
+    const [trackingForm, setTrackingForm] = useState({
+        type: 'call',
+        date: new Date().toISOString().split('T')[0],
+        time: '',
+        notes: '',
+        status: 'completed',
+        outcome: '',
+        follow_up_required: '',
+        follow_up_date: '',
+    });
+    const [editingTracking, setEditingTracking] = useState(null);
+    const [viewingTracking, setViewingTracking] = useState(null);
+    const [showViewTrackingModal, setShowViewTrackingModal] = useState(false);
+    const [trackingTab, setTrackingTab] = useState('recent'); // 'recent', 'archived', 'deleted'
+    const [archivedTracking, setArchivedTracking] = useState([]);
+    const [deletedTracking, setDeletedTracking] = useState([]);
+    const [isLoadingTracking, setIsLoadingTracking] = useState(false);
+    const [studentTab, setStudentTab] = useState('active'); // 'active', 'deleted'
+    const [deletedStudents, setDeletedStudents] = useState([]);
+    const [isLoadingDeletedStudents, setIsLoadingDeletedStudents] = useState(false);
     
-    // Interventions legacy state (kept for backward compatibility)
+    // Interventions legacy 
     const [interventionsData, setInterventionsData] = useState(interventions?.data || []);
     const [showInterventionModal, setShowInterventionModal] = useState(false);
     const [editingIntervention, setEditingIntervention] = useState(null);
@@ -139,7 +233,7 @@ export default function SystemAdmin({
         status: 'in_progress'
     });
 
-    // Sections management state
+    // Sections management 
     const [sectionsData, setSectionsData] = useState(sections || []);
     const [showSectionModal, setShowSectionModal] = useState(false);
     const [editingSection, setEditingSection] = useState(null);
@@ -411,10 +505,23 @@ export default function SystemAdmin({
 
         setIsLoading(true);
         try {
+            // Convert year_level from "1" to "1st Year" format if needed
+            let yearLevel = sectionForm.year_level;
+            if (yearLevel && !yearLevel.includes('Year')) {
+                const yearMap = {
+                    '1': '1st Year',
+                    '2': '2nd Year',
+                    '3': '3rd Year',
+                    '4': '4th Year',
+                    '5': '5th Year'
+                };
+                yearLevel = yearMap[yearLevel] || yearLevel;
+            }
+            
             // Prepare payload with proper data types
             const payload = {
                 name: sectionForm.name.trim(),
-                year_level: sectionForm.year_level,
+                year_level: yearLevel,
                 academic_year: sectionForm.academic_year,
                 semester: sectionForm.semester,
                 adviser_name: sectionForm.adviser_name || null,
@@ -468,8 +575,31 @@ export default function SystemAdmin({
     const handleUpdateSection = async () => {
         if (!editingSection) return;
         
+        // Validate required fields
+        if (!sectionForm.name || !sectionForm.year_level || !sectionForm.academic_year || !sectionForm.semester) {
+            setNotification({ type: 'error', message: 'Please fill in all required fields.' });
+            return;
+        }
+        
+        if (!sectionForm.department_id || !sectionForm.program_id) {
+            setNotification({ type: 'error', message: 'Please select both Department and Program.' });
+            return;
+        }
+        
         setIsLoading(true);
         try {
+            // Prepare payload with proper data types
+            const payload = {
+                name: sectionForm.name.trim(),
+                year_level: sectionForm.year_level,
+                academic_year: sectionForm.academic_year,
+                semester: sectionForm.semester,
+                adviser_name: sectionForm.adviser_name || null,
+                department_id: parseInt(sectionForm.department_id),
+                program_id: parseInt(sectionForm.program_id),
+                max_students: sectionForm.max_students ? parseInt(sectionForm.max_students) : null
+            };
+
             const response = await fetch(route('super.sections.update', editingSection.id), {
                 method: 'PUT',
                 headers: {
@@ -477,28 +607,22 @@ export default function SystemAdmin({
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
                     'Accept': 'application/json',
                 },
-                body: JSON.stringify(sectionForm)
+                body: JSON.stringify(payload)
             });
 
-            if (response.ok) {
-                const result = await response.json();
-                setSectionsData(sectionsData.map(s => s.id === editingSection.id ? result.section : s));
-                setShowSectionModal(false);
-                setEditingSection(null);
-                setSectionForm({
-                    name: '',
-                    year_level: '',
-                    academic_year: new Date().getFullYear().toString(),
-                    semester: '1st Semester',
-                    adviser_name: '',
-                    department_id: '',
-                    program_id: '',
-                    max_students: 50
-                });
-                setNotification({ type: 'success', message: 'Section updated successfully!' });
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                // Reload the page to get updated data with proper relationships
+                router.reload();
+                setNotification({ type: 'success', message: result.message || 'Section updated successfully!' });
             } else {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Failed to update section');
+                // Handle validation errors
+                if (result.errors) {
+                    const errorMessages = Object.values(result.errors).flat().join(', ');
+                    throw new Error(errorMessages);
+                }
+                throw new Error(result.message || 'Failed to update section');
             }
         } catch (error) {
             console.error('Error updating section:', error);
@@ -542,14 +666,27 @@ export default function SystemAdmin({
     const openSectionModal = (section = null) => {
         if (section) {
             setEditingSection(section);
+            // Get department_id from program relationship or fallback to section's department_id
+            const departmentId = section.program?.department_id || section.program?.department?.id || section.department_id || '';
+            
+            // Convert year_level from "1st Year" format to "1" format for dropdown
+            let yearLevel = section.year_level || '';
+            if (yearLevel && typeof yearLevel === 'string') {
+                // Extract first digit from year_level (e.g., "1st Year" -> "1", "2nd Year" -> "2")
+                const match = yearLevel.match(/^(\d)/);
+                if (match) {
+                    yearLevel = match[1];
+                }
+            }
+            
             setSectionForm({
                 name: section.name || '',
-                year_level: section.year_level || '',
+                year_level: yearLevel,
                 academic_year: section.academic_year || new Date().getFullYear().toString(),
                 semester: section.semester || '1st Semester',
                 adviser_name: section.adviser_name || '',
-                department_id: section.program?.department_id || section.department_id || '',
-                program_id: section.program_id || '',
+                department_id: String(departmentId || ''),
+                program_id: String(section.program_id || ''),
                 max_students: section.max_students || 50
             });
         } else {
@@ -914,551 +1051,1045 @@ export default function SystemAdmin({
         );
     };
 
-    const renderManagement = () => {
-        // Predefined specific reasons
-        const specificReasonOptions = [
-            '1. Death of Provider',
-            '1. Loss of Job of the Provider',
-            '1. Income Priorities',
-            '1. Daily Expenses',
-            '2. Personal Health Concern',
-            '2. Family Health Issues',
-            '3. Parent\'s Decision',
-            '3. Change Address',
-            '3. Prioritize family responsibilities',
-            '4. Learning Challenges',
-            '4. Lack of interest in chosen course',
-            '4. Overwhelming Academic Load',
-            '5. Bullying and Discrimination',
-            '5. Early Marriage or Parenthood',
-            '5. Pregnancy',
-            '6. Distance to School',
-            '6. Lack of Infrastructure',
-            '7. Affected by Calamities',
-            '7. Transferred to SUC',
-            '7. Transferred to LUC',
-            '7. Transferred to another Private Institution',
-            '7. Transferred to another school',
-            '8. Late Enrollee',
-            '8. Section Change',
-            '8. Change in class schedule'
-        ];
-
-        // Filter management data
-        const filteredData = managementData.filter(record => {
-            // Department filter
-            if (filterDepartment && record.department !== filterDepartment) {
-                return false;
-            }
-            
-            // Section filter
-            if (filterSection && record.section !== filterSection) {
-                return false;
-            }
-            
-            // Status filter
-            if (filterStatus && record.status !== filterStatus) {
-                return false;
-            }
-            
-            // Month filter
-            if (filterMonth && record.month !== filterMonth) {
-                return false;
-            }
-            
-            // Week filter
-            if (filterWeek && record.week && record.week.number !== parseInt(filterWeek)) {
-                return false;
-            }
-            
-            // Specific Reasons filter
-            if (filterSpecificReason && (!record.specific_reasons || !record.specific_reasons.toLowerCase().includes(filterSpecificReason.toLowerCase()))) {
-                return false;
-            }
-            
-            // Search filter (student name and student number only)
-            if (managementSearchTerm) {
-                const searchLower = managementSearchTerm.toLowerCase();
-                const studentName = `${record.student?.first_name || ''} ${record.student?.last_name || ''}`.toLowerCase();
-                const studentNumber = (record.student?.student_number || '').toLowerCase();
-                
-                if (!studentName.includes(searchLower) && !studentNumber.includes(searchLower)) {
-                    return false;
-                }
-            }
-            
-            return true;
+    const handleTrackStudent = (student) => {
+        setSelectedStudentForTracking(student);
+        setShowTrackingModal(true);
+        setEditingTracking(null);
+        setTrackingForm({
+            type: 'call',
+            date: new Date().toISOString().split('T')[0],
+            time: '',
+            notes: '',
+            status: 'completed',
+            outcome: '',
+            follow_up_required: '',
+            follow_up_date: '',
         });
+    };
+
+    const handleEditTracking = (tracking) => {
+        setEditingTracking(tracking);
+        setSelectedStudentForTracking({
+            id: tracking.student.id,
+            name: tracking.student.name,
+        });
+        setShowTrackingModal(true);
+        setTrackingForm({
+            type: tracking.type,
+            date: tracking.date,
+            time: tracking.time || '',
+            notes: tracking.notes || '',
+            status: tracking.status,
+            outcome: tracking.outcome || '',
+            follow_up_required: tracking.follow_up_required || '',
+            follow_up_date: tracking.follow_up_date || '',
+        });
+    };
+
+    const fetchArchivedTracking = () => {
+        setIsLoadingTracking(true);
+        fetch(route('super.management.archived-tracking'), {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                setArchivedTracking(data.tracking || []);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching archived tracking:', error);
+        })
+        .finally(() => {
+            setIsLoadingTracking(false);
+        });
+    };
+
+    const fetchDeletedTracking = () => {
+        setIsLoadingTracking(true);
+        fetch(route('super.management.deleted-tracking'), {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                setDeletedTracking(data.tracking || []);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching deleted tracking:', error);
+        })
+        .finally(() => {
+            setIsLoadingTracking(false);
+        });
+    };
+
+    useEffect(() => {
+        if (trackingTab === 'archived') {
+            fetchArchivedTracking();
+        } else if (trackingTab === 'deleted') {
+            fetchDeletedTracking();
+        }
+    }, [trackingTab]);
+
+    const fetchDeletedStudents = () => {
+        setIsLoadingDeletedStudents(true);
+        fetch(route('super.students.deleted'), {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                setDeletedStudents(data.students || []);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching deleted students:', error);
+            setDeletedStudents([]);
+        })
+        .finally(() => {
+            setIsLoadingDeletedStudents(false);
+        });
+    };
+
+    useEffect(() => {
+        if (studentTab === 'deleted') {
+            fetchDeletedStudents();
+        }
+    }, [studentTab]);
+
+    const submitTracking = (e) => {
+        e.preventDefault();
+        const routeName = editingTracking 
+            ? 'super.management.update-tracking' 
+            : 'super.management.track-student';
+        const method = editingTracking ? 'put' : 'post';
+        const url = editingTracking 
+            ? route(routeName, editingTracking.id)
+            : route(routeName);
         
-        // Get unique weeks for the selected month
-        const getWeeksForMonth = (monthValue) => {
-            if (!monthValue) return [];
-            const monthRecords = managementData.filter(r => r.month === monthValue);
-            const weeks = [...new Set(monthRecords.map(r => r.week?.number).filter(Boolean))].sort((a, b) => a - b);
-            return weeks;
+        const data = {
+            student_id: selectedStudentForTracking.id,
+            ...trackingForm,
         };
-        
-        const availableWeeks = getWeeksForMonth(filterMonth);
 
-        // Get unique values for filters
-        const uniqueDepartments = [...new Set(managementData.map(r => r.department).filter(Boolean))].sort();
-        const uniqueSections = [...new Set(managementData.map(r => r.section).filter(Boolean))].sort();
-        const uniqueStatuses = [...new Set(managementData.map(r => r.status).filter(Boolean))].sort();
-        const uniqueSpecificReasons = [...new Set(managementData.flatMap(r => 
-            r.specific_reasons ? r.specific_reasons.split(', ').map(s => s.trim()) : []
-        ).filter(Boolean))].sort();
+        router[method](url, data, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setShowTrackingModal(false);
+                setSelectedStudentForTracking(null);
+                setEditingTracking(null);
+                setTrackingForm({
+                    type: 'call',
+                    date: new Date().toISOString().split('T')[0],
+                    time: '',
+                    notes: '',
+                    status: 'completed',
+                    outcome: '',
+                    follow_up_required: '',
+                    follow_up_date: '',
+                });
+            },
+        });
+    };
 
+    const getPriorityColor = (priority) => {
+        switch (priority) {
+            case 'PNS': return 'bg-red-100 text-red-800';
+            case 'Call Needed': return 'bg-yellow-100 text-yellow-800';
+            default: return 'bg-green-100 text-green-800';
+        }
+    };
+
+    const getTypeIcon = (type) => {
+        return type === 'call' ? <Phone className="h-4 w-4" /> : <Home className="h-4 w-4" />;
+    };
+
+    const getStatusColor = (status) => {
+        switch (status) {
+            case 'completed': return 'bg-green-100 text-green-800';
+            case 'scheduled': return 'bg-blue-100 text-blue-800';
+            case 'cancelled': return 'bg-red-100 text-red-800';
+            case 'no_answer': return 'bg-yellow-100 text-yellow-800';
+            default: return 'bg-gray-100 text-gray-800';
+        }
+    };
+
+    const renderManagement = () => {
         return (
             <div className="space-y-6">
-                {/* Filters */}
-                <div className="card">
-                    <div className="flex items-center justify-between mb-6">
-                        <h3 className="text-lg font-medium text-gray-900">Filters</h3>
-                        <button
-                            onClick={() => setShowManagementFilters(!showManagementFilters)}
-                            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary"
-                        >
-                            <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                            </svg>
-                            {showManagementFilters ? 'Hide Filters' : 'Show Filters'}
-                        </button>
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-3xl font-bold tracking-tight">Student Tracking</h1>
+                        <p className="text-gray-600">
+                            Track calls and home visits for students in need
+                        </p>
                     </div>
+                </div>
 
-                    {showManagementFilters && (
-                        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                            {/* Search */}
+                {/* Stats Cards */}
+                <div className="grid gap-4 md:grid-cols-4">
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <div className="flex items-center justify-between">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Search (Name or Student No.)</label>
-                                <input
-                                    type="text"
-                                    value={managementSearchTerm}
-                                    onChange={(e) => setManagementSearchTerm(e.target.value)}
-                                    placeholder="e.g. Juan Dela Cruz or 2020-00001"
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
-                                />
+                                <p className="text-sm font-medium text-gray-500">Need Calls</p>
+                                <p className="text-2xl font-semibold text-gray-900">{stats.students_needing_calls || 0}</p>
                             </div>
-                            
-                            {/* Month Filter */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">Month</label>
-                                <select
-                                    value={filterMonth}
-                                    onChange={(e) => {
-                                        setFilterMonth(e.target.value);
-                                        setFilterWeek(''); // Reset week when month changes
-                                    }}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
-                                >
-                                    <option value="">All Months</option>
-                                    {availableMonths.map(month => (
-                                        <option key={month.value} value={month.label}>{month.label}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            
-                            {/* Week Filter */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">Week</label>
-                                <select
-                                    value={filterWeek}
-                                    onChange={(e) => setFilterWeek(e.target.value)}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
-                                    disabled={!filterMonth}
-                                >
-                                    <option value="">All Weeks</option>
-                                    {availableWeeks.map(week => (
-                                        <option key={week} value={week}>Week {week}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            
-                            {/* Department Filter */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">Department</label>
-                                <select
-                                    value={filterDepartment}
-                                    onChange={(e) => {
-                                        setFilterDepartment(e.target.value);
-                                        setFilterSection('');
-                                    }}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
-                                >
-                                    <option value="">All Departments</option>
-                                    {uniqueDepartments.map(dept => (
-                                        <option key={dept} value={dept}>{dept}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            
-                            {/* Section Filter */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">Section</label>
-                                <select
-                                    value={filterSection}
-                                    onChange={(e) => setFilterSection(e.target.value)}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
-                                >
-                                    <option value="">All Sections</option>
-                                    {uniqueSections
-                                        .filter(section => !filterDepartment || managementData.find(r => r.section === section && r.department === filterDepartment))
-                                        .map(section => (
-                                            <option key={section} value={section}>{section}</option>
-                                        ))}
-                                </select>
-                            </div>
-                            
-                            {/* Status Filter */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">Status</label>
-                                <select
-                                    value={filterStatus}
-                                    onChange={(e) => setFilterStatus(e.target.value)}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
-                                >
-                                    <option value="">All Status</option>
-                                    {uniqueStatuses.map(status => (
-                                        <option key={status} value={status}>{status}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            
-                            {/* Specific Reasons Filter */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">Specific Reason</label>
-                                <select
-                                    value={filterSpecificReason}
-                                    onChange={(e) => setFilterSpecificReason(e.target.value)}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
-                                >
-                                    <option value="">All Reasons</option>
-                                    {specificReasonOptions.map(reason => (
-                                        <option key={reason} value={reason}>{reason}</option>
-                                    ))}
-                                </select>
+                            <div className="p-2 bg-yellow-100 rounded-lg">
+                                <Phone className="h-6 w-6 text-yellow-600" />
                             </div>
                         </div>
-                    )}
-
-                    <div className="mt-4 flex justify-between">
-                        <button
-                            onClick={() => {
-                                setFilterDepartment('');
-                                setFilterSection('');
-                                setFilterStatus('');
-                                setFilterSpecificReason('');
-                                setFilterMonth('');
-                                setFilterWeek('');
-                                setManagementSearchTerm('');
-                            }}
-                            className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary"
-                            disabled={!filterDepartment && !filterSection && !filterStatus && !filterSpecificReason && !filterMonth && !filterWeek && !managementSearchTerm}
-                        >
-                            Clear Filters
-                        </button>
-                        <div className="text-sm text-gray-500">
-                            Showing {filteredData.length} of {managementData.length} records
+                    </div>
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-sm font-medium text-gray-500">Need Visits</p>
+                                <p className="text-2xl font-semibold text-gray-900">{stats.students_needing_visits || 0}</p>
+                            </div>
+                            <div className="p-2 bg-red-100 rounded-lg">
+                                <Home className="h-6 w-6 text-red-600" />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-sm font-medium text-gray-500">Tracked Today</p>
+                                <p className="text-2xl font-semibold text-gray-900">{stats.total_tracked_today || 0}</p>
+                            </div>
+                            <div className="p-2 bg-blue-100 rounded-lg">
+                                <Calendar className="h-6 w-6 text-blue-600" />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-sm font-medium text-gray-500">This Week</p>
+                                <p className="text-2xl font-semibold text-gray-900">{stats.total_tracked_this_week || 0}</p>
+                            </div>
+                            <div className="p-2 bg-green-100 rounded-lg">
+                                <Users className="h-6 w-6 text-green-600" />
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <div className="card">
-                    <div className="mb-6">
-                        {/* Week Title and Date Range */}
-                        {management?.week && (
-                            <div className="mb-4 pb-4 border-b">
-                                <h2 className="text-2xl font-bold text-gray-900">{management.week.label}</h2>
-                                <p className="text-sm text-gray-600 mt-1">{management.week.date_range}</p>
-                            </div>
-                        )}
-                        
+                {/* Students Needing Attention */}
+                <div className="bg-white rounded-lg shadow">
+                    <div className="px-6 py-4 border-b border-gray-200">
                         <div className="flex items-center justify-between">
-                            <div>
-                                <h3 className="text-lg font-medium text-gray-900">Management</h3>
-                                <p className="mt-1 text-sm text-gray-600">View and manage student weekly attendance status.</p>
-                            </div>
-                            <div className="flex gap-2">
+                            <h3 className="text-lg font-semibold text-gray-900">Students Needing Attention</h3>
+                            <div className="flex space-x-1 border-b border-gray-200">
                                 <button
-                                    onClick={() => {
-                                        // Export to CSV
-                                        const csvContent = [
-                                            ['Student Number', 'Name', 'Email', 'Section', 'Department', 'Month', 'Week', 'Status', 'Specific Reasons', 'Remarks'].join(','),
-                                            ...filteredData.map(record => [
-                                                record.student?.student_number || '',
-                                                `"${(record.student?.first_name || '')} ${(record.student?.last_name || '')}"`,
-                                                record.student?.email || '',
-                                                record.section || '',
-                                                record.department || '',
-                                                record.month || '',
-                                                record.week?.number || '',
-                                                record.status || '',
-                                                `"${(record.specific_reasons || '').replace(/"/g, '""')}"`,
-                                                `"${(record.remarks || '').replace(/"/g, '""')}"`
-                                            ].join(','))
-                                        ].join('\n');
-                                        
-                                        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                                        const link = document.createElement('a');
-                                        const url = URL.createObjectURL(blob);
-                                        link.setAttribute('href', url);
-                                        link.setAttribute('download', `management-data-${new Date().toISOString().split('T')[0]}.csv`);
-                                        link.style.visibility = 'hidden';
-                                        document.body.appendChild(link);
-                                        link.click();
-                                        document.body.removeChild(link);
-                                    }}
-                                    className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary"
+                                    onClick={() => setStudentTab('active')}
+                                    className={`px-4 py-2 text-sm font-medium ${
+                                        studentTab === 'active'
+                                            ? 'text-blue-600 border-b-2 border-blue-600'
+                                            : 'text-gray-500 hover:text-gray-700'
+                                    }`}
                                 >
-                                    <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                    Export Data
+                                    Active
                                 </button>
                                 <button
-                                    onClick={() => {
-                                        window.print();
-                                    }}
-                                    className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary"
+                                    onClick={() => setStudentTab('deleted')}
+                                    className={`px-4 py-2 text-sm font-medium ${
+                                        studentTab === 'deleted'
+                                            ? 'text-blue-600 border-b-2 border-blue-600'
+                                            : 'text-gray-500 hover:text-gray-700'
+                                    }`}
                                 >
-                                    <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                                    </svg>
-                                    Print
-                                </button>
-                                <button
-                                    onClick={() => setShowManagementImportModal(true)}
-                                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-brand-primary hover:bg-brand-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary"
-                                >
-                                    <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                                    </svg>
-                                    Import Data
+                                    Deleted
                                 </button>
                             </div>
                         </div>
                     </div>
-                    <DataTable
-                            columns={[
-                                {
-                                    key: 'student',
-                                    label: 'Student',
-                                    render: (_, record) => (
-                                        <div>
-                                            <div className="font-medium text-gray-900">
-                                                {record.student?.first_name} {record.student?.last_name}
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Student</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Program</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Absences</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {studentTab === 'active' ? (
+                                    studentsNeedingCalls.length > 0 ? (
+                                        studentsNeedingCalls.map((student) => (
+                                        <tr key={student.id} className="hover:bg-gray-50">
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div className="text-sm font-medium text-gray-900">{student.name}</div>
+                                                <div className="text-sm text-gray-500">{student.student_number}</div>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                                    student.tracking_status === 'completed' ? 'bg-green-100 text-green-800' :
+                                                    student.tracking_status === 'scheduled' ? 'bg-yellow-100 text-yellow-800' :
+                                                    student.tracking_status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
+                                                    student.tracking_status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                                                    'bg-gray-100 text-gray-800'
+                                                }`}>
+                                                    {student.tracking_status || 'No Status'}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {student.department}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {student.program}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPriorityColor(student.priority)}`}>
+                                                    {student.priority}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {student.absence_count}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => handleTrackStudent(student)}
+                                                        className="text-blue-600 hover:text-blue-900"
+                                                >
+                                                    Track
+                                                </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            if (confirm('Are you sure you want to archive this student from the attention list?')) {
+                                                                router.post(route('super.management.archive-student-from-attention', student.id), {}, {
+                                                                    preserveScroll: true,
+                                                                    onSuccess: () => {
+                                                                        router.reload({ only: ['studentsNeedingCalls'] });
+                                                                    },
+                                                                    onError: () => {
+                                                                        alert('Failed to archive student');
+                                                                    }
+                                                                });
+                                                            }
+                                                        }}
+                                                        className="relative group p-1.5 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 rounded-md transition-colors"
+                                                        title="Archive"
+                                                    >
+                                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                                                        </svg>
+                                                        <span className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
+                                                            Archive
+                                                        </span>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            if (confirm('Are you sure you want to delete this student? This action cannot be undone.')) {
+                                                                router.delete(route('super.management.delete-student', student.id), {
+                                                                    preserveScroll: true,
+                                                                    onSuccess: () => {
+                                                                        router.reload({ only: ['studentsNeedingCalls'] });
+                                                                        if (studentTab === 'deleted') {
+                                                                            fetchDeletedStudents();
+                                                                        }
+                                                                    },
+                                                                    onError: () => {
+                                                                        alert('Failed to delete student');
+                                                                    }
+                                                                });
+                                                            }
+                                                        }}
+                                                        className="relative group p-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
+                                                        title="Delete"
+                                                    >
+                                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                        </svg>
+                                                        <span className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
+                                                            Delete
+                                                        </span>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        ))
+                                    ) : (
+                                        <tr>
+                                            <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
+                                                No students need attention at this time
+                                            </td>
+                                        </tr>
+                                    )
+                                ) : (
+                                    isLoadingDeletedStudents ? (
+                                        <tr>
+                                            <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
+                                                Loading deleted students...
+                                            </td>
+                                        </tr>
+                                    ) : deletedStudents.length > 0 ? (
+                                        deletedStudents.map((student) => (
+                                            <tr key={student.id} className="hover:bg-gray-50">
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <div className="text-sm font-medium text-gray-900">{student.name}</div>
+                                                    <div className="text-sm text-gray-500">{student.student_number}</div>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                                        student.tracking_status === 'completed' ? 'bg-green-100 text-green-800' :
+                                                        student.tracking_status === 'scheduled' ? 'bg-yellow-100 text-yellow-800' :
+                                                        student.tracking_status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
+                                                        student.tracking_status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                                                        'bg-gray-100 text-gray-800'
+                                                    }`}>
+                                                        {student.tracking_status || 'No Status'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {student.department}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {student.program}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPriorityColor(student.priority)}`}>
+                                                        {student.priority}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {student.absence_count}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xs text-gray-500">Deleted: {student.deleted_at}</span>
+                                                        <button
+                                                            onClick={() => {
+                                                                if (confirm('Are you sure you want to restore this student?')) {
+                                                                    router.post(route('super.students.restore', student.id), {}, {
+                                                                        preserveScroll: true,
+                                                                        onSuccess: () => {
+                                                                            fetchDeletedStudents();
+                                                                            router.reload({ only: ['studentsNeedingCalls'] });
+                                                                        },
+                                                                        onError: () => {
+                                                                            alert('Failed to restore student');
+                                                                        }
+                                                                    });
+                                                                }
+                                                            }}
+                                                            className="text-green-600 hover:text-green-900 text-sm font-medium"
+                                                            title="Restore"
+                                                        >
+                                                            Restore
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    ) : (
+                                        <tr>
+                                            <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
+                                                No deleted students found
+                                            </td>
+                                        </tr>
+                                    )
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* Tracking Records with Tabs */}
+                <div className="bg-white rounded-lg shadow">
+                    <div className="px-6 py-4 border-b border-gray-200">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-semibold text-gray-900">Tracking Records</h3>
+                            <div className="flex items-center gap-3">
+                                <a
+                                    href={route('super.management.export-tracking', { tab: trackingTab })}
+                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
+                                    title={`Export ${trackingTab} tracking records`}
+                                    download
+                                >
+                                    <Download className="h-4 w-4" />
+                                    Export {trackingTab === 'recent' ? 'Recent' : trackingTab === 'archived' ? 'Archived' : 'Deleted'}
+                                </a>
+                                <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                                <button
+                                    onClick={() => setTrackingTab('recent')}
+                                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                                        trackingTab === 'recent'
+                                            ? 'bg-white text-gray-900 shadow-sm'
+                                            : 'text-gray-600 hover:text-gray-900'
+                                    }`}
+                                >
+                                    Recent
+                                </button>
+                                <button
+                                    onClick={() => setTrackingTab('archived')}
+                                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                                        trackingTab === 'archived'
+                                            ? 'bg-white text-gray-900 shadow-sm'
+                                            : 'text-gray-600 hover:text-gray-900'
+                                    }`}
+                                >
+                                    Archived
+                                </button>
+                                <button
+                                    onClick={() => setTrackingTab('deleted')}
+                                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                                        trackingTab === 'deleted'
+                                            ? 'bg-white text-gray-900 shadow-sm'
+                                            : 'text-gray-600 hover:text-gray-900'
+                                    }`}
+                                >
+                                    Deleted
+                                </button>
+                            </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="p-6">
+                        {isLoadingTracking ? (
+                            <div className="text-center py-8 text-gray-500">
+                                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+                                <p className="mt-2">Loading...</p>
+                            </div>
+                        ) : (
+                        <div className="space-y-4">
+                                {(trackingTab === 'recent' ? recentTracking : 
+                                  trackingTab === 'archived' ? archivedTracking : 
+                                  deletedTracking).length > 0 ? (
+                                    (trackingTab === 'recent' ? recentTracking : 
+                                     trackingTab === 'archived' ? archivedTracking : 
+                                     deletedTracking).map((tracking) => (
+                                    <div key={tracking.id} className="flex items-center justify-between p-4 border rounded-lg">
+                                        <div className="flex items-center gap-4">
+                                            <div className={`p-2 rounded-full ${tracking.type === 'call' ? 'bg-blue-100' : 'bg-green-100'}`}>
+                                                {getTypeIcon(tracking.type)}
                                             </div>
-                                            <div className="text-sm text-gray-500">{record.student?.student_number}</div>
-                                            {record.student?.email && (
-                                                <div className="text-xs text-gray-500">{record.student.email}</div>
+                                            <div>
+                                                <p className="font-medium">{tracking.student.name}</p>
+                                                <p className="text-sm text-gray-500">{tracking.student.section}</p>
+                                                <p className="text-xs text-gray-400">{tracking.student.department} - {tracking.student.program}</p>
+                                                {tracking.notes && (
+                                                    <p className="text-sm text-gray-600 mt-1">{tracking.notes}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(tracking.status)}`}>
+                                                {tracking.status}
+                                            </span>
+                                            <p className="text-sm text-gray-500 mt-1">
+                                                {tracking.date} {tracking.time && `at ${tracking.time}`}
+                                            </p>
+                                            <p className="text-xs text-gray-400">by {tracking.tracked_by}</p>
+                                            {trackingTab === 'archived' && tracking.archived_at && (
+                                                <p className="text-xs text-gray-400 mt-1">Archived: {tracking.archived_at}</p>
                                             )}
-                                        </div>
-                                    )
-                                },
-                                {
-                                    key: 'section_department',
-                                    label: 'Section + Department',
-                                    render: (_, record) => (
-                                        <div>
-                                            <div className="text-gray-900">{record.section || 'N/A'}</div>
-                                            <div className="text-xs text-gray-500">{record.department || 'N/A'}</div>
-                                        </div>
-                                    )
-                                },
-                                {
-                                    key: 'month',
-                                    label: 'Month',
-                                    render: (value) => value || 'N/A'
-                                },
-                                {
-                                    key: 'week',
-                                    label: 'Week',
-                                    render: (value) => value?.number ? `Week ${value.number}` : 'N/A'
-                                },
-                                {
-                                    key: 'status',
-                                    label: 'Status',
-                                    render: (value) => (
-                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                            value === 'PNS' ? 'bg-red-100 text-red-800' : value === 'SLIP' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'
-                                        }`}>
-                                            {value}
-                                        </span>
-                                    )
-                                },
-                                {
-                                    key: 'specific_reasons',
-                                    label: 'Specific Reasons',
-                                },
-                                {
-                                    key: 'remarks',
-                                    label: 'Remarks',
-                                },
-                                {
-                                    key: 'actions',
-                                    label: 'Actions',
-                                    render: (_, record) => (
-                                        <div className="flex items-center space-x-2">
-                                            <button
-                                                onClick={() => {
-                                                    setRemarkRecord(record);
-                                                    setRemarkText(record.remarks || '');
-                                                    setShowRemarkModal(true);
-                                                }}
-                                                className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-                                            >
-                                                Add/Edit Remark
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    if (confirm(`Are you sure you want to delete the remark for ${record.student?.first_name} ${record.student?.last_name}?`)) {
-                                                        // Delete remark logic - you may need to add a delete route
-                                                        // Use direct URL to avoid Ziggy route errors
-                                                        router.delete(`/super/management/remarks/${record.id}`, {
-                                                            onSuccess: () => {
-                                                                setManagementData(prev => prev.filter(item => item.id !== record.id));
+                                            {trackingTab === 'deleted' && tracking.deleted_at && (
+                                                <p className="text-xs text-gray-400 mt-1">Deleted: {tracking.deleted_at}</p>
+                                            )}
+                                            <div className="flex items-center gap-2 mt-2">
+                                                <button
+                                                    onClick={() => {
+                                                        fetch(route('super.management.view-tracking', tracking.id), {
+                                                            method: 'GET',
+                                                            headers: {
+                                                                'Accept': 'application/json',
+                                                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
                                                             },
-                                                            onError: (errors) => {
-                                                                alert('Failed to delete remark: ' + (errors.message || 'Unknown error'));
+                                                        })
+                                                        .then(response => response.json())
+                                                        .then(data => {
+                                                            if (data.success) {
+                                                                setViewingTracking({...data.tracking, id: tracking.id, can_edit: tracking.can_edit});
+                                                                setShowViewTrackingModal(true);
+                                                            }
+                                                        })
+                                                        .catch(error => {
+                                                            console.error('Error fetching tracking:', error);
+                                                            alert('Failed to load tracking details');
+                                                        });
+                                                    }}
+                                                    className="text-blue-600 hover:text-blue-900 text-sm font-medium"
+                                                    title="View Details"
+                                                >
+                                                    View
+                                                </button>
+                                                {trackingTab === 'archived' && (
+                                                        <button
+                                                            onClick={() => {
+                                                            if (confirm('Are you sure you want to unarchive this tracking record?')) {
+                                                                router.post(route('super.management.unarchive-tracking', tracking.id), {}, {
+                                                                        preserveScroll: true,
+                                                                        onSuccess: () => {
+                                                                        fetchArchivedTracking();
+                                                                        router.reload({ only: ['recentTracking'] });
+                                                                        },
+                                                                        onError: () => {
+                                                                        alert('Failed to unarchive tracking record');
+                                                                        }
+                                                                    });
+                                                                }
+                                                            }}
+                                                        className="text-green-600 hover:text-green-900 text-sm font-medium"
+                                                        title="Unarchive"
+                                                        >
+                                                        Unarchive
+                                                        </button>
+                                                )}
+                                                {trackingTab === 'deleted' && (
+                                                        <button
+                                                            onClick={() => {
+                                                            if (confirm('Are you sure you want to restore this tracking record?')) {
+                                                                router.post(route('super.management.restore-tracking', tracking.id), {}, {
+                                                                        preserveScroll: true,
+                                                                        onSuccess: () => {
+                                                                        fetchDeletedTracking();
+                                                                        router.reload({ only: ['recentTracking'] });
+                                                                        },
+                                                                        onError: () => {
+                                                                        alert('Failed to restore tracking record');
+                                                                        }
+                                                                    });
+                                                                }
+                                                            }}
+                                                        className="text-green-600 hover:text-green-900 text-sm font-medium"
+                                                        title="Restore"
+                                                        >
+                                                        Restore
+                                                        </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="text-center py-8 text-gray-500">
+                                    <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                                        <p>
+                                            {trackingTab === 'recent' && 'No tracking records yet'}
+                                            {trackingTab === 'archived' && 'No archived tracking records'}
+                                            {trackingTab === 'deleted' && 'No deleted tracking records'}
+                                        </p>
+                                </div>
+                            )}
+                        </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Tracking Modal */}
+                {showTrackingModal && selectedStudentForTracking && (
+                    <div className="fixed top-0 left-0 right-0 bottom-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] overflow-y-auto">
+                        <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full my-8 mx-4 max-h-[90vh] overflow-y-auto">
+                            <div className="px-6 py-5 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
+                                <h3 className="text-xl font-semibold text-gray-900">{editingTracking ? 'Edit Tracking' : 'Track Student'}: {selectedStudentForTracking.name || selectedStudentForTracking.id}</h3>
+                                <div className="flex items-center gap-3">
+                                    {editingTracking && editingTracking.can_edit ? (
+                                        <>
+                                            <button
+                                                onClick={() => {
+                                                    if (confirm('Are you sure you want to archive this tracking record?')) {
+                                                        router.post(route('super.management.archive-tracking', editingTracking.id), {}, {
+                                                            preserveScroll: true,
+                                                            onSuccess: () => {
+                                                                setShowTrackingModal(false);
+                                                                setSelectedStudentForTracking(null);
+                                                                setEditingTracking(null);
+                                                                router.reload();
+                                                            },
+                                                            onError: () => {
+                                                                alert('Failed to archive tracking record');
                                                             }
                                                         });
                                                     }
                                                 }}
-                                                className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
+                                                className="relative group p-2 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 rounded-md transition-colors"
+                                                title="Archive"
                                             >
-                                                Delete
+                                                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                                                </svg>
+                                                <span className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                                                    Archive
+                                                </span>
                                             </button>
-                                        </div>
-                                    )
-                                },
-                            ]}
-                            data={filteredData}
-                            actions={false}
-                        />
-                </div>
-
-                {/* Import Modal */}
-                {showManagementImportModal && (
-                    <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-                        <div className="bg-white rounded-lg shadow-lg w-full max-w-md">
-                            <div className="px-6 py-4 border-b">
-                                <h4 className="text-lg font-semibold">Import Management Data</h4>
-                            </div>
-                            <div className="p-6 space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">File Type</label>
-                                    <select
-                                        value={importFileType}
-                                        onChange={(e) => setImportFileType(e.target.value)}
-                                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
+                                            <button
+                                                onClick={() => {
+                                                    if (confirm('Are you sure you want to delete this tracking record? This action cannot be undone.')) {
+                                                        router.delete(route('super.management.delete-tracking', editingTracking.id), {
+                                                            preserveScroll: true,
+                                                            onSuccess: () => {
+                                                                setShowTrackingModal(false);
+                                                                setSelectedStudentForTracking(null);
+                                                                setEditingTracking(null);
+                                                                router.reload();
+                                                            },
+                                                            onError: () => {
+                                                                alert('Failed to delete tracking record');
+                                                            }
+                                                        });
+                                                    }
+                                                }}
+                                                className="relative group p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
+                                                title="Delete"
+                                            >
+                                                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                </svg>
+                                                <span className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                                                    Delete
+                                                </span>
+                                            </button>
+                                        </>
+                                    ) : null}
+                                    <button
+                                        onClick={() => {
+                                            setShowTrackingModal(false);
+                                            setSelectedStudentForTracking(null);
+                                            setEditingTracking(null);
+                                        }}
+                                        className="text-gray-400 hover:text-gray-600 transition-colors p-2"
                                     >
-                                        <option value="csv">CSV</option>
-                                        <option value="xml">XML</option>
+                                        <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                            </div>
+                            </div>
+                            <form onSubmit={submitTracking} className="p-6">
+                                <div className="grid grid-cols-2 gap-6">
+                                    {/* Left Column - Basic Information */}
+                                    <div className="space-y-5">
+                                <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
+                                    <select
+                                        value={trackingForm.type}
+                                        onChange={(e) => setTrackingForm({ ...trackingForm, type: e.target.value })}
+                                                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        required
+                                    >
+                                        <option value="call">Call</option>
+                                        <option value="home_visit">Home Visit</option>
+                                    </select>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
+                                        <input
+                                            type="date"
+                                            value={trackingForm.date}
+                                            onChange={(e) => setTrackingForm({ ...trackingForm, date: e.target.value })}
+                                                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-2">Time (optional)</label>
+                                        <input
+                                            type="time"
+                                            value={trackingForm.time}
+                                            onChange={(e) => setTrackingForm({ ...trackingForm, time: e.target.value })}
+                                                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                                    <select
+                                        value={trackingForm.status}
+                                        onChange={(e) => setTrackingForm({ ...trackingForm, status: e.target.value })}
+                                                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        required
+                                    >
+                                        <option value="completed">Completed</option>
+                                        <option value="scheduled">Scheduled</option>
+                                        <option value="cancelled">Cancelled</option>
+                                        <option value="no_answer">No Answer</option>
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">Select File</label>
-                                    <input
-                                        type="file"
-                                        accept={importFileType === 'csv' ? '.csv' : '.xml'}
-                                        onChange={(e) => setManagementImportFile(e.target.files[0])}
-                                        className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-brand-primary file:text-white hover:file:bg-brand-primary/90"
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Follow-up Date (optional)</label>
+                                            <input
+                                                type="date"
+                                                value={trackingForm.follow_up_date}
+                                                onChange={(e) => setTrackingForm({ ...trackingForm, follow_up_date: e.target.value })}
+                                                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Right Column - Notes and Additional Information */}
+                                    <div className="space-y-5">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
+                                    <textarea
+                                        value={trackingForm.notes}
+                                        onChange={(e) => setTrackingForm({ ...trackingForm, notes: e.target.value })}
+                                                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                rows="4"
+                                                placeholder="Enter notes about this tracking record..."
                                     />
                                 </div>
-                                <div className="text-xs text-gray-500">
-                                    Select a {importFileType.toUpperCase()} file to import management data. The file format will be configured later.
+                                <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Outcome (optional)</label>
+                                    <textarea
+                                        value={trackingForm.outcome}
+                                        onChange={(e) => setTrackingForm({ ...trackingForm, outcome: e.target.value })}
+                                                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                rows="3"
+                                                placeholder="Enter the outcome of this interaction..."
+                                    />
                                 </div>
-                            </div>
-                            <div className="px-6 py-4 border-t flex justify-end space-x-2">
-                                <button
-                                    onClick={() => {
-                                        setShowManagementImportModal(false);
-                                        setManagementImportFile(null);
-                                    }}
-                                    className="px-4 py-2 rounded border hover:bg-gray-50"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={async () => {
-                                        if (!managementImportFile) {
-                                            setNotification({ type: 'error', message: 'Please select a file to import.' });
-                                            return;
-                                        }
-                                        // TODO: Implement import logic
-                                        setNotification({ type: 'info', message: 'Import functionality will be implemented. File selected: ' + managementImportFile.name });
-                                        setShowManagementImportModal(false);
-                                        setManagementImportFile(null);
-                                    }}
-                                    className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
-                                >
-                                    Import
-                                </button>
-                            </div>
+                                <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Follow-up Required (optional)</label>
+                                    <textarea
+                                        value={trackingForm.follow_up_required}
+                                        onChange={(e) => setTrackingForm({ ...trackingForm, follow_up_required: e.target.value })}
+                                                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                rows="3"
+                                                placeholder="Enter any follow-up actions required..."
+                                    />
+                                </div>
+                                </div>
+                                </div>
+                                <div className="flex justify-end gap-3 pt-6 mt-6 border-t border-gray-200">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowTrackingModal(false);
+                                            setSelectedStudentForTracking(null);
+                                            setEditingTracking(null);
+                                        }}
+                                        className="px-6 py-2.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors font-medium"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="px-6 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
+                                    >
+                                        {editingTracking ? 'Update Tracking' : 'Save Tracking'}
+                                    </button>
+                                </div>
+                            </form>
                         </div>
                     </div>
                 )}
 
-                {showRemarkModal && (
-                    <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-                        <div className="bg-white rounded-lg shadow-lg w-full max-w-lg">
-                            <div className="px-6 py-4 border-b">
-                                <h4 className="text-lg font-semibold">Super Admin Remark</h4>
+                {/* View Tracking Modal */}
+                {showViewTrackingModal && viewingTracking && (
+                    <div className="fixed top-0 left-0 right-0 bottom-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] overflow-y-auto">
+                        <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full my-8 mx-4 max-h-[90vh] overflow-y-auto">
+                            <div className="px-6 py-5 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
+                                <h3 className="text-xl font-semibold text-gray-900">Tracking Record Details</h3>
+                                <div className="flex items-center gap-3">
+                                    {viewingTracking.can_edit && (
+                                        <>
+                                            <button
+                                                onClick={() => {
+                                                    if (confirm('Are you sure you want to archive this tracking record?')) {
+                                                        router.post(route('super.management.archive-tracking', viewingTracking.id), {}, {
+                                                            preserveScroll: true,
+                                                            onSuccess: () => {
+                                                                setShowViewTrackingModal(false);
+                                                                setViewingTracking(null);
+                                                                router.reload();
+                                                            },
+                                                            onError: () => {
+                                                                alert('Failed to archive tracking record');
+                                                            }
+                                                        });
+                                                    }
+                                                }}
+                                                className="relative group p-2 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 rounded-md transition-colors"
+                                                title="Archive"
+                                            >
+                                                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                                                </svg>
+                                                <span className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                                                    Archive
+                                                </span>
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    if (confirm('Are you sure you want to delete this tracking record? This action cannot be undone.')) {
+                                                        router.delete(route('super.management.delete-tracking', viewingTracking.id), {
+                                                            preserveScroll: true,
+                                                            onSuccess: () => {
+                                                                setShowViewTrackingModal(false);
+                                                                setViewingTracking(null);
+                                                                router.reload();
+                                                            },
+                                                            onError: () => {
+                                                                alert('Failed to delete tracking record');
+                                                            }
+                                                        });
+                                                    }
+                                                }}
+                                                className="relative group p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
+                                                title="Delete"
+                                            >
+                                                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                </svg>
+                                                <span className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                                                    Delete
+                                                </span>
+                                            </button>
+                                        </>
+                                    )}
+                                    <button
+                                        onClick={() => {
+                                            setShowViewTrackingModal(false);
+                                            setViewingTracking(null);
+                                        }}
+                                        className="text-gray-400 hover:text-gray-600 transition-colors p-2"
+                                    >
+                                        <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
                             </div>
-                            <div className="p-6 space-y-4">
-                                <div>
-                                    <div className="text-sm text-gray-600 mb-1">Student</div>
-                                    <div className="font-medium">{remarkRecord?.student?.first_name} {remarkRecord?.student?.last_name} ({remarkRecord?.student?.student_number})</div>
-                                </div>
-                                <div>
-                                    <div className="text-sm text-gray-600 mb-1">Week</div>
-                                    <div className="font-medium">{remarkRecord?.week?.label} ({remarkRecord?.week?.start} - {remarkRecord?.week?.end})</div>
-                                </div>
-                                <div>
-                                    <label className="block text-sm text-gray-600 mb-1">Remark</label>
-                                    <textarea
-                                        value={remarkText}
-                                        onChange={(e) => setRemarkText(e.target.value)}
-                                        className="w-full border rounded p-2 focus:outline-none focus:ring focus:border-blue-300"
-                                        rows={5}
-                                        placeholder="Enter your remark..."
-                                    />
-                                </div>
                             </div>
-                            <div className="px-6 py-4 border-t flex justify-end space-x-2">
+                            <div className="p-6">
+                                <div className="grid grid-cols-2 gap-6">
+                                    {/* Left Column - Student Information */}
+                                    <div className="space-y-5">
+                                        <div className="bg-gray-50 rounded-lg p-5">
+                                            <h4 className="font-semibold text-gray-900 mb-4 text-base">Student Information</h4>
+                                            <div className="space-y-3 text-sm">
+                                        <div>
+                                                    <p className="text-gray-600 mb-1">Name</p>
+                                            <p className="font-medium text-gray-900">{viewingTracking.student.name}</p>
+                                        </div>
+                                        <div>
+                                                    <p className="text-gray-600 mb-1">Student Number</p>
+                                            <p className="font-medium text-gray-900">{viewingTracking.student.student_number}</p>
+                                        </div>
+                                        <div>
+                                                    <p className="text-gray-600 mb-1">Section</p>
+                                            <p className="font-medium text-gray-900">{viewingTracking.student.section}</p>
+                                        </div>
+                                        <div>
+                                                    <p className="text-gray-600 mb-1">Department</p>
+                                            <p className="font-medium text-gray-900">{viewingTracking.student.department}</p>
+                                        </div>
+                                        <div>
+                                                    <p className="text-gray-600 mb-1">Program</p>
+                                            <p className="font-medium text-gray-900">{viewingTracking.student.program}</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                        {/* Tracking Details */}
+                                        <div className="bg-gray-50 rounded-lg p-5">
+                                            <h4 className="font-semibold text-gray-900 mb-4 text-base">Tracking Details</h4>
+                                            <div className="space-y-3 text-sm">
+                                        <div>
+                                                    <p className="text-gray-600 mb-1">Type</p>
+                                            <p className="font-medium text-gray-900 capitalize">{viewingTracking.type.replace('_', ' ')}</p>
+                                        </div>
+                                        <div>
+                                                    <p className="text-gray-600 mb-1">Status</p>
+                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(viewingTracking.status)}`}>
+                                                {viewingTracking.status}
+                                            </span>
+                                        </div>
+                                        <div>
+                                                    <p className="text-gray-600 mb-1">Date</p>
+                                            <p className="font-medium text-gray-900">{viewingTracking.date}</p>
+                                        </div>
+                                        {viewingTracking.time && (
+                                            <div>
+                                                        <p className="text-gray-600 mb-1">Time</p>
+                                                <p className="font-medium text-gray-900">{viewingTracking.time}</p>
+                                            </div>
+                                        )}
+                                        <div>
+                                                    <p className="text-gray-600 mb-1">Tracked By</p>
+                                            <p className="font-medium text-gray-900">{viewingTracking.tracked_by}</p>
+                                        </div>
+                                        {viewingTracking.follow_up_date && (
+                                            <div>
+                                                        <p className="text-gray-600 mb-1">Follow-up Date</p>
+                                                <p className="font-medium text-gray-900">{viewingTracking.follow_up_date}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                        </div>
+
+                                        {/* Timestamps */}
+                                        <div className="bg-gray-50 rounded-lg p-5">
+                                            <h4 className="font-semibold text-gray-900 mb-4 text-base">Record Information</h4>
+                                            <div className="space-y-3 text-sm">
+                                                <div>
+                                                    <p className="text-gray-600 mb-1">Created</p>
+                                                    <p className="font-medium text-gray-900">{viewingTracking.created_at}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-gray-600 mb-1">Last Updated</p>
+                                                    <p className="font-medium text-gray-900">{viewingTracking.updated_at}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Right Column - Notes and Additional Information */}
+                                    <div className="space-y-5">
+                                    {viewingTracking.notes && (
+                                        <div>
+                                                <h4 className="font-semibold text-gray-900 mb-3 text-base">Notes</h4>
+                                                <p className="text-gray-900 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg border border-gray-200 min-h-[120px]">{viewingTracking.notes}</p>
+                                        </div>
+                                    )}
+                                    {viewingTracking.outcome && (
+                                        <div>
+                                                <h4 className="font-semibold text-gray-900 mb-3 text-base">Outcome</h4>
+                                                <p className="text-gray-900 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg border border-gray-200 min-h-[120px]">{viewingTracking.outcome}</p>
+                                        </div>
+                                    )}
+                                    {viewingTracking.follow_up_required && (
+                                        <div>
+                                                <h4 className="font-semibold text-gray-900 mb-3 text-base">Follow-up Required</h4>
+                                                <p className="text-gray-900 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg border border-gray-200 min-h-[120px]">{viewingTracking.follow_up_required}</p>
+                                        </div>
+                                    )}
+                                        {!viewingTracking.notes && !viewingTracking.outcome && !viewingTracking.follow_up_required && (
+                                            <div className="flex items-center justify-center h-full text-gray-400">
+                                                <p className="text-sm">No additional notes or information</p>
+                                        </div>
+                                        )}
+                                        </div>
+                                    </div>
+                                </div>
+                            <div className="px-6 py-5 border-t border-gray-200 flex justify-end">
                                 <button
-                                    onClick={() => setShowRemarkModal(false)}
-                                    className="px-4 py-2 rounded border hover:bg-gray-50"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={async () => {
-                                        if (!remarkRecord) return;
-                                        const payload = {
-                                            student_id: remarkRecord.id,
-                                            week_start: remarkRecord.week.start,
-                                            week_end: remarkRecord.week.end,
-                                            remark: remarkText,
-                                        };
-                                        // Use direct URL to avoid Ziggy route errors
-                                        router.post('/super/management/remarks', payload, {
-                                            onSuccess: () => {
-                                                // Update local state
-                                                setManagementData(prev => prev.map(item => (
-                                                    item.id === remarkRecord.id ? { ...item, remarks: remarkText } : item
-                                                )));
-                                                setShowRemarkModal(false);
-                                                setRemarkText('');
-                                                setRemarkRecord(null);
-                                            },
-                                            onError: (errors) => {
-                                                alert('Failed to save remark: ' + (errors.message || 'Unknown error'));
-                                            }
-                                        });
+                                    onClick={() => {
+                                        setShowViewTrackingModal(false);
+                                        setViewingTracking(null);
                                     }}
-                                    className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+                                    className="px-6 py-2.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors font-medium"
                                 >
-                                    Save Remark
+                                    Close
                                 </button>
                             </div>
                         </div>
@@ -1613,65 +2244,6 @@ export default function SystemAdmin({
                                     </div>
                                 </div>
                             )}
-                        </div>
-                    </div>
-                </div>
-
-            {/* Faculty Compliance Trends */}
-            <div className="bg-white rounded-3xl shadow-lg p-8">
-                <h4 className="text-lg font-semibold text-gray-900 mb-4">Faculty Compliance Rates</h4>
-                <div className="bg-gray-50 rounded-2xl p-6">
-                    <div className="relative h-80">
-                                {/* Simple Line Chart for Faculty Compliance */}
-                                <div className="flex items-end justify-between h-full">
-                                    {liveFacultyCompliance?.slice(0, 7).map((day, dayIndex) => {
-                                        const maxRate = Math.max(...(day.teachers?.map(t => t.compliance_rate) || [0]));
-                                        return (
-                                            <div key={dayIndex} className="flex flex-col items-center flex-1">
-                                                <div className="text-xs text-gray-600 mb-2">{day.day}</div>
-                                                <div className="space-y-1 w-full">
-                                                    {day.teachers?.map((teacher, teacherIndex) => {
-                                                        const height = maxRate > 0 ? Math.round((teacher.compliance_rate / maxRate) * 200) : 0;
-                                                        const colors = [
-                                                            'bg-orange-500', 'bg-red-500', 'bg-yellow-500',
-                                                            'bg-blue-500', 'bg-green-500', 'bg-purple-500',
-                                                            'bg-indigo-500', 'bg-pink-500', 'bg-teal-500',
-                                                            'bg-cyan-500', 'bg-lime-500', 'bg-amber-500'
-                                                        ];
-                                                        const colorClass = colors[teacherIndex % colors.length];
-                                                        return (
-                                                            <div key={teacherIndex} className="relative">
-                                                                <div 
-                                                                    className={`${colorClass} rounded-t w-3 transition-all duration-500 ease-out`}
-                                                                    style={{ height: `${height}px` }}
-                                                                    title={`${teacher.teacher}: ${teacher.compliance_rate}%`}
-                                                                ></div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                    </div>
-                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                {liveFacultyCompliance?.[0]?.teachers?.map((teacher, index) => {
-                                    const colors = [
-                                        'text-orange-600', 'text-red-600', 'text-yellow-600',
-                                        'text-blue-600', 'text-green-600', 'text-purple-600',
-                                        'text-indigo-600', 'text-pink-600', 'text-teal-600',
-                                        'text-cyan-600', 'text-lime-600', 'text-amber-600'
-                                    ];
-                                    const colorClass = colors[index % colors.length];
-                                    return (
-                                        <div key={index} className="text-center p-3 bg-white rounded-lg border">
-                                            <div className={`text-lg font-bold ${colorClass}`}>{teacher.compliance_rate}%</div>
-                                            <div className="text-sm text-gray-600">{teacher.teacher}</div>
-                                            <div className="text-xs text-gray-500">{teacher.scheduled_classes} classes</div>
-                                        </div>
-                                    );
-                                })}
                     </div>
                 </div>
             </div>
@@ -1889,97 +2461,117 @@ export default function SystemAdmin({
                 </div>
 
                 {/* Sections Table */}
-                <div className="bg-white rounded-lg shadow">
-                    <div className="px-6 py-4 border-b border-gray-200">
-                        <h3 className="text-lg font-medium text-gray-900">Sections</h3>
+                <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl border border-white/20 overflow-hidden flex flex-col">
+                    <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex-shrink-0">
+                        <h3 className="text-lg font-semibold text-gray-900">Sections</h3>
                     </div>
-                    
-                    <div className="overflow-x-auto">
-                        <DataTable
-                            columns={[
-                                {
-                                    key: 'section_code',
-                                    label: 'Section Code',
-                                    render: (_, record) => {
-                                        // Generate section code: Program Code + Year Level (first digit) + "-" + Section Name
-                                        // Example: BSA1-02, BSIT3-03
-                                        const programCode = record.program?.code || '';
-                                        let yearLevelDigit = '';
-                                        
-                                        // Extract first digit from year level (e.g., "1" from "1st Year" or "1")
-                                        if (record.year_level) {
-                                            const yearLevelStr = String(record.year_level);
-                                            const match = yearLevelStr.match(/^(\d)/);
-                                            yearLevelDigit = match ? match[1] : yearLevelStr.charAt(0);
-                                        }
-                                        
-                                        // Construct section code
-                                        const sectionCode = programCode && yearLevelDigit && record.name
-                                            ? `${programCode}${yearLevelDigit}-${record.name}`
-                                            : record.name || 'N/A';
-                                        
-                                        return (
-                                            <div>
-                                                <div className="font-medium text-gray-900">
-                                                    {sectionCode}
-                                                </div>
-                                                <div className="text-sm text-gray-500">{record.academic_year} • {record.semester}</div>
-                                            </div>
-                                        );
-                                    }
-                                },
-                                {
-                                    key: 'department',
-                                    label: 'Department',
-                                    render: (_, record) => {
-                                        const departmentName = record.program?.department?.name || record.department || 'No Department';
-                                        return (
-                                            <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-sm font-medium text-blue-800">
-                                                {departmentName}
-                                            </span>
-                                        );
-                                    }
-                                },
-                                {
-                                    key: 'program',
-                                    label: 'Program',
-                                    render: (program, record) => {
-                                        const programName = program?.name || program || record.program || 'No Program';
-                                        return programName;
-                                    }
-                                },
-                                {
-                                    key: 'year_level',
-                                    label: 'Year Level',
-                                    render: (year_level) => (
-                                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-sm font-medium text-gray-800">
-                                            {year_level}
-                                        </span>
-                                    )
-                                },
-                                {
-                                    key: 'adviser_name',
-                                    label: 'Adviser',
-                                    render: (adviser_name) => {
-                                        const cleanName = adviser_name?.replace(/[\u200B-\u200D\uFEFF]/g, '').trim() || 'No Adviser';
-                                        return cleanName;
-                                    }
-                                },
-                                {
-                                    key: 'students_count',
-                                    label: 'Students',
-                                    render: (count) => (
-                                        <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-sm font-medium text-green-800">
-                                            {count || 0} students
-                                        </span>
-                                    )
-                                }
-                            ]}
-                            data={filteredSections}
-                            actions={true}
-                            onEdit={(record) => openSectionModal(record)}
-                            onDelete={(record) => handleDeleteSection(record.id)}
-                        />
+                    <div className="overflow-x-auto overflow-y-auto flex-1 table-scroll" style={{ maxHeight: 'calc(100vh - 400px)' }}>
+                        <div className="inline-block min-w-full align-middle">
+                            <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                                <table className="min-w-full divide-y divide-gray-300">
+                                    <thead className="bg-gray-50 sticky top-0 z-10">
+                                        <tr>
+                                            <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Section Code</th>
+                                            <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Department</th>
+                                            <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Program</th>
+                                            <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Year Level</th>
+                                            <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Adviser</th>
+                                            <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Students</th>
+                                            <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap sticky right-0 bg-gray-50">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200 bg-white">
+                                        {filteredSections.length === 0 ? (
+                                            <tr>
+                                                <td colSpan="7" className="px-6 py-12 text-center text-sm text-gray-500">
+                                                    <div className="flex flex-col items-center">
+                                                        <svg className="h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                                        </svg>
+                                                        <p className="text-lg font-medium text-gray-900">No sections found</p>
+                                                        <p className="text-sm text-gray-500 mt-1">Try adjusting your filters</p>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            filteredSections.map((section) => {
+                                                // Generate section code
+                                                const programCode = section.program?.code || '';
+                                                let yearLevelDigit = '';
+                                                if (section.year_level) {
+                                                    const yearLevelStr = String(section.year_level);
+                                                    const match = yearLevelStr.match(/^(\d)/);
+                                                    yearLevelDigit = match ? match[1] : yearLevelStr.charAt(0);
+                                                }
+                                                const sectionCode = programCode && yearLevelDigit && section.name
+                                                    ? `${programCode}${yearLevelDigit}-${section.name}`
+                                                    : section.name || 'N/A';
+                                                
+                                                // Get department name
+                                                let departmentName = 'No Department';
+                                                if (section.program?.department?.name) {
+                                                    departmentName = section.program.department.name;
+                                                } else if (section.program?.department_id && departments) {
+                                                    const dept = departments.find(d => d.id == section.program.department_id);
+                                                    departmentName = dept?.name || 'No Department';
+                                                } else if (section.department?.name) {
+                                                    departmentName = section.department.name;
+                                                } else if (typeof section.department === 'string') {
+                                                    departmentName = section.department;
+                                                }
+                                                
+                                                const programName = section.program?.name || section.program || 'No Program';
+                                                const cleanAdviserName = section.adviser_name?.replace(/[\u200B-\u200D\uFEFF]/g, '').trim() || 'No Adviser';
+                                                
+                                                return (
+                                                    <tr key={section.id} className="hover:bg-gray-50 transition-colors duration-150">
+                                                        <td className="px-4 py-4 whitespace-nowrap text-sm">
+                                                            <div className="font-medium text-gray-900">{sectionCode}</div>
+                                                            <div className="text-xs text-gray-500">{section.academic_year} • {section.semester}</div>
+                                                        </td>
+                                                        <td className="px-4 py-4 whitespace-nowrap text-sm">
+                                                            <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
+                                                                {departmentName}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{programName}</td>
+                                                        <td className="px-4 py-4 whitespace-nowrap text-sm">
+                                                            <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800">
+                                                                {section.year_level}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{cleanAdviserName}</td>
+                                                        <td className="px-4 py-4 whitespace-nowrap text-sm">
+                                                            <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
+                                                                {section.students_count || 0} students
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-4 whitespace-nowrap text-sm sticky right-0 bg-white">
+                                                            <div className="flex items-center justify-end space-x-2">
+                                                                <button
+                                                                    onClick={() => openSectionModal(section)}
+                                                                    className="font-medium text-green-600 hover:text-green-800 transition-colors"
+                                                                    title="Edit Section"
+                                                                >
+                                                                    Edit
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleDeleteSection(section.id)}
+                                                                    className="font-medium text-red-600 hover:text-red-800 transition-colors"
+                                                                    title="Delete Section"
+                                                                >
+                                                                    Delete
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1997,13 +2589,20 @@ export default function SystemAdmin({
                     last_name: '',
                     student_number: '',
                     email: '',
+                    phone: '',
+                    department_id: '',
+                    program_id: '',
                     section_id: '',
+                    teacher_id: '',
                     year_level: '',
                     gender: '',
                     birth_date: '',
                     guardian_name: '',
                     guardian_contact: ''
                 });
+                setStudentFormFilteredPrograms([]);
+                setStudentFormFilteredSections([]);
+                setSectionTeachers([]);
                 router.reload();
             },
             onError: () => {
@@ -2087,11 +2686,154 @@ export default function SystemAdmin({
         }
     };
 
+    const renderTeachers = () => {
+        const teachers = teachersProp || [];
+        
+        return (
+        <div className="space-y-6">
+                {/* Header */}
+                <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 border border-white/20">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h2 className="text-4xl font-bold bg-gradient-to-r from-slate-600 via-gray-600 to-zinc-600 bg-clip-text text-transparent">
+                                Teachers/Advisers
+                            </h2>
+                            <p className="text-gray-600 mt-2 text-lg">
+                                Manage teachers and section advisers
+                            </p>
+                        </div>
+                        <div className="flex items-center space-x-4">
+                            <button
+                                onClick={() => {
+                                    setTeacherForm({
+                                        name: '',
+                                        email: '',
+                                        department_id: '',
+                                        optional_department_id: ''
+                                    });
+                                    setShowAddTeacherModal(true);
+                                }}
+                                className="bg-gradient-to-r from-green-500 to-green-600 text-white px-6 py-3 rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-300 font-medium flex items-center"
+                            >
+                                <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                </svg>
+                                Add Teacher/Adviser
+                            </button>
+                            <span className="inline-flex items-center px-4 py-2 rounded-full text-sm bg-blue-100 text-blue-800 font-medium">
+                                <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                </svg>
+                                {teachers.length} Teachers/Advisers
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Teachers/Advisers Table */}
+                <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl border border-white/20 overflow-hidden flex flex-col">
+                    <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex-shrink-0">
+                        <h3 className="text-lg font-semibold text-gray-900">Teachers/Advisers List</h3>
+                    </div>
+                    <div className="overflow-x-auto overflow-y-auto flex-1 table-scroll" style={{ maxHeight: 'calc(100vh - 400px)' }}>
+                        <div className="inline-block min-w-full align-middle">
+                            <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                                <table className="min-w-full divide-y divide-gray-300">
+                                    <thead className="bg-gray-50 sticky top-0 z-10">
+                                        <tr>
+                                            <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Name</th>
+                                            <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Email</th>
+                                            <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Primary Department</th>
+                                            <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Optional Department</th>
+                                            <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap sticky right-0 bg-gray-50">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200 bg-white">
+                                        {teachers.length === 0 ? (
+                                            <tr>
+                                                <td colSpan="5" className="px-6 py-12 text-center text-sm text-gray-500">
+                                                    <div className="flex flex-col items-center">
+                                                        <svg className="h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                                        </svg>
+                                                        <p className="text-lg font-medium text-gray-900">No teachers/advisers found</p>
+                                                        <p className="text-sm text-gray-500 mt-1">Click "Add Teacher/Adviser" to create one</p>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            teachers.map((teacher) => (
+                                                <tr key={teacher.id} className="hover:bg-gray-50 transition-colors duration-150">
+                                                    <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                        {teacher.name}
+                                                    </td>
+                                                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                        {teacher.email}
+                                                    </td>
+                                                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                        {teacher.department?.name || 'N/A'}
+                                                    </td>
+                                                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                        {teacher.optional_department?.name || 'N/A'}
+                                                    </td>
+                                                    <td className="px-4 py-4 whitespace-nowrap text-sm font-medium sticky right-0 bg-white hover:bg-gray-50">
+                                                        <div className="flex items-center space-x-1">
+                                                            <button
+                                                                onClick={() => {
+                                                                    setSelectedTeacher(teacher);
+                                                                    setTeacherForm({
+                                                                        name: teacher.name,
+                                                                        email: teacher.email,
+                                                                        department_id: teacher.department_id || '',
+                                                                        optional_department_id: teacher.optional_department_id || ''
+                                                                    });
+                                                                    setShowEditTeacherModal(true);
+                                                                }}
+                                                                className="p-2 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-md transition-colors duration-150"
+                                                                title="Edit Teacher/Adviser"
+                                                            >
+                                                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                                </svg>
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    if (confirm(`Are you sure you want to delete ${teacher.name}?`)) {
+                                                                        router.delete(route('super.teachers.destroy', teacher.id), {
+                                                                            onSuccess: () => {
+                                                                                router.reload();
+                                                                            },
+                                                                            onError: (errors) => {
+                                                                                alert('Failed to delete teacher: ' + (errors.message || 'Unknown error'));
+                                                                            }
+                                                                        });
+                                                                    }
+                                                                }}
+                                                                className="p-2 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-md transition-colors duration-150"
+                                                                title="Delete Teacher/Adviser"
+                                                            >
+                                                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                </svg>
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     const renderSettings = () => (
         <div className="space-y-6">
-            {/* Settings Navigation - Removed tab buttons, content shows directly */}
-
-            {/* Student Tab - Always show when settings tab is active */}
+            {/* Students Tab - Always show when settings tab is active */}
             {activeTab === 'settings' && (
                 <div className="space-y-6">
                     {/* Header */}
@@ -2260,49 +3002,72 @@ export default function SystemAdmin({
                     </div>
 
                     {/* Students Table */}
-                    <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl border border-white/20 overflow-hidden">
-                        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                    <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl border border-white/20 overflow-hidden flex flex-col">
+                        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex-shrink-0">
                             <h3 className="text-lg font-semibold text-gray-900">Student List</h3>
                         </div>
-                        <div className="overflow-x-auto w-full">
-                            <table className="w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
+                        <div className="overflow-x-auto overflow-y-auto flex-1 table-scroll" style={{ maxHeight: 'calc(100vh - 400px)' }}>
+                            <div className="inline-block min-w-full align-middle">
+                                <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                                    <table className="min-w-full divide-y divide-gray-300">
+                                        <thead className="bg-gray-50 sticky top-0 z-10">
                                 <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student ID</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Section</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Program</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Year Level</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Absences</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Student ID</th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Name</th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Email</th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Phone</th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Section</th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Program</th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Year Level</th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Status</th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Absences</th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap sticky right-0 bg-gray-50">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                                    {filteredStudents.map((student) => (
-                                        <tr key={student.id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                        <tbody className="divide-y divide-gray-200 bg-white">
+                                    {filteredStudents.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="10" className="px-6 py-12 text-center text-sm text-gray-500">
+                                                <div className="flex flex-col items-center">
+                                                    <svg className="h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+                                                    </svg>
+                                                    <p className="text-lg font-medium text-gray-900">No students found</p>
+                                                    <p className="text-sm text-gray-500 mt-1">Try adjusting your filters</p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        filteredStudents.map((student) => (
+                                            <tr key={student.id} className="hover:bg-gray-50 transition-colors duration-150">
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                                 {student.student_id || student.student_number}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                {student.first_name} {student.last_name}
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                    <div className="font-medium">{student.first_name} {student.last_name}</div>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {student.email}
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    <div className="max-w-xs truncate" title={student.email || 'N/A'}>
+                                                        {student.email || 'N/A'}
+                                                    </div>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {student.phone || 'N/A'}
+                                                </td>
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                                                 {student.section?.name || student.section || 'N/A'}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    <div className="max-w-xs truncate" title={student.section?.program?.name || student.program || 'N/A'}>
                                                 {student.section?.program?.name || student.program || 'N/A'}
+                                                    </div>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                <td className="px-4 py-4 whitespace-nowrap">
                                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                                     {student.year_level || 'N/A'}
                                                             </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <td className="px-4 py-4 whitespace-nowrap">
                                                 {student.attendance_status && (
                                                     <span 
                                                         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -2318,23 +3083,46 @@ export default function SystemAdmin({
                                                 </span>
                                             )}
                                         </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {student.absence_count || 0}
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
+                                                    <span className="font-medium">{student.absence_count || 0}</span>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                            <div className="flex items-center space-x-2">
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium sticky right-0 bg-white hover:bg-gray-50">
+                                                    <div className="flex items-center space-x-1">
                                                 <button
                                                     onClick={() => {
                                                         setSelectedStudent(student);
+                                                        setEditStudentForm({
+                                                            first_name: student.first_name || '',
+                                                            last_name: student.last_name || '',
+                                                            email: student.email || '',
+                                                            phone: student.phone || '',
+                                                            guardian_name: student.guardian_name || '',
+                                                            guardian_contact: student.guardian_contact || '',
+                                                            year_level: student.year_level || '',
+                                                            status: student.status || 'Normal',
+                                                            absence_count: student.absence_count ?? 0,
+                                                        });
                                                         setShowStudentModal(true);
                                                     }}
-                                                    className="text-blue-600 hover:text-blue-900 font-medium flex items-center"
+                                                            className="p-2 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-md transition-colors duration-150"
+                                                            title="View Details"
                                                 >
-                                                    <svg className="h-4 w-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                                                     </svg>
-                                                    View
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                setSelectedStudentForCSDL(student);
+                                                                setShowSendToCSDLModal(true);
+                                                            }}
+                                                            className="p-2 text-green-600 hover:text-green-900 hover:bg-green-50 rounded-md transition-colors duration-150"
+                                                            title="Send to CSDL"
+                                                        >
+                                                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                                            </svg>
                                                 </button>
                                                 <button
                                                     onClick={() => {
@@ -2349,19 +3137,22 @@ export default function SystemAdmin({
                                                             });
                                                         }
                                                     }}
-                                                    className="text-red-600 hover:text-red-900 font-medium flex items-center"
+                                                            className="p-2 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-md transition-colors duration-150"
+                                                            title="Delete Student"
                                                 >
-                                                    <svg className="h-4 w-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                                     </svg>
-                                                    Delete
                                                 </button>
                                             </div>
                                         </td>
                                     </tr>
-                                ))}
+                                        ))
+                                    )}
                             </tbody>
                         </table>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2806,155 +3597,6 @@ export default function SystemAdmin({
                 </div>
             )}
 
-            {/* Section Modal */}
-            {showSectionModal && (
-                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-                    <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-                        <div className="mt-3">
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-lg font-medium text-gray-900">
-                                    {editingSection ? 'Edit Section' : 'Add New Section'}
-                                </h3>
-                                <button
-                                    onClick={() => setShowSectionModal(false)}
-                                    className="text-gray-400 hover:text-gray-600"
-                                >
-                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </div>
-                            
-                            <div className="space-y-4">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Section Name</label>
-                                        <input
-                                            type="text"
-                                            value={sectionForm.name}
-                                            onChange={(e) => setSectionForm({...sectionForm, name: e.target.value})}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            placeholder="e.g., A, B, C"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Year Level</label>
-                                        <select
-                                            value={sectionForm.year_level}
-                                            onChange={(e) => setSectionForm({...sectionForm, year_level: e.target.value})}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        >
-                                            <option value="">Select Year Level</option>
-                                            <option value="1">1st Year</option>
-                                            <option value="2">2nd Year</option>
-                                            <option value="3">3rd Year</option>
-                                            <option value="4">4th Year</option>
-                                            <option value="5">5th Year</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                                        <select
-                                            value={sectionForm.department_id}
-                                            onChange={(e) => {
-                                                setSectionForm({...sectionForm, department_id: e.target.value, program_id: ''});
-                                            }}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        >
-                                            <option value="">Select Department</option>
-                                            {departments?.map(dept => (
-                                                <option key={dept.id} value={dept.id}>{dept.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Program</label>
-                                        <select
-                                            value={sectionForm.program_id}
-                                            onChange={(e) => setSectionForm({...sectionForm, program_id: e.target.value})}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            disabled={!sectionForm.department_id}
-                                        >
-                                            <option value="">Select Program</option>
-                                            {programs?.filter(program => program.department_id == sectionForm.department_id).map(program => (
-                                                <option key={program.id} value={program.id}>{program.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Academic Year</label>
-                                        <input
-                                            type="text"
-                                            value={sectionForm.academic_year}
-                                            onChange={(e) => setSectionForm({...sectionForm, academic_year: e.target.value})}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            placeholder="e.g., 2024"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Semester</label>
-                                        <select
-                                            value={sectionForm.semester}
-                                            onChange={(e) => setSectionForm({...sectionForm, semester: e.target.value})}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        >
-                                            <option value="1st Semester">1st Semester</option>
-                                            <option value="2nd Semester">2nd Semester</option>
-                                            <option value="Summer">Summer</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Adviser Name</label>
-                                        <input
-                                            type="text"
-                                            value={sectionForm.adviser_name}
-                                            onChange={(e) => setSectionForm({...sectionForm, adviser_name: e.target.value})}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            placeholder="Enter adviser name"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Max Students</label>
-                                        <input
-                                            type="number"
-                                            value={sectionForm.max_students}
-                                            onChange={(e) => setSectionForm({...sectionForm, max_students: parseInt(e.target.value) || 50})}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            min="1"
-                                            max="100"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="flex justify-end space-x-3 pt-4">
-                                    <button
-                                        onClick={() => setShowSectionModal(false)}
-                                        className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        onClick={editingSection ? handleUpdateSection : handleCreateSection}
-                                        disabled={isLoading}
-                                        className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors disabled:opacity-50"
-                                    >
-                                        {isLoading ? 'Saving...' : (editingSection ? 'Update Section' : 'Create Section')}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 
@@ -2965,7 +3607,6 @@ export default function SystemAdmin({
                 <div className="mb-8 flex justify-between items-center">
                     <div>
                         <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-                        <p className="text-gray-600 mt-2">System overview and key metrics</p>
                         <p className="text-xs text-gray-500 mt-1">
                             Last updated: {lastRefresh.toLocaleTimeString()}
                         </p>
@@ -2985,7 +3626,6 @@ export default function SystemAdmin({
                 <div className="card">
                     <div className="mb-6">
                         <h3 className="text-lg font-medium text-gray-900">Dashboard Overview</h3>
-                        <p className="text-sm text-gray-600">Main summary panel with key system metrics</p>
                     </div>
                     
                     <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -3001,24 +3641,7 @@ export default function SystemAdmin({
                                 </div>
                                 <div className="ml-4">
                                     <p className="text-sm font-medium text-blue-600">Total Students</p>
-                                    <p className="text-2xl font-bold text-blue-900">{systemStats?.total_students || 0}</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Total Faculty Members */}
-                        <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-6 border border-green-200">
-                            <div className="flex items-center">
-                                <div className="flex-shrink-0">
-                                    <div className="h-10 w-10 bg-green-500 rounded-lg flex items-center justify-center">
-                                        <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                        </svg>
-                                    </div>
-                                </div>
-                                <div className="ml-4">
-                                    <p className="text-sm font-medium text-green-600">Faculty Members</p>
-                                    <p className="text-2xl font-bold text-green-900">{systemStats?.totalTeachers || 0}</p>
+                                    <p className="text-2xl font-bold text-blue-900">{systemStats?.totalStudents || 0}</p>
                                 </div>
                             </div>
                         </div>
@@ -3035,12 +3658,12 @@ export default function SystemAdmin({
                                 </div>
                                 <div className="ml-4">
                                     <p className="text-sm font-medium text-purple-600">Avg Attendance</p>
-                                    <p className="text-2xl font-bold text-purple-900">{systemStats?.average_attendance_rate || 0}%</p>
+                                    <p className="text-2xl font-bold text-purple-900">{systemStats?.averageAttendanceRate || 0}%</p>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Departments with Low Attendance */}
+                        {/* Departments */}
                         <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-6 border border-orange-200">
                             <div className="flex items-center">
                                 <div className="flex-shrink-0">
@@ -3053,23 +3676,6 @@ export default function SystemAdmin({
                                 <div className="ml-4">
                                     <p className="text-sm font-medium text-orange-600">Departments</p>
                                     <p className="text-2xl font-bold text-orange-900">{systemStats?.totalDepartments || 0}</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Today's Attendance */}
-                        <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-xl p-6 border border-indigo-200">
-                            <div className="flex items-center">
-                                <div className="flex-shrink-0">
-                                    <div className="h-10 w-10 bg-indigo-500 rounded-lg flex items-center justify-center">
-                                        <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                                        </svg>
-                                    </div>
-                                </div>
-                                <div className="ml-4">
-                                    <p className="text-sm font-medium text-indigo-600">Today's Attendance</p>
-                                    <p className="text-2xl font-bold text-indigo-900">{systemStats?.todayAttendance || 0}</p>
                                 </div>
                             </div>
                         </div>
@@ -3097,7 +3703,6 @@ export default function SystemAdmin({
                 <div className="card">
                     <div className="mb-6">
                         <h3 className="text-lg font-medium text-gray-900">Attendance Analytics</h3>
-                        <p className="text-sm text-gray-600">Visual tools for attendance trends and analysis</p>
                     </div>
                     
                     <div className="grid grid-cols-1 gap-6">
@@ -3196,67 +3801,6 @@ export default function SystemAdmin({
                                 </div>
                             )}
                         </div>
-
-                        {/* Department Performance Chart */}
-                        <div className="bg-gray-50 rounded-lg p-6">
-                            <h4 className="text-md font-medium text-gray-900 mb-4">Department Performance</h4>
-                            <div className="space-y-4">
-                                {departments && departments.length > 0 ? (
-                                    departments.map((dept, index) => {
-                                        // Calculate average attendance rate for this department from live data
-                                        let avgRate = 0;
-                                        let totalRecords = 0;
-                                        let presentRecords = 0;
-                                        
-                                        if (liveDepartmentTrends && liveDepartmentTrends.length > 0) {
-                                            const deptData = liveDepartmentTrends.flatMap(day => 
-                                                day.departments?.filter(d => d.department === dept.name) || []
-                                            );
-                                            
-                                            if (deptData.length > 0) {
-                                                totalRecords = deptData.reduce((sum, d) => sum + (d.total_records || 0), 0);
-                                                presentRecords = deptData.reduce((sum, d) => sum + (d.present || 0), 0);
-                                                avgRate = totalRecords > 0 ? (presentRecords / totalRecords) * 100 : 0;
-                                            }
-                                        }
-                                        
-                                        // Fallback to mock data if no real data
-                                        if (avgRate === 0) {
-                                            avgRate = 75 + (index * 5);
-                                        }
-                                        
-                                        return (
-                                            <div key={dept.id || index} className="flex items-center justify-between">
-                                                <div className="flex-1">
-                                                    <div className="text-sm font-medium text-gray-900">{dept.name}</div>
-                                                    <div className="text-xs text-gray-500">
-                                                        {totalRecords > 0 ? `${presentRecords}/${totalRecords} records` : 'No data'}
-                                                    </div>
-                                                    <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
-                                                        <div 
-                                                            className={`h-2 rounded-full transition-all duration-500 ${
-                                                                avgRate >= 90 ? 'bg-green-500' :
-                                                                avgRate >= 75 ? 'bg-yellow-500' :
-                                                                avgRate >= 60 ? 'bg-orange-500' : 'bg-red-500'
-                                                            }`}
-                                                            style={{ width: `${Math.min(avgRate, 100)}%` }}
-                                                        ></div>
-                                                    </div>
-                                                </div>
-                                                <div className="ml-4 text-sm font-medium text-gray-900">
-                                                    {avgRate.toFixed(1)}%
-                                                </div>
-                                            </div>
-                                        );
-                                    })
-                                ) : (
-                                    <div className="text-center text-gray-500 py-8">
-                                        <p>No departments available</p>
-                                        <p className="text-xs mt-1">Add departments to see performance data</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
                     </div>
                 </div>
 
@@ -3264,7 +3808,6 @@ export default function SystemAdmin({
                 <div className="card">
                     <div className="mb-6">
                         <h3 className="text-lg font-medium text-gray-900">Attendance Status Breakdown</h3>
-                        <p className="text-sm text-gray-600">Current attendance status distribution</p>
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -3501,8 +4044,159 @@ export default function SystemAdmin({
                     {activeTab === 'attendance' && renderAttendance()}
                     {activeTab === 'sections' && renderSections()}
                     {activeTab === 'settings' && renderSettings()}
+                    {activeTab === 'teachers' && renderTeachers()}
                 </div>
             </div>
+
+            {/* Section Modal */}
+            {showSectionModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative">
+                        <div className="p-8">
+                            <div className="flex items-center justify-between mb-6">
+                                <h2 className="text-2xl font-bold text-gray-900">
+                                    {editingSection ? 'Edit Section' : 'Add New Section'}
+                                </h2>
+                                <button
+                                    onClick={() => setShowSectionModal(false)}
+                                    className="text-gray-400 hover:text-gray-600"
+                                >
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Section Name</label>
+                                        <input
+                                            type="text"
+                                            value={sectionForm.name}
+                                            onChange={(e) => setSectionForm({...sectionForm, name: e.target.value})}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            placeholder="e.g., A, B, C"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Year Level</label>
+                                        <select
+                                            value={sectionForm.year_level}
+                                            onChange={(e) => setSectionForm({...sectionForm, year_level: e.target.value})}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            <option value="">Select Year Level</option>
+                                            <option value="1">1st Year</option>
+                                            <option value="2">2nd Year</option>
+                                            <option value="3">3rd Year</option>
+                                            <option value="4">4th Year</option>
+                                            <option value="5">5th Year</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                                        <select
+                                            value={sectionForm.department_id}
+                                            onChange={(e) => {
+                                                setSectionForm({...sectionForm, department_id: e.target.value, program_id: ''});
+                                            }}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            <option value="">Select Department</option>
+                                            {departments?.map(dept => (
+                                                <option key={dept.id} value={dept.id}>{dept.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Program</label>
+                                        <select
+                                            value={sectionForm.program_id}
+                                            onChange={(e) => setSectionForm({...sectionForm, program_id: e.target.value})}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            disabled={!sectionForm.department_id}
+                                        >
+                                            <option value="">Select Program</option>
+                                            {programs?.filter(program => program.department_id == sectionForm.department_id).map(program => (
+                                                <option key={program.id} value={program.id}>{program.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Academic Year</label>
+                                        <input
+                                            type="text"
+                                            value={sectionForm.academic_year}
+                                            onChange={(e) => setSectionForm({...sectionForm, academic_year: e.target.value})}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            placeholder="e.g., 2024"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Semester</label>
+                                        <select
+                                            value={sectionForm.semester}
+                                            onChange={(e) => setSectionForm({...sectionForm, semester: e.target.value})}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            <option value="1st Semester">1st Semester</option>
+                                            <option value="2nd Semester">2nd Semester</option>
+                                            <option value="Summer">Summer</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Adviser Name</label>
+                                        <input
+                                            type="text"
+                                            value={sectionForm.adviser_name}
+                                            onChange={(e) => setSectionForm({...sectionForm, adviser_name: e.target.value})}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            placeholder="Enter adviser name"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Max Students</label>
+                                        <input
+                                            type="number"
+                                            value={sectionForm.max_students}
+                                            onChange={(e) => setSectionForm({...sectionForm, max_students: parseInt(e.target.value) || 50})}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            min="1"
+                                            max="100"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex justify-end space-x-3 pt-4">
+                                    <button
+                                        onClick={() => setShowSectionModal(false)}
+                                        className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={editingSection ? handleUpdateSection : handleCreateSection}
+                                        disabled={isLoading}
+                                        className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors disabled:opacity-50"
+                                    >
+                                        {isLoading ? 'Saving...' : (editingSection ? 'Update Section' : 'Create Section')}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Add Student Modal */}
             {showAddStudentModal && (
@@ -3524,14 +4218,14 @@ export default function SystemAdmin({
                                 <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-4">
                                     <p className="text-sm text-gray-600 flex items-center">
                                         <svg className="h-4 w-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 0 0118 0z" />
                                         </svg>
-                                        Please fill in all required fields marked with *
+                                        Provide the student details below.
                                     </p>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-semibold text-gray-700 mb-2">First Name *</label>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">First Name</label>
                                         <input
                                             type="text"
                                             required
@@ -3542,7 +4236,7 @@ export default function SystemAdmin({
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Last Name *</label>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Last Name</label>
                                         <input
                                             type="text"
                                             required
@@ -3555,18 +4249,22 @@ export default function SystemAdmin({
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Student Number *</label>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Student Number</label>
                                         <input
                                             type="text"
-                                            required
+                                            inputMode="numeric"
+                                            pattern="[0-9-]+"
                                             value={studentForm.student_number}
-                                            onChange={(e) => setStudentForm({...studentForm, student_number: e.target.value})}
+                                            onChange={(e) => {
+                                                const sanitized = e.target.value.replace(/[^0-9-]/g, '');
+                                                setStudentForm({...studentForm, student_number: sanitized});
+                                            }}
                                             className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                                             placeholder="e.g., 2024-00001"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Email *</label>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Email</label>
                                         <input
                                             type="email"
                                             required
@@ -3577,25 +4275,87 @@ export default function SystemAdmin({
                                         />
                                     </div>
                                 </div>
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Phone Number</label>
+                                    <input
+                                        type="tel"
+                                        inputMode="numeric"
+                                        pattern="[0-9]{11}"
+                                        maxLength={11}
+                                        value={studentForm.phone}
+                                        onChange={(e) => {
+                                            const sanitized = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
+                                            setStudentForm({...studentForm, phone: sanitized});
+                                        }}
+                                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        placeholder="e.g. 09123456789"
+                                    />
+                                </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Section *</label>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Department *</label>
                                         <select
-                                            required
-                                            value={studentForm.section_id}
-                                            onChange={(e) => setStudentForm({...studentForm, section_id: e.target.value})}
+                                            value={studentForm.department_id}
+                                            onChange={(e) => setStudentForm({...studentForm, department_id: e.target.value, program_id: '', section_id: '', teacher_id: ''})}
                                             className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                            required
+                                        >
+                                            <option value="">Select Department</option>
+                                            {departments?.map(department => (
+                                                <option key={department.id} value={department.id}>{department.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Program *</label>
+                                        <select
+                                            value={studentForm.program_id}
+                                            onChange={(e) => setStudentForm({...studentForm, program_id: e.target.value, section_id: '', teacher_id: ''})}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                            required
+                                            disabled={!studentForm.department_id}
+                                        >
+                                            <option value="">Select Program</option>
+                                            {studentFormFilteredPrograms?.map(program => (
+                                                <option key={program.id} value={program.id}>{program.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Section</label>
+                                        <select
+                                            value={studentForm.section_id}
+                                            onChange={(e) => setStudentForm({...studentForm, section_id: e.target.value, teacher_id: ''})}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                            disabled={!studentForm.program_id}
                                         >
                                             <option value="">Select Section</option>
-                                            {sections?.map(section => (
+                                            {studentFormFilteredSections?.map(section => (
                                                 <option key={section.id} value={section.id}>{section.name}</option>
                                             ))}
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Year Level *</label>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Teacher</label>
                                         <select
-                                            required
+                                            value={studentForm.teacher_id}
+                                            onChange={(e) => setStudentForm({...studentForm, teacher_id: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                            disabled={!studentForm.department_id}
+                                        >
+                                            <option value="">Select Teacher</option>
+                                            {sectionTeachers?.map(teacher => (
+                                                <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Year Level</label>
+                                        <select
                                             value={studentForm.year_level}
                                             onChange={(e) => setStudentForm({...studentForm, year_level: e.target.value})}
                                             className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
@@ -3644,11 +4404,17 @@ export default function SystemAdmin({
                                 <div>
                                     <label className="block text-sm font-semibold text-gray-700 mb-2">Guardian Contact</label>
                                     <input
-                                        type="text"
+                                        type="tel"
+                                        inputMode="numeric"
+                                        pattern="[0-9]{11}"
+                                        maxLength={11}
                                         value={studentForm.guardian_contact}
-                                        onChange={(e) => setStudentForm({...studentForm, guardian_contact: e.target.value})}
+                                        onChange={(e) => {
+                                            const sanitized = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
+                                            setStudentForm({...studentForm, guardian_contact: sanitized});
+                                        }}
                                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                                        placeholder="Phone number or email"
+                                        placeholder="11-digit phone number"
                                     />
                                 </div>
                                 <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
@@ -3680,6 +4446,104 @@ export default function SystemAdmin({
                                                 Add Student
                                             </>
                                         )}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Send to CSDL Modal */}
+            {showSendToCSDLModal && selectedStudentForCSDL && (
+                <div 
+                    className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                            setShowSendToCSDLModal(false);
+                            setSelectedStudentForCSDL(null);
+                            setCsdlForm({ type: 'call', notes: '' });
+                        }
+                    }}
+                >
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full">
+                        <div className="p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-xl font-bold text-gray-900">Send to CSDL</h2>
+                                <button
+                                    onClick={() => {
+                                        setShowSendToCSDLModal(false);
+                                        setSelectedStudentForCSDL(null);
+                                        setCsdlForm({ type: 'call', notes: '' });
+                                    }}
+                                    className="text-gray-400 hover:text-gray-600"
+                                >
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <div className="mb-4">
+                                <p className="text-sm text-gray-600 mb-2">
+                                    Student: <span className="font-semibold">{selectedStudentForCSDL.first_name} {selectedStudentForCSDL.last_name}</span>
+                                </p>
+                            </div>
+                            <form onSubmit={(e) => {
+                                e.preventDefault();
+                                router.post(route('super.students.send-to-csdl', selectedStudentForCSDL.id), csdlForm, {
+                                    onSuccess: () => {
+                                        setShowSendToCSDLModal(false);
+                                        setSelectedStudentForCSDL(null);
+                                        setCsdlForm({ type: 'call', notes: '' });
+                                        router.reload();
+                                    },
+                                    onError: () => {
+                                        alert('Failed to send student to CSDL');
+                                    }
+                                });
+                            }}>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Type *</label>
+                                    <select
+                                        required
+                                        value={csdlForm.type}
+                                        onChange={(e) => setCsdlForm({...csdlForm, type: e.target.value})}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                        <option value="call">Call</option>
+                                        <option value="home_visit">Home Visit</option>
+                                    </select>
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
+                                    <textarea
+                                        value={csdlForm.notes}
+                                        onChange={(e) => setCsdlForm({...csdlForm, notes: e.target.value})}
+                                        rows={3}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="Optional notes for CSDL..."
+                                    />
+                                </div>
+                                <div className="flex justify-end space-x-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowSendToCSDLModal(false);
+                                            setSelectedStudentForCSDL(null);
+                                            setCsdlForm({ type: 'call', notes: '' });
+                                        }}
+                                        className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"
+                                    >
+                                        <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                        </svg>
+                                        Send to CSDL
                                     </button>
                                 </div>
                             </form>
@@ -3756,7 +4620,15 @@ export default function SystemAdmin({
 
             {/* Student View Modal */}
             {showStudentModal && selectedStudent && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+                <div 
+                    className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                            setShowStudentModal(false);
+                            setSelectedStudent(null);
+                        }
+                    }}
+                >
                     <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto relative">
                         <div className="p-8">
                             {/* Modal Header */}
@@ -3800,9 +4672,10 @@ export default function SystemAdmin({
                                         Contact Information
                                     </h3>
                                     <div className="space-y-2">
-                                        <p><span className="font-medium">Email:</span> {selectedStudent.email || 'Not provided'}</p>
-                                        <p><span className="font-medium">Guardian:</span> {selectedStudent.guardian_name || 'Not provided'}</p>
-                                        <p><span className="font-medium">Guardian Contact:</span> {selectedStudent.guardian_contact || 'Not provided'}</p>
+                                        <p><span className="font-medium">Email:</span> {selectedStudent.email || 'N/A'}</p>
+                                        <p><span className="font-medium">Phone:</span> {selectedStudent.phone || 'N/A'}</p>
+                                        <p><span className="font-medium">Guardian:</span> {selectedStudent.guardian_name || 'N/A'}</p>
+                                        <p><span className="font-medium">Guardian Contact:</span> {selectedStudent.guardian_contact || 'N/A'}</p>
                                     </div>
                                 </div>
 
@@ -3834,6 +4707,168 @@ export default function SystemAdmin({
                                         <p><span className="font-medium">Absence Count:</span> {selectedStudent.absence_count || 0}</p>
                                     </div>
                                 </div>
+                            </div>
+
+                            <div className="bg-gray-50 rounded-2xl p-6 border border-gray-100">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Student</h3>
+                                <form
+                                    onSubmit={(e) => {
+                                        e.preventDefault();
+        setIsSavingStudent(true);
+        router.patch(route('super.students.update', selectedStudent.id), editStudentForm, {
+            onSuccess: () => {
+                setIsSavingStudent(false);
+                setShowStudentModal(false);
+                router.reload({ only: ['students'] });
+            },
+            onError: () => setIsSavingStudent(false),
+            onFinish: () => setIsSavingStudent(false),
+        });
+                                    }}
+                                    className="space-y-4"
+                                >
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                                            <input
+                                                type="text"
+                                                value={editStudentForm.first_name}
+                                                onChange={(e) => setEditStudentForm({ ...editStudentForm, first_name: e.target.value })}
+                                                className="w-full border rounded-lg px-3 py-2"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                                            <input
+                                                type="text"
+                                                value={editStudentForm.last_name}
+                                                onChange={(e) => setEditStudentForm({ ...editStudentForm, last_name: e.target.value })}
+                                                className="w-full border rounded-lg px-3 py-2"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                                            <input
+                                                type="email"
+                                                value={editStudentForm.email}
+                                                onChange={(e) => setEditStudentForm({ ...editStudentForm, email: e.target.value })}
+                                                className="w-full border rounded-lg px-3 py-2"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                                            <input
+                                                type="tel"
+                                                inputMode="numeric"
+                                                pattern="[0-9]{11}"
+                                                maxLength={11}
+                                                value={editStudentForm.phone}
+                                                onChange={(e) => {
+                                                    const sanitized = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
+                                                    setEditStudentForm({ ...editStudentForm, phone: sanitized });
+                                                }}
+                                                className="w-full border rounded-lg px-3 py-2"
+                                                placeholder="11-digit phone"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Guardian Name</label>
+                                            <input
+                                                type="text"
+                                                value={editStudentForm.guardian_name}
+                                                onChange={(e) => setEditStudentForm({ ...editStudentForm, guardian_name: e.target.value })}
+                                                className="w-full border rounded-lg px-3 py-2"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Guardian Contact</label>
+                                            <input
+                                                type="tel"
+                                                inputMode="numeric"
+                                                pattern="[0-9]{11}"
+                                                maxLength={11}
+                                                value={editStudentForm.guardian_contact}
+                                                onChange={(e) => {
+                                                    const sanitized = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
+                                                    setEditStudentForm({ ...editStudentForm, guardian_contact: sanitized });
+                                                }}
+                                                className="w-full border rounded-lg px-3 py-2"
+                                                placeholder="11-digit phone"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Year Level</label>
+                                            <input
+                                                type="text"
+                                                value={editStudentForm.year_level}
+                                                onChange={(e) => setEditStudentForm({ ...editStudentForm, year_level: e.target.value })}
+                                                className="w-full border rounded-lg px-3 py-2"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                                            <select
+                                                value={editStudentForm.status}
+                                                onChange={(e) => setEditStudentForm({ ...editStudentForm, status: e.target.value })}
+                                                className="w-full border rounded-lg px-3 py-2"
+                                            >
+                                                {studentStatusOptions.map((status) => (
+                                                    <option key={status} value={status}>{status}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Absences</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
+                                            value={editStudentForm.absence_count}
+                                            onChange={(e) => {
+                                                const value = e.target.value.replace(/[^0-9]/g, '');
+                                                setEditStudentForm({ ...editStudentForm, absence_count: value === '' ? 0 : Number(value) });
+                                            }}
+                                            className="w-full border rounded-lg px-3 py-2"
+                                        />
+                                    </div>
+                                    <div className="flex justify-end space-x-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setEditStudentForm({
+                                                    first_name: selectedStudent.first_name || '',
+                                                    last_name: selectedStudent.last_name || '',
+                                                    email: selectedStudent.email || '',
+                                                    phone: selectedStudent.phone || '',
+                                                    guardian_name: selectedStudent.guardian_name || '',
+                                                    guardian_contact: selectedStudent.guardian_contact || '',
+                                                    year_level: selectedStudent.year_level || '',
+                                                    status: selectedStudent.status || 'Normal',
+                                                    absence_count: selectedStudent.absence_count ?? 0,
+                                                });
+                                                setShowStudentModal(false);
+                                            }}
+                                            className="px-4 py-2 rounded-lg border"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            disabled={isSavingStudent}
+                                            className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                                        >
+                                            {isSavingStudent ? 'Saving...' : 'Save'}
+                                        </button>
+                                    </div>
+                                </form>
                             </div>
                         </div>
                     </div>
@@ -3896,6 +4931,249 @@ export default function SystemAdmin({
                     </div>
                 </div>
             )}
+
+            {/* Add Teacher/Adviser Modal */}
+            {showAddTeacherModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4" onClick={(e) => e.target === e.currentTarget && setShowAddTeacherModal(false)}>
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative">
+                        <div className="p-8">
+                            <div className="flex items-center justify-between mb-6">
+                                <h2 className="text-2xl font-bold text-gray-900">Add New Teacher/Adviser</h2>
+                                <button
+                                    onClick={() => {
+                                        setShowAddTeacherModal(false);
+                                        setTeacherForm({
+                                            name: '',
+                                            email: '',
+                                            department_id: '',
+                                            optional_department_id: ''
+                                        });
+                                    }}
+                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                >
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <form onSubmit={(e) => {
+                                e.preventDefault();
+                                router.post(route('super.teachers.store'), teacherForm, {
+                                    onSuccess: () => {
+                                        setShowAddTeacherModal(false);
+                                        setTeacherForm({
+                                            name: '',
+                                            email: '',
+                                            department_id: '',
+                                            optional_department_id: ''
+                                        });
+                                        router.reload();
+                                    },
+                                    onError: (errors) => {
+                                        alert('Failed to create teacher: ' + (errors.message || Object.values(errors).flat().join(', ')));
+                                    }
+                                });
+                            }} className="space-y-6">
+                                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-4">
+                                    <p className="text-sm text-gray-600 flex items-center">
+                                        <svg className="h-4 w-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        Please fill in all required fields marked with *
+                                    </p>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Full Name *</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={teacherForm.name}
+                                            onChange={(e) => setTeacherForm({...teacherForm, name: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                            placeholder="Enter full name"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Email *</label>
+                                        <input
+                                            type="email"
+                                            required
+                                            value={teacherForm.email || ''}
+                                            onChange={(e) => setTeacherForm({...teacherForm, email: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                            placeholder="Enter email address"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Department *</label>
+                                        <select
+                                            required
+                                            value={teacherForm.department_id}
+                                            onChange={(e) => {
+                                                setTeacherForm({...teacherForm, department_id: e.target.value});
+                                            }}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        >
+                                            <option value="">Select Department</option>
+                                            {departments?.map(dept => (
+                                                <option key={dept.id} value={dept.id}>{dept.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Optional Department</label>
+                                        <select
+                                            value={teacherForm.optional_department_id}
+                                            onChange={(e) => setTeacherForm({...teacherForm, optional_department_id: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        >
+                                            <option value="">None</option>
+                                            {departments?.filter(d => d.id != teacherForm.department_id).map(dept => (
+                                                <option key={dept.id} value={dept.id}>{dept.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowAddTeacherModal(false);
+                                            setTeacherForm({
+                                                name: '',
+                                                email: '',
+                                                department_id: '',
+                                                optional_department_id: ''
+                                            });
+                                        }}
+                                        className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                                    >
+                                        Add Teacher/Adviser
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Teacher/Adviser Modal */}
+            {showEditTeacherModal && selectedTeacher && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4" onClick={(e) => e.target === e.currentTarget && setShowEditTeacherModal(false)}>
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative">
+                        <div className="p-8">
+                            <div className="flex items-center justify-between mb-6">
+                                <h2 className="text-2xl font-bold text-gray-900">Edit Teacher/Adviser</h2>
+                                <button
+                                    onClick={() => {
+                                        setShowEditTeacherModal(false);
+                                        setSelectedTeacher(null);
+                                    }}
+                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                >
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <form onSubmit={(e) => {
+                                e.preventDefault();
+                                router.put(route('super.teachers.update', selectedTeacher.id), teacherForm, {
+                                    onSuccess: () => {
+                                        setShowEditTeacherModal(false);
+                                        setSelectedTeacher(null);
+                                        router.reload();
+                                    },
+                                    onError: (errors) => {
+                                        alert('Failed to update teacher: ' + (errors.message || Object.values(errors).flat().join(', ')));
+                                    }
+                                });
+                            }} className="space-y-6">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Full Name *</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={teacherForm.name}
+                                            onChange={(e) => setTeacherForm({...teacherForm, name: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Email *</label>
+                                        <input
+                                            type="email"
+                                            required
+                                            value={teacherForm.email}
+                                            onChange={(e) => setTeacherForm({...teacherForm, email: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Department *</label>
+                                        <select
+                                            required
+                                            value={teacherForm.department_id}
+                                            onChange={(e) => {
+                                                setTeacherForm({...teacherForm, department_id: e.target.value});
+                                            }}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        >
+                                            <option value="">Select Department</option>
+                                            {departments?.map(dept => (
+                                                <option key={dept.id} value={dept.id}>{dept.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Optional Department</label>
+                                        <select
+                                            value={teacherForm.optional_department_id}
+                                            onChange={(e) => setTeacherForm({...teacherForm, optional_department_id: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        >
+                                            <option value="">None</option>
+                                            {departments?.filter(d => d.id != teacherForm.department_id && (!teacherForm.optional_department_id || d.id != teacherForm.optional_department_id)).map(dept => (
+                                                <option key={dept.id} value={dept.id}>{dept.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowEditTeacherModal(false);
+                                            setSelectedTeacher(null);
+                                        }}
+                                        className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                    >
+                                        Update Teacher/Adviser
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            )}
         </AuthenticatedLayout>
     );
-}
+};

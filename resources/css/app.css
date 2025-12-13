@@ -2,6 +2,33 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Custom scrollbar styles for tables */
+@layer utilities {
+    .table-scroll {
+        scrollbar-width: thin;
+        scrollbar-color: rgb(203 213 225) rgb(241 245 249);
+    }
+    
+    .table-scroll::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    
+    .table-scroll::-webkit-scrollbar-track {
+        background: rgb(241 245 249);
+        border-radius: 4px;
+    }
+    
+    .table-scroll::-webkit-scrollbar-thumb {
+        background: rgb(203 213 225);
+        border-radius: 4px;
+    }
+    
+    .table-scroll::-webkit-scrollbar-thumb:hover {
+        background: rgb(148 163 184);
+    }
+}
+
 @layer components {
 	.btn-primary { @apply rounded bg-brand-primary px-4 py-2 font-medium text-brand-tertiary transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-secondary; }
 	.btn-secondary { @apply rounded bg-brand-secondary px-4 py-2 font-medium text-black transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary; }

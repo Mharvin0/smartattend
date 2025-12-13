@@ -21,13 +21,18 @@ class StudentController extends Controller
                 return redirect()->route('login');
             }
             
+            // Explicitly block CSDL users from admin routes
+            if ($user->hasRole('CSDL') && !$user->hasRole('Admin') && !$user->hasRole('Super Admin')) {
+                return redirect()->route('csdl.dashboard');
+            }
+            
             // Check if user has admin role
-            if (!$user->hasRole('Admin')) {
+            if (!$user->hasRole('Admin') && !$user->hasRole('Super Admin')) {
                 // Redirect based on their actual role
                 if ($user->hasRole('Super Admin')) {
                     return redirect()->route('super.dashboard');
-                } elseif ($user->hasRole('Teacher')) {
-                    return redirect()->route('teacher.dashboard');
+                } elseif ($user->hasRole('CSDL')) {
+                    return redirect()->route('csdl.dashboard');
                 }
                 // Otherwise, show 403 error
                 abort(403, 'Access denied. Admin role required.');
@@ -80,9 +85,9 @@ class StudentController extends Controller
         $students = $studentsQuery->get()->map(function ($student) {
             // Update priority for this student
             $student->updatePriority();
-            // Calculate attendance status (Normal, SLIP, PNS)
-            $student->attendance_status = $student->calculateAttendanceStatus();
-            
+            // Refresh the model to get the updated absence_count
+            $student->refresh();
+            // attendance_status is now automatically available via the accessor and $appends
             return $student;
         });
 
@@ -167,19 +172,35 @@ class StudentController extends Controller
         ]);
     }
 
+	public function update(Request $request, Student $student)
+	{
+		$validated = $request->validate([
+			'status' => 'required|string|in:Normal,SLIP,PNS',
+			'absence_count' => 'required|integer|min:0',
+		]);
+
+		$student->status = $validated['status'];
+		$student->absence_count = $validated['absence_count'];
+		$student->calculatePriority();
+		$student->save();
+
+		return back()->with('success', 'Student updated successfully.');
+	}
+
     public function store(Request $request)
     {
         $validated = $request->validate([
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
-            'student_number' => 'required|string|unique:students,student_number',
+            'student_number' => 'required|string|regex:/^[0-9-]+$/|unique:students,student_number',
             'email' => 'required|email|unique:students,email',
-            'section_id' => 'required|exists:sections,id',
-            'year_level' => 'required|string',
+            'phone' => 'nullable|digits:11',
+            'section_id' => 'nullable|exists:sections,id',
+            'year_level' => 'nullable|string',
             'gender' => 'nullable|string',
             'birth_date' => 'nullable|date',
             'guardian_name' => 'nullable|string|max:255',
-            'guardian_contact' => 'nullable|string|max:255',
+            'guardian_contact' => 'nullable|digits:11',
         ]);
 
         $student = Student::create([
@@ -188,18 +209,54 @@ class StudentController extends Controller
             'student_number' => $validated['student_number'],
             'student_id' => $validated['student_number'],
             'email' => $validated['email'],
-            'section_id' => $validated['section_id'],
-            'year_level' => $validated['year_level'],
+            'phone' => $validated['phone'] ?? null,
+            'section_id' => $validated['section_id'] ?? null,
+            'year_level' => $validated['year_level'] ?? null,
             'gender' => $validated['gender'] ?? null,
             'birth_date' => $validated['birth_date'] ?? null,
             'guardian_name' => $validated['guardian_name'] ?? null,
             'guardian_contact' => $validated['guardian_contact'] ?? null,
-            'status' => 'Active',
+            'status' => 'Normal',
+            'absence_count' => 0,
         ]);
 
         $student->updatePriority();
 
         return redirect()->route('admin.students')->with('success', 'Student created successfully!');
+    }
+
+    public function sendToCSDL(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'type' => 'required|in:call,home_visit',
+            'csdl_user_id' => 'nullable|exists:users,id',
+            'notes' => 'nullable|string',
+        ]);
+
+        $student = Student::findOrFail($id);
+
+        // Get CSDL user - if not specified, use the first available CSDL user
+        $csdlUserId = $validated['csdl_user_id'] ?? \App\Models\User::role('CSDL')->first()?->id;
+
+        if (!$csdlUserId) {
+            return redirect()->back()->with('error', 'No CSDL available to assign this task.');
+        }
+
+        // Create tracking record
+        \App\Models\StudentTracking::create([
+            'student_id' => $student->id,
+            'tracked_by' => $csdlUserId,
+            'type' => $validated['type'],
+            'date' => now()->toDateString(),
+            'status' => 'scheduled',
+            'notes' => $validated['notes'] ?? "Assigned by " . auth()->user()->name,
+        ]);
+
+        // Update student priority so they appear in "Students Needing Attention" table
+        $priority = $validated['type'] === 'home_visit' ? 'PNS' : 'Call Needed';
+        $student->update(['priority' => $priority]);
+
+        return redirect()->back()->with('success', "Student sent to CSDL for {$validated['type']}.");
     }
 
     public function import(Request $request)
@@ -279,5 +336,277 @@ class StudentController extends Controller
         
         // Return redirect back with success message for Inertia
         return back()->with('success', 'Student deleted successfully.');
+    }
+
+    public function export(Request $request)
+    {
+        try {
+            // Handle both FormData and JSON requests
+            // Convert empty strings to null for nullable fields
+            $input = $request->all();
+            foreach (['student_id', 'department_id', 'program_id', 'section_id', 'year_level', 'status'] as $field) {
+                if (isset($input[$field]) && $input[$field] === '') {
+                    $input[$field] = null;
+                }
+            }
+            
+            $validated = validator($input, [
+                'format' => ['required', 'string', 'in:csv,xml'],
+                'student_id' => ['nullable', 'integer', 'exists:students,id'],
+                'department_id' => ['nullable', 'integer', 'exists:departments,id'],
+                'program_id' => ['nullable', 'integer', 'exists:programs,id'],
+                'section_id' => ['nullable', 'integer', 'exists:sections,id'],
+                'year_level' => ['nullable', 'string'],
+                'status' => ['nullable', 'string'],
+            ])->validate();
+            
+            // Convert string IDs to integers if they come from FormData
+            if (!empty($validated['student_id'])) {
+                $validated['student_id'] = (int) $validated['student_id'];
+            }
+            if (!empty($validated['department_id'])) {
+                $validated['department_id'] = (int) $validated['department_id'];
+            }
+            if (!empty($validated['program_id'])) {
+                $validated['program_id'] = (int) $validated['program_id'];
+            }
+            if (!empty($validated['section_id'])) {
+                $validated['section_id'] = (int) $validated['section_id'];
+            }
+
+            // Build query with filters
+            $query = Student::with(['section.program.department']);
+
+            // If exporting a single student, filter by student_id
+            if (!empty($validated['student_id'])) {
+                $query->where('id', $validated['student_id']);
+            } else {
+                // Apply other filters only if not exporting a single student
+                if (!empty($validated['department_id'])) {
+                    $query->whereHas('section.program', function($q) use ($validated) {
+                        $q->where('department_id', $validated['department_id']);
+                    });
+                }
+
+                if (!empty($validated['program_id'])) {
+                    $query->whereHas('section', function($q) use ($validated) {
+                        $q->where('program_id', $validated['program_id']);
+                    });
+                }
+
+                if (!empty($validated['section_id'])) {
+                    $query->where('section_id', $validated['section_id']);
+                }
+
+                if (!empty($validated['year_level'])) {
+                    $query->where('year_level', $validated['year_level']);
+                }
+            }
+
+            $students = $query->get();
+            
+            // Apply status filter after calculating attendance status
+            if (!empty($validated['status'])) {
+                $students = $students->filter(function($student) use ($validated) {
+                    $student->updatePriority();
+                    $student->refresh();
+                    // attendance_status is now automatically available via the accessor and $appends
+                    return $student->attendance_status === $validated['status'];
+                });
+            } else {
+                // Update priority for all students
+                $students = $students->map(function($student) {
+                    $student->updatePriority();
+                    $student->refresh();
+                    // attendance_status is now automatically available via the accessor and $appends
+                    return $student;
+                });
+            }
+            
+            if ($students->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No students found matching the criteria.'
+                ], 404);
+            }
+
+            if ($validated['format'] === 'csv') {
+                return $this->exportStudentsToCsv($students, $validated['student_id'] ?? null);
+            } else {
+                return $this->exportStudentsToXml($students, $validated['student_id'] ?? null);
+            }
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('Export validation failed: ' . $e->getMessage(), [
+                'request_data' => $request->all(),
+                'errors' => $e->errors()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed: ' . $e->getMessage(),
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Export failed: ' . $e->getMessage(), [
+                'request_data' => $request->all(),
+                'trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Export failed: ' . $e->getMessage(),
+                'error_details' => config('app.debug') ? [
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                    'trace' => $e->getTraceAsString()
+                ] : null
+            ], 500);
+        }
+    }
+
+    private function exportStudentsToCsv($students, $studentId = null)
+    {
+        try {
+            if ($studentId) {
+                $student = $students->first();
+                $filename = 'student_' . ($student->student_number ?? $student->id) . '_' . date('Y-m-d_H-i-s') . '.csv';
+            } else {
+                $filename = 'student_records_' . date('Y-m-d_H-i-s') . '.csv';
+            }
+            
+            $headers = [
+                'Content-Type' => 'text/csv; charset=UTF-8',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            ];
+
+            $callback = function() use ($students) {
+                $file = fopen('php://output', 'w');
+                
+                if ($file === false) {
+                    throw new \Exception('Failed to open output stream for CSV export');
+                }
+                
+                // CSV Headers
+                fputcsv($file, [
+                    'Student ID',
+                    'Student Number',
+                    'First Name',
+                    'Last Name',
+                    'Email',
+                    'Phone',
+                    'Gender',
+                    'Birth Date',
+                    'Department',
+                    'Program',
+                    'Section',
+                    'Year Level',
+                    'Guardian Name',
+                    'Guardian Contact',
+                    'Status',
+                    'Priority',
+                    'Absence Count',
+                    'Created At',
+                    'Updated At',
+                ]);
+
+                foreach ($students as $student) {
+                    try {
+                        $birthDate = $student->birth_date ? (is_string($student->birth_date) ? $student->birth_date : $student->birth_date->format('Y-m-d')) : '';
+                        $createdAt = $student->created_at ? (is_string($student->created_at) ? $student->created_at : $student->created_at->format('Y-m-d H:i:s')) : '';
+                        $updatedAt = $student->updated_at ? (is_string($student->updated_at) ? $student->updated_at : $student->updated_at->format('Y-m-d H:i:s')) : '';
+                        
+                        fputcsv($file, [
+                            isset($student->student_id) ? $student->student_id : '',
+                            isset($student->student_number) ? $student->student_number : '',
+                            isset($student->first_name) ? $student->first_name : '',
+                            isset($student->last_name) ? $student->last_name : '',
+                            isset($student->email) ? $student->email : '',
+                            isset($student->phone) ? $student->phone : '',
+                            isset($student->gender) ? $student->gender : '',
+                            $birthDate,
+                            $student->section?->program?->department?->name ?? '',
+                            $student->section?->program?->name ?? '',
+                            $student->section?->name ?? '',
+                            isset($student->year_level) ? $student->year_level : '',
+                            isset($student->guardian_name) ? $student->guardian_name : '',
+                            isset($student->guardian_contact) ? $student->guardian_contact : '',
+                            isset($student->status) ? $student->status : '',
+                            isset($student->priority) ? $student->priority : '',
+                            isset($student->absence_count) ? $student->absence_count : 0,
+                            $createdAt,
+                            $updatedAt,
+                        ]);
+                    } catch (\Exception $e) {
+                        \Log::warning('Failed to export student ' . ($student->id ?? 'unknown') . ': ' . $e->getMessage());
+                        continue;
+                    }
+                }
+
+                fclose($file);
+            };
+
+            return response()->stream($callback, 200, $headers);
+        } catch (\Exception $e) {
+            \Log::error('CSV export failed: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'CSV export failed: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    private function exportStudentsToXml($students, $studentId = null)
+    {
+        try {
+            if ($studentId) {
+                $student = $students->first();
+                $filename = 'student_' . ($student->student_number ?? $student->id) . '_' . date('Y-m-d_H-i-s') . '.xml';
+            } else {
+                $filename = 'student_records_' . date('Y-m-d_H-i-s') . '.xml';
+            }
+
+            $xml = new \SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?><students></students>');
+
+            foreach ($students as $student) {
+                try {
+                    $studentXml = $xml->addChild('student');
+                    $studentXml->addChild('student_id', isset($student->student_id) ? htmlspecialchars($student->student_id) : '');
+                    $studentXml->addChild('student_number', isset($student->student_number) ? htmlspecialchars($student->student_number) : '');
+                    $studentXml->addChild('first_name', isset($student->first_name) ? htmlspecialchars($student->first_name) : '');
+                    $studentXml->addChild('last_name', isset($student->last_name) ? htmlspecialchars($student->last_name) : '');
+                    $studentXml->addChild('email', isset($student->email) ? htmlspecialchars($student->email) : '');
+                    $studentXml->addChild('phone', isset($student->phone) ? htmlspecialchars($student->phone) : '');
+                    $studentXml->addChild('gender', isset($student->gender) ? htmlspecialchars($student->gender) : '');
+                    $studentXml->addChild('birth_date', $student->birth_date ? (is_string($student->birth_date) ? $student->birth_date : $student->birth_date->format('Y-m-d')) : '');
+                    $studentXml->addChild('department', htmlspecialchars($student->section?->program?->department?->name ?? ''));
+                    $studentXml->addChild('program', htmlspecialchars($student->section?->program?->name ?? ''));
+                    $studentXml->addChild('section', htmlspecialchars($student->section?->name ?? ''));
+                    $studentXml->addChild('year_level', isset($student->year_level) ? htmlspecialchars($student->year_level) : '');
+                    $studentXml->addChild('guardian_name', isset($student->guardian_name) ? htmlspecialchars($student->guardian_name) : '');
+                    $studentXml->addChild('guardian_contact', isset($student->guardian_contact) ? htmlspecialchars($student->guardian_contact) : '');
+                    $studentXml->addChild('status', isset($student->status) ? htmlspecialchars($student->status) : '');
+                    $studentXml->addChild('priority', isset($student->priority) ? htmlspecialchars($student->priority) : '');
+                    $studentXml->addChild('absence_count', isset($student->absence_count) ? $student->absence_count : 0);
+                    $studentXml->addChild('created_at', $student->created_at ? (is_string($student->created_at) ? $student->created_at : $student->created_at->format('Y-m-d H:i:s')) : '');
+                    $studentXml->addChild('updated_at', $student->updated_at ? (is_string($student->updated_at) ? $student->updated_at : $student->updated_at->format('Y-m-d H:i:s')) : '');
+                } catch (\Exception $e) {
+                    \Log::warning('Failed to export student ' . ($student->id ?? 'unknown') . ': ' . $e->getMessage());
+                    continue;
+                }
+            }
+
+            return response($xml->asXML(), 200)
+                ->header('Content-Type', 'application/xml; charset=UTF-8')
+                ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
+        } catch (\Exception $e) {
+            \Log::error('XML export failed: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'XML export failed: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }

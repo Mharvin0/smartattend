@@ -15,7 +15,7 @@ class UserController extends Controller
 		$users = User::with('roles:name')->orderBy('name')->get(['id','name','email']);
 		return Inertia::render('Super/Users', [
 			'users' => $users,
-			'roles' => ['Super Admin','Admin'],
+			'roles' => ['Super Admin','Admin','CSDL'],
 		]);
 	}
 
@@ -25,7 +25,7 @@ class UserController extends Controller
 			'name' => ['required','string','max:255'],
 			'email' => ['required','email','max:255','unique:users,email'],
 			'password' => ['required','string','min:6'],
-			'role' => ['required','in:Super Admin,Admin'],
+			'role' => ['required','in:Super Admin,Admin,CSDL'],
 		]);
 		$user = User::create([
 			'name' => $validated['name'],
@@ -42,7 +42,7 @@ class UserController extends Controller
 			'name' => ['required','string','max:255'],
 			'email' => ['required','email','max:255','unique:users,email,'.$user->id],
 			'password' => ['nullable','string','min:6'],
-			'role' => ['required','in:Super Admin,Admin'],
+			'role' => ['required','in:Super Admin,Admin,CSDL'],
 		]);
 		$user->name = $validated['name'];
 		$user->email = $validated['email'];

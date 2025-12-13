@@ -7,6 +7,7 @@ use App\Models\AuditLog;
 use App\Services\AuditLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class SystemAdminController extends Controller
@@ -80,9 +81,99 @@ class SystemAdminController extends Controller
         ]);
     }
 
-    public function management()
+    public function management(Request $request)
     {
-        $management = $this->getManagementData();
+        // Get students that need calls or home visits
+        // Include students with priority 'Call Needed' or 'PNS', OR students with active scheduled tracking records
+        $studentsWithScheduledTracking = \App\Models\StudentTracking::where('status', 'scheduled')
+            ->where('archived', false)
+            ->pluck('student_id')
+            ->unique()
+            ->values()
+            ->toArray();
+        
+        $studentsNeedingCalls = \App\Models\Student::where(function($query) use ($studentsWithScheduledTracking) {
+                $query->whereIn('priority', ['Call Needed', 'PNS']);
+                if (!empty($studentsWithScheduledTracking)) {
+                    $query->orWhereIn('id', $studentsWithScheduledTracking);
+                }
+            })
+            ->with(['section.program.department', 'department', 'program', 'studentTracking' => function($query) {
+                $query->where('archived', false)
+                    ->orderBy('date', 'desc')
+                    ->orderBy('created_at', 'desc')
+                    ->limit(1);
+            }])
+            ->orderBy('priority', 'desc')
+            ->orderBy('absence_count', 'desc')
+            ->get()
+            ->map(function ($student) use ($studentsWithScheduledTracking) {
+                // Only update priority if student doesn't have active scheduled tracking
+                // This preserves manually set priorities for students sent to CSDL
+                if (!in_array($student->id, $studentsWithScheduledTracking)) {
+                    $student->updatePriority();
+                }
+                $latestTracking = $student->studentTracking->first();
+                return [
+                    'id' => $student->id,
+                    'name' => $student->first_name . ' ' . $student->last_name,
+                    'student_number' => $student->student_number,
+                    'email' => $student->email,
+                    'section' => $student->section?->name ?? 'N/A',
+                    'department' => $student->department?->name ?? $student->section?->program?->department?->name ?? 'N/A',
+                    'program' => $student->program?->name ?? $student->section?->program?->name ?? 'N/A',
+                    'priority' => $student->priority ?? 'Safe',
+                    'absence_count' => $student->absence_count ?? 0,
+                    'tracking_status' => $latestTracking?->status ?? 'No Status',
+                ];
+            });
+
+        // Get recent tracking records - Super Admin can see all records (excluding archived and soft-deleted)
+        $recentTracking = \App\Models\StudentTracking::with(['student.section.program.department', 'trackedBy'])
+            ->where('archived', false)
+            ->orderBy('date', 'desc')
+            ->orderBy('created_at', 'desc')
+            ->limit(10)
+            ->get()
+            ->map(function ($tracking) {
+                return [
+                    'id' => $tracking->id,
+                    'type' => $tracking->type,
+                    'date' => $tracking->date->format('Y-m-d'),
+                    'time' => $tracking->time ? \Carbon\Carbon::parse($tracking->time)->format('H:i') : null,
+                    'status' => $tracking->status,
+                    'outcome' => $tracking->outcome,
+                    'follow_up_required' => $tracking->follow_up_required,
+                    'follow_up_date' => $tracking->follow_up_date ? $tracking->follow_up_date->format('Y-m-d') : null,
+                    'student' => [
+                        'id' => $tracking->student->id,
+                        'name' => $tracking->student->first_name . ' ' . $tracking->student->last_name,
+                        'section' => $tracking->student->section?->name ?? 'N/A',
+                        'department' => $tracking->student->section?->program?->department?->name ?? 'N/A',
+                        'program' => $tracking->student->section?->program?->name ?? 'N/A',
+                    ],
+                    'tracked_by' => $tracking->trackedBy?->name ?? 'Unknown',
+                    'tracked_by_id' => $tracking->tracked_by,
+                    'notes' => $tracking->notes,
+                    'archived' => $tracking->archived,
+                    'can_edit' => true, // Super Admin can edit all tracking records
+                ];
+            });
+
+        // Statistics
+        $stats = [
+            'students_needing_calls' => \App\Models\Student::where('priority', 'Call Needed')->count(),
+            'students_needing_visits' => \App\Models\Student::where('priority', 'PNS')->count(),
+            'total_tracked_today' => \App\Models\StudentTracking::where('archived', false)
+                ->whereDate('date', \Carbon\Carbon::today())
+                ->count(),
+            'total_tracked_this_week' => \App\Models\StudentTracking::where('archived', false)
+                ->whereBetween('date', [
+                    \Carbon\Carbon::now()->startOfWeek(),
+                    \Carbon\Carbon::now()->endOfWeek()
+                ])
+                ->count(),
+        ];
 
         return Inertia::render('Super/SystemAdmin', [
             'activeTab' => 'management',
@@ -92,52 +183,220 @@ class SystemAdminController extends Controller
             'integrations' => $this->getIntegrationStatus(),
             'systemTools' => $this->getSystemToolsData(),
             'auditLogs' => AuditLog::with('user')->orderBy('created_at', 'desc')->limit(50)->get(),
-            'management' => $management,
+            'studentsNeedingCalls' => $studentsNeedingCalls,
+            'recentTracking' => $recentTracking,
+            'stats' => $stats,
             'departments' => \App\Models\Department::orderBy('name')->get(),
             'programs' => \App\Models\Program::with('department')->orderBy('name')->get(),
             'sections' => \App\Models\Section::with(['program.department'])->orderBy('name')->get(),
             'students' => \App\Models\Student::with(['section.program.department'])->orderBy('first_name')->get(),
-            'availableMonths' => $management['available_months'] ?? [],
         ]);
     }
 
-    public function storeManagementRemark(\Illuminate\Http\Request $request)
+    public function trackStudent(Request $request)
     {
-        // Explicitly check for Super Admin role
-        if (!auth()->user()->hasRole('Super Admin')) {
-            return back()->withErrors(['message' => 'Unauthorized: Only Super Admins can add remarks.']);
-        }
-
-        $request->validate([
+        $validated = $request->validate([
             'student_id' => 'required|exists:students,id',
-            'week_start' => 'required|date',
-            'week_end' => 'required|date',
-            'remark' => 'required|string',
+            'type' => 'required|in:call,home_visit',
+            'date' => 'required|date',
+            'time' => 'nullable|date_format:H:i',
+            'notes' => 'nullable|string',
+            'status' => 'required|in:completed,scheduled,cancelled,no_answer',
+            'outcome' => 'nullable|string',
+            'follow_up_required' => 'nullable|string',
+            'follow_up_date' => 'nullable|date|after:today',
         ]);
 
-        $remark = \App\Models\ManagementRemark::updateOrCreate(
-            [
-                'student_id' => $request->student_id,
-                'week_start' => $request->week_start,
-                'week_end' => $request->week_end,
-            ],
-            [
-                'remark' => $request->remark,
-                'created_by' => auth()->id(),
-            ]
-        );
+        $tracking = \App\Models\StudentTracking::create([
+            'student_id' => $validated['student_id'],
+            'tracked_by' => auth()->id(),
+            'type' => $validated['type'],
+            'date' => $validated['date'],
+            'time' => $validated['time'] ? \Carbon\Carbon::parse($validated['time'])->format('H:i:s') : null,
+            'notes' => $validated['notes'] ?? null,
+            'status' => $validated['status'],
+            'outcome' => $validated['outcome'] ?? null,
+            'follow_up_required' => $validated['follow_up_required'] ?? null,
+            'follow_up_date' => $validated['follow_up_date'] ?? null,
+        ]);
 
-        // Return redirect back with success message for Inertia
-        return back()->with('success', 'Remark saved successfully.');
+        return redirect()->back()->with('success', 'Student tracking recorded successfully');
     }
 
-    public function destroyManagementRemark($id)
+    public function updateTracking(Request $request, $id)
     {
-        $remark = \App\Models\ManagementRemark::findOrFail($id);
-        $remark->delete();
-        
-        // Return redirect back with success message for Inertia
-        return back()->with('success', 'Remark deleted successfully.');
+        $tracking = \App\Models\StudentTracking::findOrFail($id);
+
+        $validated = $request->validate([
+            'type' => 'required|in:call,home_visit',
+            'date' => 'required|date',
+            'time' => 'nullable|date_format:H:i',
+            'notes' => 'nullable|string',
+            'status' => 'required|in:completed,scheduled,cancelled,no_answer',
+            'outcome' => 'nullable|string',
+            'follow_up_required' => 'nullable|string',
+            'follow_up_date' => 'nullable|date',
+        ]);
+
+        $tracking->update([
+            'type' => $validated['type'],
+            'date' => $validated['date'],
+            'time' => $validated['time'] ? \Carbon\Carbon::parse($validated['time'])->format('H:i:s') : null,
+            'notes' => $validated['notes'] ?? null,
+            'status' => $validated['status'],
+            'outcome' => $validated['outcome'] ?? null,
+            'follow_up_required' => $validated['follow_up_required'] ?? null,
+            'follow_up_date' => $validated['follow_up_date'] ?? null,
+        ]);
+
+        return redirect()->back()->with('success', 'Tracking record updated successfully');
+    }
+
+    public function viewTracking($id)
+    {
+        $tracking = \App\Models\StudentTracking::with(['student.section.program.department', 'trackedBy'])
+            ->findOrFail($id);
+
+        return response()->json([
+            'success' => true,
+            'tracking' => [
+                'id' => $tracking->id,
+                'type' => $tracking->type,
+                'date' => $tracking->date->format('Y-m-d'),
+                'time' => $tracking->time ? \Carbon\Carbon::parse($tracking->time)->format('H:i') : null,
+                'status' => $tracking->status,
+                'outcome' => $tracking->outcome,
+                'follow_up_required' => $tracking->follow_up_required,
+                'follow_up_date' => $tracking->follow_up_date ? $tracking->follow_up_date->format('Y-m-d') : null,
+                'notes' => $tracking->notes,
+                'student' => [
+                    'id' => $tracking->student->id,
+                    'name' => $tracking->student->first_name . ' ' . $tracking->student->last_name,
+                    'student_number' => $tracking->student->student_number,
+                    'section' => $tracking->student->section?->name ?? 'N/A',
+                    'department' => $tracking->student->section?->program?->department?->name ?? 'N/A',
+                    'program' => $tracking->student->section?->program?->name ?? 'N/A',
+                ],
+                'tracked_by' => $tracking->trackedBy?->name ?? 'Unknown',
+                'created_at' => $tracking->created_at->format('Y-m-d H:i'),
+                'updated_at' => $tracking->updated_at->format('Y-m-d H:i'),
+            ],
+        ]);
+    }
+
+    public function archiveTracking($id)
+    {
+        $tracking = \App\Models\StudentTracking::findOrFail($id);
+        $tracking->update([
+            'archived' => true,
+            'archived_at' => now(),
+        ]);
+
+        return redirect()->back()->with('success', 'Tracking record archived successfully');
+    }
+
+    public function deleteTracking($id)
+    {
+        $tracking = \App\Models\StudentTracking::findOrFail($id);
+        $tracking->delete(); // Soft delete
+
+        return redirect()->back()->with('success', 'Tracking record deleted successfully');
+    }
+
+    public function restoreTracking($id)
+    {
+        $tracking = \App\Models\StudentTracking::withTrashed()->findOrFail($id);
+        $tracking->restore();
+
+        return redirect()->back()->with('success', 'Tracking record restored successfully');
+    }
+
+    public function unarchiveTracking($id)
+    {
+        $tracking = \App\Models\StudentTracking::findOrFail($id);
+        $tracking->update([
+            'archived' => false,
+            'archived_at' => null,
+        ]);
+
+        return redirect()->back()->with('success', 'Tracking record unarchived successfully');
+    }
+
+    public function getArchivedTracking()
+    {
+        $archivedTracking = \App\Models\StudentTracking::with(['student.section.program.department', 'trackedBy'])
+            ->where('archived', true)
+            ->orderBy('archived_at', 'desc')
+            ->orderBy('date', 'desc')
+            ->get()
+            ->map(function ($tracking) {
+                return [
+                    'id' => $tracking->id,
+                    'type' => $tracking->type,
+                    'date' => $tracking->date->format('Y-m-d'),
+                    'time' => $tracking->time ? \Carbon\Carbon::parse($tracking->time)->format('H:i') : null,
+                    'status' => $tracking->status,
+                    'outcome' => $tracking->outcome,
+                    'follow_up_required' => $tracking->follow_up_required,
+                    'follow_up_date' => $tracking->follow_up_date ? $tracking->follow_up_date->format('Y-m-d') : null,
+                    'student' => [
+                        'id' => $tracking->student->id,
+                        'name' => $tracking->student->first_name . ' ' . $tracking->student->last_name,
+                        'section' => $tracking->student->section?->name ?? 'N/A',
+                        'department' => $tracking->student->section?->program?->department?->name ?? 'N/A',
+                        'program' => $tracking->student->section?->program?->name ?? 'N/A',
+                    ],
+                    'tracked_by' => $tracking->trackedBy?->name ?? 'Unknown',
+                    'tracked_by_id' => $tracking->tracked_by,
+                    'notes' => $tracking->notes,
+                    'archived' => $tracking->archived,
+                    'archived_at' => $tracking->archived_at ? $tracking->archived_at->format('Y-m-d H:i') : null,
+                    'can_edit' => true,
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'tracking' => $archivedTracking,
+        ]);
+    }
+
+    public function getDeletedTracking()
+    {
+        $deletedTracking = \App\Models\StudentTracking::withTrashed()
+            ->with(['student.section.program.department', 'trackedBy'])
+            ->whereNotNull('deleted_at')
+            ->orderBy('deleted_at', 'desc')
+            ->get()
+            ->map(function ($tracking) {
+                return [
+                    'id' => $tracking->id,
+                    'type' => $tracking->type,
+                    'date' => $tracking->date->format('Y-m-d'),
+                    'time' => $tracking->time ? \Carbon\Carbon::parse($tracking->time)->format('H:i') : null,
+                    'status' => $tracking->status,
+                    'outcome' => $tracking->outcome,
+                    'follow_up_required' => $tracking->follow_up_required,
+                    'follow_up_date' => $tracking->follow_up_date ? $tracking->follow_up_date->format('Y-m-d') : null,
+                    'student' => [
+                        'id' => $tracking->student->id,
+                        'name' => $tracking->student->first_name . ' ' . $tracking->student->last_name,
+                        'section' => $tracking->student->section?->name ?? 'N/A',
+                        'department' => $tracking->student->section?->program?->department?->name ?? 'N/A',
+                        'program' => $tracking->student->section?->program?->name ?? 'N/A',
+                    ],
+                    'tracked_by' => $tracking->trackedBy?->name ?? 'Unknown',
+                    'tracked_by_id' => $tracking->tracked_by,
+                    'notes' => $tracking->notes,
+                    'deleted_at' => $tracking->deleted_at ? $tracking->deleted_at->format('Y-m-d H:i') : null,
+                    'can_edit' => true,
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'tracking' => $deletedTracking,
+        ]);
     }
 
     public function attendance()
@@ -179,7 +438,6 @@ class SystemAdminController extends Controller
             'recentRecords' => $recentRecords,
             'calendarData' => $calendarData,
             'departmentTrends' => $this->getDepartmentAttendanceTrends(),
-            'facultyCompliance' => $this->getFacultyComplianceTrends(),
             'weeklyStatusProgress' => $this->getWeeklyStatusProgress(),
         ]);
     }
@@ -188,7 +446,6 @@ class SystemAdminController extends Controller
     {
         return response()->json([
             'departmentTrends' => $this->getDepartmentAttendanceTrends(),
-            'facultyCompliance' => $this->getFacultyComplianceTrends(),
             'systemStats' => $this->getSystemStats(),
             'weeklyStatusProgress' => $this->getWeeklyStatusProgress(),
             'timestamp' => now()->toISOString(),
@@ -203,9 +460,11 @@ class SystemAdminController extends Controller
             ->orderBy('first_name')
             ->get()
             ->map(function ($student) {
-                $student->updatePriority(); // Ensure priority is up-to-date
-                // Calculate attendance status (Normal, SLIP, PNS)
-                $student->attendance_status = $student->calculateAttendanceStatus();
+                // First update priority (which also updates absence_count)
+                $student->updatePriority();
+                // Refresh the model to get the updated absence_count
+                $student->refresh();
+                // attendance_status is now automatically available via the accessor and $appends
                 return $student;
             });
 
@@ -224,8 +483,110 @@ class SystemAdminController extends Controller
         ]);
     }
 
-    // Teacher Management Methods
+    public function teachers()
+    {
+        $teachers = \App\Models\Teacher::with(['department', 'optionalDepartment'])
+            ->orderBy('name')
+            ->get()
+            ->map(function ($teacher) {
+                return [
+                    'id' => $teacher->id,
+                    'name' => $teacher->name,
+                    'email' => $teacher->email,
+                    'department_id' => $teacher->department_id,
+                    'optional_department_id' => $teacher->optional_department_id,
+                    'department' => $teacher->department ? [
+                        'id' => $teacher->department->id,
+                        'name' => $teacher->department->name,
+                    ] : null,
+                    'optional_department' => $teacher->optionalDepartment ? [
+                        'id' => $teacher->optionalDepartment->id,
+                        'name' => $teacher->optionalDepartment->name,
+                    ] : null,
+                ];
+            });
+
+        return Inertia::render('Super/SystemAdmin', [
+            'activeTab' => 'teachers',
+            'users' => \App\Models\User::with('roles')->get(),
+            'systemStats' => $this->getSystemStats(),
+            'activityLogs' => $this->getRecentActivityLogs(),
+            'integrations' => $this->getIntegrationStatus(),
+            'systemTools' => $this->getSystemToolsData(),
+            'auditLogs' => AuditLog::with('user')->orderBy('created_at', 'desc')->limit(50)->get(),
+            'teachers' => $teachers,
+            'departments' => \App\Models\Department::orderBy('name')->get(['id', 'name']),
+        ]);
+    }
+
+    // Teacher/Adviser Management Methods
     public function storeTeacher(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:teachers,email',
+            'department_id' => 'required|exists:departments,id',
+            'optional_department_id' => 'nullable|exists:departments,id|different:department_id',
+        ]);
+
+        try {
+            $teacher = \App\Models\Teacher::create([
+                'name' => $request->name,
+                'email' => $request->email,
+                'department_id' => $request->department_id,
+                'optional_department_id' => $request->optional_department_id,
+            ]);
+
+            return back()->with('success', 'Teacher/Adviser created successfully');
+
+        } catch (\Exception $e) {
+            return back()->withErrors(['message' => 'Failed to create teacher: ' . $e->getMessage()]);
+        }
+    }
+
+    public function updateTeacher(Request $request, $id)
+    {
+        try {
+            $teacher = \App\Models\Teacher::findOrFail($id);
+
+            $request->validate([
+                'name' => 'required|string|max:255',
+                'email' => 'required|email|unique:teachers,email,' . $id,
+                'department_id' => 'required|exists:departments,id',
+                'optional_department_id' => 'nullable|exists:departments,id|different:department_id',
+            ]);
+
+            $teacher->update([
+                'name' => $request->name,
+                'email' => $request->email,
+                'department_id' => $request->department_id,
+                'optional_department_id' => $request->optional_department_id,
+            ]);
+
+            return back()->with('success', 'Teacher/Adviser updated successfully');
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return back()->withErrors($e->errors());
+        } catch (\Exception $e) {
+            return back()->withErrors(['message' => 'Failed to update teacher: ' . $e->getMessage()]);
+        }
+    }
+
+    public function destroyTeacher($id)
+    {
+        try {
+            $teacher = \App\Models\Teacher::findOrFail($id);
+            $teacher->delete();
+
+            return back()->with('success', 'Teacher/Adviser deleted successfully');
+
+        } catch (\Exception $e) {
+            return back()->withErrors(['message' => 'Failed to delete teacher: ' . $e->getMessage()]);
+        }
+    }
+
+    // CSDL Management Methods
+    public function storeCSDLUser(Request $request)
     {
         $request->validate([
             'name' => 'required|string|max:255',
@@ -233,8 +594,6 @@ class SystemAdminController extends Controller
             'password' => 'required|string|min:8',
             'department_id' => 'nullable|exists:departments,id',
             'program_id' => 'nullable|exists:programs,id',
-            'section_ids' => 'nullable|array',
-            'section_ids.*' => 'exists:sections,id',
         ]);
 
         try {
@@ -247,40 +606,41 @@ class SystemAdminController extends Controller
                 'program_id' => $request->program_id,
             ]);
 
-            // Assign Teacher role
-            $user->assignRole('Teacher');
-
-            // Assign sections if provided
-            if ($request->section_ids) {
-                $user->sections()->sync($request->section_ids);
-            }
+            // Assign CSDL role
+            $user->assignRole('CSDL');
 
             return response()->json([
                 'success' => true,
-                'message' => 'Teacher created successfully',
-                'teacher' => $user->load(['department', 'program', 'sections'])
+                'message' => 'CSDL created successfully',
+                'csdl_user' => $user->load(['department', 'program'])
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to create teacher: ' . $e->getMessage()
+                'message' => 'Failed to create CSDL: ' . $e->getMessage()
             ], 500);
         }
     }
 
-    public function updateTeacher(Request $request, $id)
+    public function updateCSDLUser(Request $request, $id)
     {
         try {
-            \Log::info('Update teacher request', [
+            \Log::info('Update CSDL request', [
                 'id' => $id,
                 'data' => $request->all(),
                 'department_id' => $request->department_id,
                 'program_id' => $request->program_id,
-                'section_ids' => $request->section_ids
             ]);
 
-            $teacher = \App\Models\User::role('Teacher')->findOrFail($id);
+            $role = \Spatie\Permission\Models\Role::where('name', 'CSDL')->first();
+            if (!$role) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'CSDL role does not exist. Please run the database seeder.'
+                ], 404);
+            }
+            $csdlUser = \App\Models\User::role('CSDL')->findOrFail($id);
 
             $request->validate([
                 'name' => 'required|string|max:255',
@@ -288,8 +648,6 @@ class SystemAdminController extends Controller
                 'password' => 'nullable|string|min:8',
                 'department_id' => 'nullable|integer|exists:departments,id',
                 'program_id' => 'nullable|integer|exists:programs,id',
-                'section_ids' => 'nullable|array',
-                'section_ids.*' => 'integer|exists:sections,id',
             ]);
 
             $updateData = [
@@ -304,23 +662,18 @@ class SystemAdminController extends Controller
                 $updateData['password'] = \Hash::make($request->password);
             }
 
-            $teacher->update($updateData);
+            $csdlUser->update($updateData);
 
-            // Update section assignments
-            if ($request->has('section_ids')) {
-                $teacher->sections()->sync($request->section_ids ?? []);
-            }
-
-            \Log::info('Teacher updated successfully', ['teacher_id' => $teacher->id]);
+            \Log::info('CSDL updated successfully', ['csdl_user_id' => $csdlUser->id]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Teacher updated successfully',
-                'teacher' => $teacher->load(['department', 'program', 'sections'])
+                'message' => 'CSDL updated successfully',
+                'csdl_user' => $csdlUser->load(['department', 'program'])
             ]);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-            \Log::error('Validation error updating teacher', [
+            \Log::error('Validation error updating CSDL', [
                 'id' => $id,
                 'errors' => $e->errors()
             ]);
@@ -330,38 +683,42 @@ class SystemAdminController extends Controller
                 'errors' => $e->errors()
             ], 422);
         } catch (\Exception $e) {
-            \Log::error('Error updating teacher', [
+            \Log::error('Error updating CSDL', [
                 'id' => $id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to update teacher: ' . $e->getMessage()
+                'message' => 'Failed to update CSDL: ' . $e->getMessage()
             ], 500);
         }
     }
 
-    public function destroyTeacher($id)
+    public function destroyCSDLUser($id)
     {
         try {
-            $teacher = \App\Models\User::role('Teacher')->findOrFail($id);
+            $role = \Spatie\Permission\Models\Role::where('name', 'CSDL')->first();
+            if (!$role) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'CSDL role does not exist. Please run the database seeder.'
+                ], 404);
+            }
+            $csdlUser = \App\Models\User::role('CSDL')->findOrFail($id);
             
-            // Remove section assignments
-            $teacher->sections()->detach();
-            
-            // Delete the teacher
-            $teacher->delete();
+            // Delete the CSDL
+            $csdlUser->delete();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Teacher deleted successfully'
+                'message' => 'CSDL deleted successfully'
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to delete teacher: ' . $e->getMessage()
+                'message' => 'Failed to delete CSDL: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -521,8 +878,17 @@ class SystemAdminController extends Controller
                 'max_students' => 'nullable|integer|min:1|max:100'
             ]);
 
+            // Verify that the program belongs to the selected department
+            $program = \App\Models\Program::findOrFail($validated['program_id']);
+            if ($program->department_id != $validated['department_id']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'The selected program does not belong to the selected department.'
+                ], 422);
+            }
+
             $section->update($validated);
-            $section->load(['program.department']);
+            $section->load(['program.department', 'adviser']);
 
             return response()->json([
                 'success' => true,
@@ -557,7 +923,7 @@ class SystemAdminController extends Controller
 
     public function sections()
     {
-        $sections = \App\Models\Section::with(['program.department', 'teachers'])
+        $sections = \App\Models\Section::with(['program.department', 'adviser', 'teachers'])
             ->orderBy('program_id')
             ->orderBy('year_level')
             ->orderBy('name')
@@ -566,7 +932,8 @@ class SystemAdminController extends Controller
                 // Handle sections created with old string-based approach
                 if (!$section->program && !$section->program_id && !empty($section->getAttributes()['program'])) {
                     // Try to find program by code or name
-                    $program = \App\Models\Program::where('code', $section->program)
+                    $program = \App\Models\Program::with('department')
+                        ->where('code', $section->program)
                         ->orWhere('name', 'LIKE', '%' . $section->program . '%')
                         ->first();
                     
@@ -581,17 +948,27 @@ class SystemAdminController extends Controller
                             'code' => $section->program,
                             'name' => $section->program,
                             'department' => (object) [
+                                'id' => null,
                                 'name' => $section->department ?? 'Unknown Department'
                             ]
                         ]);
                     }
                 } elseif (!$section->program && $section->program_id) {
                     // Ensure we have program data even if relationship is missing
-                    $program = \App\Models\Program::find($section->program_id);
+                    $program = \App\Models\Program::with('department')->find($section->program_id);
                     if ($program) {
                         $section->setRelation('program', $program);
                     }
+                } elseif ($section->program && !$section->program->relationLoaded('department')) {
+                    // Ensure department is loaded if program exists but department isn't loaded
+                    $section->program->load('department');
                 }
+                
+                // Ensure we return the section with all relationships properly loaded
+                if ($section->program && !$section->program->relationLoaded('department')) {
+                    $section->program->load('department');
+                }
+                
                 return $section;
             });
 
@@ -620,8 +997,12 @@ class SystemAdminController extends Controller
         $totalDepartments = \App\Models\Department::count();
         $totalPrograms = \App\Models\Program::count();
         
-        // Get teacher count
-        $totalTeachers = \App\Models\User::role('Teacher')->count();
+        // Get CSDL count
+        try {
+            $totalCSDLUsers = \App\Models\User::role('CSDL')->count();
+        } catch (\Exception $e) {
+            $totalCSDLUsers = 0;
+        }
         
         // Get intervention data
         $totalInterventions = \App\Models\Intervention::count();
@@ -635,7 +1016,7 @@ class SystemAdminController extends Controller
             'activeSessions' => \App\Models\User::where('updated_at', '>', now()->subMinutes(30))->count(),
             'totalUsers' => \App\Models\User::count(),
             'totalStudents' => \App\Models\Student::count(),
-            'totalTeachers' => $totalTeachers,
+            'totalCSDLUsers' => $totalCSDLUsers,
             'totalSections' => \App\Models\Section::count(),
             'totalSubjects' => \App\Models\Subject::count(),
             'totalDepartments' => $totalDepartments,
@@ -1322,131 +1703,6 @@ class SystemAdminController extends Controller
         ];
     }
 
-    private function getManagementData($month = null, $week = null)
-    {
-        $startOfWeek = now()->startOfWeek();
-        $endOfWeek = now()->endOfWeek();
-        
-        // If month and week are provided, calculate the specific week
-        if ($month && $week) {
-            // Parse month (format: "January 2025" or "2025-01")
-            try {
-                if (strpos($month, '-') !== false) {
-                    // Format: "2025-01"
-                    $date = \Carbon\Carbon::createFromFormat('Y-m', $month)->startOfMonth();
-                } else {
-                    // Format: "January 2025"
-                    $date = \Carbon\Carbon::parse($month)->startOfMonth();
-                }
-                // Get the start of the specified week within that month
-                $weeks = [];
-                $current = $date->copy();
-                while ($current->month == $date->month) {
-                    $weekStart = $current->copy()->startOfWeek();
-                    $weekEnd = $current->copy()->endOfWeek();
-                    if ($weekStart->month == $date->month || $weekEnd->month == $date->month) {
-                        $weeks[] = [
-                            'start' => $weekStart,
-                            'end' => $weekEnd,
-                            'number' => count($weeks) + 1,
-                        ];
-                    }
-                    $current->addWeek();
-                }
-                if (isset($weeks[$week - 1])) {
-                    $startOfWeek = $weeks[$week - 1]['start'];
-                    $endOfWeek = $weeks[$week - 1]['end'];
-                }
-            } catch (\Exception $e) {
-                // Fallback to current week if parsing fails
-            }
-        }
-
-        $summaries = \App\Models\WeeklySummary::with(['student.section.program.department'])
-            ->whereBetween('week_start', [$startOfWeek->toDateString(), $endOfWeek->toDateString()])
-            ->get();
-
-        $data = $summaries->map(function ($summary) use ($startOfWeek, $endOfWeek) {
-            $student = $summary->student;
-            $total = (int)$summary->present_count + (int)$summary->late_count + (int)$summary->absent_count;
-            $status = 'Normal';
-            if (($summary->present_count + $summary->late_count) === 0 && $summary->absent_count > 0) {
-                $status = 'PNS';
-            } elseif ($total > 0 && $summary->absent_count > ($total / 2)) {
-                $status = 'SLIP';
-            }
-
-            // Aggregate specific reasons from absent remarks within the week
-            $reasons = \App\Models\AttendanceRecord::where('student_id', $student->id)
-                ->whereBetween('date', [$startOfWeek->toDateString(), $endOfWeek->toDateString()])
-                ->where('status', 'absent')
-                ->whereNotNull('remarks')
-                ->pluck('remarks')
-                ->filter()
-                ->unique()
-                ->values()
-                ->implode(', ');
-
-            $existingRemark = \App\Models\ManagementRemark::where('student_id', $student->id)
-                ->where('week_start', $startOfWeek->toDateString())
-                ->where('week_end', $endOfWeek->toDateString())
-                ->first();
-
-            // Calculate month name and week number
-            $monthName = $startOfWeek->format('F Y'); // e.g., "January 2025"
-            $weekNumber = $startOfWeek->weekOfMonth; // Week number within the month
-            $weekName = 'Week ' . $weekNumber . ' of ' . $startOfWeek->format('F Y');
-            $dateRange = $startOfWeek->format('M d') . ' - ' . $endOfWeek->format('M d, Y');
-
-            return [
-                'id' => $student->id,
-                'student' => [
-                    'first_name' => $student->first_name,
-                    'last_name' => $student->last_name,
-                    'student_number' => $student->student_number,
-                    'email' => $student->email ?? null,
-                ],
-                'section' => $student->section->name ?? null,
-                'department' => optional(optional($student->section)->program)->department->name ?? null,
-                'status' => $status,
-                'specific_reasons' => $reasons,
-                'remarks' => $existingRemark->remark ?? '',
-                'month' => $monthName,
-                'week' => [
-                    'start' => $startOfWeek->toDateString(),
-                    'end' => $endOfWeek->toDateString(),
-                    'label' => $weekName,
-                    'number' => $weekNumber,
-                    'date_range' => $dateRange,
-                ],
-            ];
-        });
-
-        // Get available months and weeks for filters
-        $availableMonths = \App\Models\WeeklySummary::selectRaw('DATE_FORMAT(week_start, "%Y-%m") as month, DATE_FORMAT(week_start, "%M %Y") as month_name')
-            ->distinct()
-            ->orderBy('month', 'desc')
-            ->get()
-            ->map(function ($item) {
-                return [
-                    'value' => $item->month,
-                    'label' => $item->month_name,
-                ];
-            });
-
-        return [
-            'data' => $data,
-            'week' => [
-                'start' => $startOfWeek->toDateString(),
-                'end' => $endOfWeek->toDateString(),
-                'label' => 'Week ' . $startOfWeek->weekOfMonth . ' of ' . $startOfWeek->format('F Y'),
-                'number' => $startOfWeek->weekOfMonth,
-                'date_range' => $startOfWeek->format('M d') . ' - ' . $endOfWeek->format('M d, Y'),
-            ],
-            'month' => $startOfWeek->format('F Y'),
-            'available_months' => $availableMonths,
-        ];
-    }
 
     private function isUserRelevantEvent($message)
     {
@@ -1613,71 +1869,80 @@ class SystemAdminController extends Controller
         ];
 
         try {
-            // Get all teachers and their assigned sections
-            $teachers = \App\Models\User::role('Teacher')
-                ->with(['sections.program.department'])
+            // Check if CSDL role exists
+            $role = \Spatie\Permission\Models\Role::where('name', 'CSDL')->first();
+            if (!$role) {
+                return response()->json([
+                    'csdl_users' => [],
+                    'filters' => $filters,
+                    'summary' => [
+                        'total_csdl_users' => 0,
+                        'average_activity' => 0,
+                        'active_csdl_users' => 0,
+                    ],
+                ]);
+            }
+            
+            // Get all CSDL and their tracking activity
+            $csdlUsers = \App\Models\User::role('CSDL')
+                ->with(['department', 'program'])
                 ->get()
-                ->map(function($teacher) use ($filters) {
-                    $sections = $teacher->sections;
-                    $totalSections = $sections->count();
+                ->map(function($csdlUser) use ($filters) {
+                    $startDate = \Carbon\Carbon::parse($filters['date_range'][0]);
+                    $endDate = \Carbon\Carbon::parse($filters['date_range'][1]);
                     
-                    // Calculate expected attendance records for this teacher's sections
-                    $expectedRecords = 0;
-                    $actualRecords = 0;
-                    $lateRecords = 0;
+                    // Count tracking records by this CSDL
+                    $calls = \App\Models\StudentTracking::where('tracked_by', $csdlUser->id)
+                        ->where('type', 'call')
+                        ->whereBetween('date', $filters['date_range'])
+                        ->count();
                     
-                    foreach ($sections as $section) {
-                        // Count expected attendance days in the date range
-                        $startDate = \Carbon\Carbon::parse($filters['date_range'][0]);
-                        $endDate = \Carbon\Carbon::parse($filters['date_range'][1]);
-                        $daysDiff = $startDate->diffInDays($endDate);
-                        $expectedRecords += $section->students->count() * $daysDiff;
-                        
-                        // Count actual attendance records recorded by this teacher
-                        $actualRecords += \App\Models\AttendanceRecord::whereHas('student', function($query) use ($section) {
-                                $query->where('section_id', $section->id);
-                            })
-                            ->where('recorded_by', $teacher->id)
-                            ->whereBetween('date', $filters['date_range'])
-                            ->count();
-                        
-                        // Count late submissions (records created more than 1 hour after class time)
-                        $lateRecords += \App\Models\AttendanceRecord::whereHas('student', function($query) use ($section) {
-                                $query->where('section_id', $section->id);
-                            })
-                            ->where('recorded_by', $teacher->id)
-                            ->whereBetween('date', $filters['date_range'])
-                            ->whereRaw('TIMESTAMPDIFF(HOUR, CONCAT(date, " ", TIME(schedules.time_start)), created_at) > 1')
-                            ->join('schedules', 'attendance_records.schedule_id', '=', 'schedules.id')
-                            ->count();
-                    }
+                    $visits = \App\Models\StudentTracking::where('tracked_by', $csdlUser->id)
+                        ->where('type', 'home_visit')
+                        ->whereBetween('date', $filters['date_range'])
+                        ->count();
                     
-                    $complianceRate = $expectedRecords > 0 ? round(($actualRecords / $expectedRecords) * 100, 2) : 0;
-                    $timelinessRate = $actualRecords > 0 ? round((($actualRecords - $lateRecords) / $actualRecords) * 100, 2) : 0;
+                    $totalTracking = $calls + $visits;
+                    
+                    // Get students needing attention in their department/program
+                    $studentsNeedingAttention = \App\Models\Student::whereIn('priority', ['Call Needed', 'PNS'])
+                        ->when($csdlUser->department_id, function($query) use ($csdlUser) {
+                            return $query->whereHas('section.program', function($q) use ($csdlUser) {
+                                $q->where('department_id', $csdlUser->department_id);
+                            });
+                        })
+                        ->when($csdlUser->program_id, function($query) use ($csdlUser) {
+                            return $query->whereHas('section', function($q) use ($csdlUser) {
+                                $q->where('program_id', $csdlUser->program_id);
+                            });
+                        })
+                        ->count();
+                    
+                    $activityRate = $studentsNeedingAttention > 0 
+                        ? round(($totalTracking / max($studentsNeedingAttention, 1)) * 100, 2) 
+                        : 0;
                     
                     return [
-                        'id' => $teacher->id,
-                        'name' => $teacher->name,
-                        'email' => $teacher->email,
-                        'total_sections' => $totalSections,
-                        'expected_records' => $expectedRecords,
-                        'actual_records' => $actualRecords,
-                        'late_records' => $lateRecords,
-                        'compliance_rate' => $complianceRate,
-                        'timeliness_rate' => $timelinessRate,
-                        'status' => $this->getComplianceStatus($complianceRate, $timelinessRate),
-                        'departments' => $sections->pluck('program.department.name')->unique()->values(),
+                        'id' => $csdlUser->id,
+                        'name' => $csdlUser->name,
+                        'email' => $csdlUser->email,
+                        'calls' => $calls,
+                        'visits' => $visits,
+                        'total_tracking' => $totalTracking,
+                        'students_needing_attention' => $studentsNeedingAttention,
+                        'activity_rate' => $activityRate,
+                        'status' => $this->getCSDLActivityStatus($activityRate),
+                        'department' => $csdlUser->department?->name ?? 'N/A',
                     ];
                 });
 
             return response()->json([
-                'teachers' => $teachers,
+                'csdl_users' => $csdlUsers,
                 'filters' => $filters,
                 'summary' => [
-                    'total_teachers' => $teachers->count(),
-                    'average_compliance' => $teachers->avg('compliance_rate'),
-                    'average_timeliness' => $teachers->avg('timeliness_rate'),
-                    'compliant_teachers' => $teachers->where('compliance_rate', '>=', 90)->count(),
+                    'total_csdl_users' => $csdlUsers->count(),
+                    'average_activity' => $csdlUsers->avg('activity_rate'),
+                    'active_csdl_users' => $csdlUsers->where('activity_rate', '>=', 50)->count(),
                 ],
             ]);
         } catch (\Exception $e) {
@@ -1889,49 +2154,60 @@ class SystemAdminController extends Controller
 
     private function getFacultyComplianceTrends()
     {
-        $teachers = \App\Models\User::role('Teacher')->with(['sections'])->get();
-        $compliance = [];
+        $role = \Spatie\Permission\Models\Role::where('name', 'CSDL')->first();
+        if (!$role) {
+            return [];
+        }
+        $csdlUsers = \App\Models\User::role('CSDL')->get();
+        $activity = [];
         
-        foreach ($teachers as $teacher) {
-            // Get sections assigned to this teacher
-            $assignedSections = $teacher->sections;
+        foreach ($csdlUsers as $csdlUser) {
+            // Count tracking records by this CSDL user in the last 30 days
+            $trackingRecords = \App\Models\StudentTracking::where('tracked_by', $csdlUser->id)
+                ->where('created_at', '>=', now()->subDays(30))
+                ->count();
             
-            if ($assignedSections->count() > 0) {
-                // Count total attendance records taken by this teacher in the last 30 days
-                $attendanceRecords = \App\Models\AttendanceRecord::where('recorded_by', $teacher->id)
-                    ->where('created_at', '>=', now()->subDays(30))
-                    ->count();
-                
-                // Estimate expected attendance records (assuming 1 record per section per day)
-                $expectedRecords = $assignedSections->count() * 20; // 20 days in a month
-                
-                // Calculate compliance rate
-                $complianceRate = $expectedRecords > 0 ? round(($attendanceRecords / $expectedRecords) * 100, 1) : 0;
-                
-                $compliance[] = [
-                    'teacher' => $teacher->name,
-                    'compliance_rate' => $complianceRate,
-                    'assigned_sections' => $assignedSections->count(),
-                    'attendance_records' => $attendanceRecords,
-                    'expected_records' => $expectedRecords,
-                ];
-            } else {
-                $compliance[] = [
-                    'teacher' => $teacher->name,
-                    'compliance_rate' => 0,
-                    'assigned_sections' => 0,
-                    'attendance_records' => 0,
-                    'expected_records' => 0,
-                ];
-            }
+            // Get students needing attention
+            $studentsNeedingAttention = \App\Models\Student::whereIn('priority', ['Call Needed', 'PNS'])
+                ->when($csdlUser->department_id, function($query) use ($csdlUser) {
+                    return $query->whereHas('section.program', function($q) use ($csdlUser) {
+                        $q->where('department_id', $csdlUser->department_id);
+                    });
+                })
+                ->count();
+            
+            // Calculate activity rate
+            $activityRate = $studentsNeedingAttention > 0 
+                ? round(($trackingRecords / max($studentsNeedingAttention, 1)) * 100, 1) 
+                : 0;
+            
+            $activity[] = [
+                'csdl_user' => $csdlUser->name,
+                'activity_rate' => $activityRate,
+                'tracking_records' => $trackingRecords,
+                'students_needing_attention' => $studentsNeedingAttention,
+            ];
         }
         
-        // Sort by compliance rate descending
-        usort($compliance, function($a, $b) {
-            return $b['compliance_rate'] <=> $a['compliance_rate'];
+        // Sort by activity rate descending
+        usort($activity, function($a, $b) {
+            return $b['activity_rate'] <=> $a['activity_rate'];
         });
         
-        return $compliance;
+        return $activity;
+    }
+
+    private function getCSDLActivityStatus($activityRate)
+    {
+        if ($activityRate >= 80) {
+            return 'excellent';
+        } elseif ($activityRate >= 50) {
+            return 'good';
+        } elseif ($activityRate >= 25) {
+            return 'fair';
+        } else {
+            return 'needs_improvement';
+        }
     }
 
     private function getWeeklyStatusProgress()
@@ -2004,14 +2280,18 @@ class SystemAdminController extends Controller
         $validated = $request->validate([
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
-            'student_number' => 'required|string|unique:students,student_number',
+            'student_number' => 'required|string|regex:/^[0-9-]+$/|unique:students,student_number',
             'email' => 'required|email|unique:students,email',
-            'section_id' => 'required|exists:sections,id',
-            'year_level' => 'required|string',
+            'phone' => 'nullable|digits:11',
+            'department_id' => 'nullable|exists:departments,id',
+            'program_id' => 'nullable|exists:programs,id',
+            'section_id' => 'nullable|exists:sections,id',
+            'teacher_id' => 'nullable|exists:users,id',
+            'year_level' => 'nullable|string',
             'gender' => 'nullable|string',
             'birth_date' => 'nullable|date',
             'guardian_name' => 'nullable|string|max:255',
-            'guardian_contact' => 'nullable|string|max:255',
+            'guardian_contact' => 'nullable|digits:11',
         ]);
 
         $student = \App\Models\Student::create([
@@ -2020,8 +2300,11 @@ class SystemAdminController extends Controller
             'student_number' => $validated['student_number'],
             'student_id' => $validated['student_number'],
             'email' => $validated['email'],
-            'section_id' => $validated['section_id'],
-            'year_level' => $validated['year_level'],
+            'phone' => $validated['phone'] ?? null,
+            'department_id' => $validated['department_id'] ?? null,
+            'program_id' => $validated['program_id'] ?? null,
+            'section_id' => $validated['section_id'] ?? null,
+            'year_level' => $validated['year_level'] ?? null,
             'gender' => $validated['gender'] ?? null,
             'birth_date' => $validated['birth_date'] ?? null,
             'guardian_name' => $validated['guardian_name'] ?? null,
@@ -2029,9 +2312,140 @@ class SystemAdminController extends Controller
             'status' => 'Active',
         ]);
 
+        // Assign teacher to student if provided
+        if (!empty($validated['teacher_id'])) {
+            // The teacher_id is actually a User ID (from getDepartmentTeachers)
+            $user = \App\Models\User::find($validated['teacher_id']);
+            if ($user) {
+                // Verify user belongs to the selected department
+                if ($user->department_id == $validated['department_id']) {
+                    // Attach teacher to student via student_teachers pivot table
+                    $student->teachers()->syncWithoutDetaching([$validated['teacher_id']]);
+                }
+            }
+        }
+
         $student->updatePriority();
 
         return redirect()->route('super.settings', ['#students'])->with('success', 'Student created successfully!');
+    }
+
+    public function getDepartmentTeachers($departmentId)
+    {
+        try {
+            // Get all teachers that belong to this department (primary or optional)
+            $teachers = \App\Models\Teacher::where(function($query) use ($departmentId) {
+                    $query->where('department_id', $departmentId)
+                          ->orWhere('optional_department_id', $departmentId);
+                })
+                ->orderBy('name')
+                ->get()
+                ->map(function ($teacher) {
+                    // Find or create corresponding User by email (for student_teachers pivot table)
+                    $user = \App\Models\User::firstOrCreate(
+                        ['email' => $teacher->email],
+                        [
+                            'name' => $teacher->name,
+                            'password' => \Hash::make('password'), // Default password, should be changed
+                            'department_id' => $teacher->department_id,
+                        ]
+                    );
+                    
+                    // Assign Teacher role if not already assigned
+                    if (!$user->hasRole('Teacher')) {
+                        $teacherRole = \Spatie\Permission\Models\Role::firstOrCreate(['name' => 'Teacher']);
+                        $user->assignRole($teacherRole);
+                    }
+                    
+                    return [
+                        'id' => $user->id,
+                        'name' => $teacher->name,
+                        'email' => $teacher->email,
+                    ];
+                });
+            
+            return response()->json([
+                'success' => true,
+                'teachers' => $teachers,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to fetch department teachers: ' . $e->getMessage(), [
+                'department_id' => $departmentId,
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch teachers: ' . $e->getMessage(),
+                'teachers' => [],
+            ], 500);
+        }
+    }
+
+    public function updateStudent(Request $request, $id)
+    {
+        $student = \App\Models\Student::findOrFail($id);
+
+        $validated = $request->validate([
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
+            'email' => 'required|email|unique:students,email,' . $student->id,
+            'phone' => 'nullable|digits:11',
+            'guardian_name' => 'nullable|string|max:255',
+            'guardian_contact' => 'nullable|digits:11',
+            'year_level' => 'nullable|string',
+            'status' => 'required|string|in:Normal,SLIP,PNS',
+            'absence_count' => 'required|integer|min:0',
+        ]);
+
+        $student->first_name = $validated['first_name'];
+        $student->last_name = $validated['last_name'];
+        $student->email = $validated['email'];
+        $student->phone = $validated['phone'] ?? null;
+        $student->guardian_name = $validated['guardian_name'] ?? null;
+        $student->guardian_contact = $validated['guardian_contact'] ?? null;
+        $student->year_level = $validated['year_level'] ?? null;
+        $student->status = $validated['status'];
+        $student->absence_count = $validated['absence_count'];
+        $student->calculatePriority();
+        $student->save();
+
+        return back()->with('success', 'Student updated successfully.');
+    }
+
+    public function sendStudentToCSDL(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'type' => 'required|in:call,home_visit',
+            'csdl_user_id' => 'nullable|exists:users,id',
+            'notes' => 'nullable|string',
+        ]);
+
+        $student = \App\Models\Student::findOrFail($id);
+
+        // Get CSDL - if not specified, use the first available CSDL
+        $csdlUserId = $validated['csdl_user_id'] ?? \App\Models\User::role('CSDL')->first()?->id;
+
+        if (!$csdlUserId) {
+            return redirect()->back()->with('error', 'No CSDL available to assign this task.');
+        }
+
+        // Create tracking record
+        \App\Models\StudentTracking::create([
+            'student_id' => $student->id,
+            'tracked_by' => $csdlUserId,
+            'type' => $validated['type'],
+            'date' => now()->toDateString(),
+            'status' => 'scheduled',
+            'notes' => $validated['notes'] ?? "Assigned by " . auth()->user()->name,
+        ]);
+
+        // Update student priority so they appear in "Students Needing Attention" table
+        $priority = $validated['type'] === 'home_visit' ? 'PNS' : 'Call Needed';
+        $student->priority = $priority;
+        $student->save();
+        $student->refresh();
+
+        return redirect()->back()->with('success', "Student sent to CSDL for {$validated['type']}.");
     }
 
     public function destroyStudent($id)
@@ -2041,6 +2455,172 @@ class SystemAdminController extends Controller
         
         // Return redirect back with success message for Inertia
         return back()->with('success', 'Student deleted successfully.');
+    }
+
+    public function getDeletedStudents()
+    {
+        $deletedStudents = \App\Models\Student::onlyTrashed()
+            ->with(['section.program.department', 'department', 'program', 'studentTracking' => function($query) {
+                $query->where('archived', false)
+                    ->orderBy('date', 'desc')
+                    ->orderBy('created_at', 'desc')
+                    ->limit(1);
+            }])
+            ->orderBy('deleted_at', 'desc')
+            ->get()
+            ->map(function ($student) {
+                $latestTracking = $student->studentTracking->first();
+                return [
+                    'id' => $student->id,
+                    'name' => $student->first_name . ' ' . $student->last_name,
+                    'student_number' => $student->student_number,
+                    'email' => $student->email,
+                    'phone' => $student->phone,
+                    'section' => $student->section?->name ?? 'N/A',
+                    'department' => $student->department?->name ?? $student->section?->program?->department?->name ?? 'N/A',
+                    'program' => $student->program?->name ?? $student->section?->program?->name ?? 'N/A',
+                    'year_level' => $student->year_level ?? 'N/A',
+                    'priority' => $student->priority ?? 'Safe',
+                    'absence_count' => $student->absence_count ?? 0,
+                    'guardian_contact' => $student->guardian_contact ?? 'N/A',
+                    'tracking_status' => $latestTracking?->status ?? 'No Status',
+                    'deleted_at' => $student->deleted_at ? $student->deleted_at->format('Y-m-d H:i') : null,
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'students' => $deletedStudents,
+        ]);
+    }
+
+    public function restoreStudent($id)
+    {
+        $student = \App\Models\Student::onlyTrashed()->findOrFail($id);
+        $student->restore();
+
+        return redirect()->back()->with('success', 'Student restored successfully');
+    }
+
+    public function archiveStudentFromAttention($id)
+    {
+        $student = \App\Models\Student::findOrFail($id);
+        
+        // Change priority to Safe to remove from "Students Needing Attention" table
+        $student->priority = 'Safe';
+        $student->save();
+        
+        // Archive all active tracking records for this student
+        \App\Models\StudentTracking::where('student_id', $student->id)
+            ->where('archived', false)
+            ->update([
+                'archived' => true,
+                'archived_at' => now(),
+            ]);
+        
+        return redirect()->back()->with('success', 'Student archived from attention list successfully.');
+    }
+
+    public function exportTracking(Request $request)
+    {
+        try {
+            $tab = $request->get('tab', 'recent'); // 'recent', 'archived', 'deleted'
+            
+            // Build query based on tab
+            $query = \App\Models\StudentTracking::with(['student.section.program.department', 'student.department', 'student.program', 'trackedBy']);
+            
+            if ($tab === 'archived') {
+                $query->where('archived', true);
+            } elseif ($tab === 'deleted') {
+                $query->onlyTrashed();
+            } else {
+                $query->where('archived', false);
+            }
+            
+            $trackings = $query->orderBy('date', 'desc')
+                ->orderBy('created_at', 'desc')
+                ->get();
+            
+            // Generate CSV content
+            $output = fopen('php://temp', 'r+');
+            
+            // Add BOM for UTF-8
+            fwrite($output, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            // Headers
+            fputcsv($output, [
+                'ID',
+                'Student Name',
+                'Student Number',
+                'Section',
+                'Department',
+                'Program',
+                'Type',
+                'Date',
+                'Time',
+                'Status',
+                'Tracked By',
+                'Notes',
+                'Outcome',
+                'Follow-up Required',
+                'Follow-up Date',
+                'Archived',
+                'Archived At',
+                'Deleted At',
+                'Created At',
+                'Updated At',
+            ]);
+            
+            // Data rows
+            foreach ($trackings as $tracking) {
+                try {
+                    fputcsv($output, [
+                        $tracking->id ?? '',
+                        ($tracking->student ? ($tracking->student->first_name . ' ' . $tracking->student->last_name) : 'N/A'),
+                        $tracking->student->student_number ?? '',
+                        $tracking->student->section?->name ?? 'N/A',
+                        $tracking->student->department?->name ?? $tracking->student->section?->program?->department?->name ?? 'N/A',
+                        $tracking->student->program?->name ?? $tracking->student->section?->program?->name ?? 'N/A',
+                        ucfirst(str_replace('_', ' ', $tracking->type ?? '')),
+                        $tracking->date ? $tracking->date->format('Y-m-d') : '',
+                        $tracking->time ? \Carbon\Carbon::parse($tracking->time)->format('H:i') : '',
+                        ucfirst($tracking->status ?? ''),
+                        $tracking->trackedBy?->name ?? 'Unknown',
+                        $tracking->notes ?? '',
+                        $tracking->outcome ?? '',
+                        $tracking->follow_up_required ?? '',
+                        $tracking->follow_up_date ? $tracking->follow_up_date->format('Y-m-d') : '',
+                        $tracking->archived ? 'Yes' : 'No',
+                        $tracking->archived_at ? $tracking->archived_at->format('Y-m-d H:i:s') : '',
+                        $tracking->deleted_at ? $tracking->deleted_at->format('Y-m-d H:i:s') : '',
+                        $tracking->created_at ? $tracking->created_at->format('Y-m-d H:i:s') : '',
+                        $tracking->updated_at ? $tracking->updated_at->format('Y-m-d H:i:s') : '',
+                    ]);
+                } catch (\Exception $e) {
+                    // Skip problematic rows and continue
+                    continue;
+                }
+            }
+            
+            rewind($output);
+            $csvContent = stream_get_contents($output);
+            fclose($output);
+            
+            // Generate filename
+            $filename = 'tracking_records_' . $tab . '_' . date('Y-m-d_His') . '.csv';
+            
+            // Return response with Content-Length header
+            return response($csvContent, 200, [
+                'Content-Type' => 'text/csv; charset=UTF-8',
+                'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+                'Content-Length' => strlen($csvContent),
+                'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
+                'Pragma' => 'public',
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Export tracking error: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Failed to export tracking records: ' . $e->getMessage());
+        }
     }
 
     // Student Import/Export Methods
@@ -2118,45 +2698,75 @@ class SystemAdminController extends Controller
     public function exportStudents(Request $request)
     {
         try {
-            $validated = $request->validate([
+            // Handle both FormData and JSON requests
+            // Convert empty strings to null for nullable fields
+            $input = $request->all();
+            foreach (['student_id', 'department_id', 'program_id', 'section_id', 'year_level'] as $field) {
+                if (isset($input[$field]) && $input[$field] === '') {
+                    $input[$field] = null;
+                }
+            }
+            
+            $validated = validator($input, [
                 'format' => ['required', 'string', 'in:csv,xml'],
-                'student_id' => ['nullable', 'exists:students,id'],
-                'department_id' => ['nullable', 'exists:departments,id'],
-                'program_id' => ['nullable', 'exists:programs,id'],
-                'section_id' => ['nullable', 'exists:sections,id'],
+                'student_id' => ['nullable', 'integer', 'exists:students,id'],
+                'department_id' => ['nullable', 'integer', 'exists:departments,id'],
+                'program_id' => ['nullable', 'integer', 'exists:programs,id'],
+                'section_id' => ['nullable', 'integer', 'exists:sections,id'],
                 'year_level' => ['nullable', 'string'],
-            ]);
+            ])->validate();
+            
+            // Convert string IDs to integers if they come from FormData
+            if (!empty($validated['student_id'])) {
+                $validated['student_id'] = (int) $validated['student_id'];
+            }
+            if (!empty($validated['department_id'])) {
+                $validated['department_id'] = (int) $validated['department_id'];
+            }
+            if (!empty($validated['program_id'])) {
+                $validated['program_id'] = (int) $validated['program_id'];
+            }
+            if (!empty($validated['section_id'])) {
+                $validated['section_id'] = (int) $validated['section_id'];
+            }
 
             // Build query with filters
             $query = \App\Models\Student::with(['section.program.department']);
 
             // If exporting a single student, filter by student_id
-            if ($validated['student_id']) {
+            if (!empty($validated['student_id'])) {
                 $query->where('id', $validated['student_id']);
             } else {
                 // Apply other filters only if not exporting a single student
-                if ($validated['department_id']) {
+                if (!empty($validated['department_id'])) {
                     $query->whereHas('section.program', function($q) use ($validated) {
                         $q->where('department_id', $validated['department_id']);
                     });
                 }
 
-                if ($validated['program_id']) {
+                if (!empty($validated['program_id'])) {
                     $query->whereHas('section', function($q) use ($validated) {
                         $q->where('program_id', $validated['program_id']);
                     });
                 }
 
-                if ($validated['section_id']) {
+                if (!empty($validated['section_id'])) {
                     $query->where('section_id', $validated['section_id']);
                 }
 
-                if ($validated['year_level']) {
+                if (!empty($validated['year_level'])) {
                     $query->where('year_level', $validated['year_level']);
                 }
             }
 
             $students = $query->get();
+            
+            if ($students->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No students found matching the criteria.'
+                ], 404);
+            }
 
             if ($validated['format'] === 'csv') {
                 return $this->exportStudentsToCsv($students, $validated['student_id'] ?? null);
@@ -2164,127 +2774,210 @@ class SystemAdminController extends Controller
                 return $this->exportStudentsToXml($students, $validated['student_id'] ?? null);
             }
 
-        } catch (\Exception $e) {
-            \Log::error('Export failed: ' . $e->getMessage(), [
+        } catch (\ValidationException $e) {
+            \Log::error('Export validation failed: ' . $e->getMessage(), [
                 'request_data' => $request->all(),
-                'trace' => $e->getTraceAsString()
+                'errors' => $e->errors()
             ]);
             
             return response()->json([
                 'success' => false,
-                'message' => 'Export failed: ' . $e->getMessage()
+                'message' => 'Validation failed: ' . $e->getMessage(),
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Export failed: ' . $e->getMessage(), [
+                'request_data' => $request->all(),
+                'trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Export failed: ' . $e->getMessage(),
+                'error_details' => config('app.debug') ? [
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                    'trace' => $e->getTraceAsString()
+                ] : null
             ], 500);
         }
     }
 
     private function exportStudentsToCsv($students, $studentId = null)
     {
-        if ($studentId) {
-            $student = $students->first();
-            $filename = 'student_' . ($student->student_number ?? $student->id) . '_' . date('Y-m-d_H-i-s') . '.csv';
-        } else {
-            $filename = 'student_records_' . date('Y-m-d_H-i-s') . '.csv';
-        }
-        
-        $headers = [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-        ];
-
-        $callback = function() use ($students) {
-            $file = fopen('php://output', 'w');
-            
-            // CSV Headers
-            fputcsv($file, [
-                'Student ID',
-                'Student Number',
-                'First Name',
-                'Last Name',
-                'Email',
-                'Gender',
-                'Birth Date',
-                'Department',
-                'Program',
-                'Section',
-                'Year Level',
-                'Guardian Name',
-                'Guardian Contact',
-                'Status',
-                'Priority',
-                'Absence Count',
-                'Created At',
-                'Updated At'
-            ]);
-
-            // CSV Data
-            foreach ($students as $student) {
-                fputcsv($file, [
-                    $student->id,
-                    $student->student_number,
-                    $student->first_name,
-                    $student->last_name,
-                    $student->email,
-                    $student->gender,
-                    $student->birth_date,
-                    $student->section?->program?->department?->name ?? 'N/A',
-                    $student->section?->program?->name ?? 'N/A',
-                    $student->section?->name ?? 'N/A',
-                    $student->year_level ?? 'N/A',
-                    $student->guardian_name,
-                    $student->guardian_contact,
-                    $student->status ?? 'Active',
-                    $student->priority ?? 'Safe',
-                    $student->absence_count ?? 0,
-                    $student->created_at?->format('Y-m-d H:i:s'),
-                    $student->updated_at?->format('Y-m-d H:i:s')
-                ]);
+        try {
+            if ($studentId) {
+                $student = $students->first();
+                $filename = 'student_' . ($student->student_number ?? $student->id) . '_' . date('Y-m-d_H-i-s') . '.csv';
+            } else {
+                $filename = 'student_records_' . date('Y-m-d_H-i-s') . '.csv';
             }
+            
+            $headers = [
+                'Content-Type' => 'text/csv; charset=UTF-8',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            ];
 
-            fclose($file);
-        };
+            $callback = function() use ($students) {
+                $file = fopen('php://output', 'w');
+                
+                if ($file === false) {
+                    throw new \Exception('Failed to open output stream for CSV export');
+                }
+                
+                // CSV Headers
+                fputcsv($file, [
+                    'Student ID',
+                    'Student Number',
+                    'First Name',
+                    'Last Name',
+                    'Email',
+                    'Phone',
+                    'Gender',
+                    'Birth Date',
+                    'Department',
+                    'Program',
+                    'Section',
+                    'Year Level',
+                    'Guardian Name',
+                    'Guardian Contact',
+                    'Status',
+                    'Priority',
+                    'Absence Count',
+                    'Created At',
+                    'Updated At'
+                ]);
 
-        return response()->stream($callback, 200, $headers);
+                // CSV Data
+                foreach ($students as $student) {
+                    try {
+                        fputcsv($file, [
+                            $student->id ?? '',
+                            $student->student_number ?? '',
+                            $student->first_name ?? '',
+                            $student->last_name ?? '',
+                            $student->email ?? '',
+                            isset($student->phone) ? $student->phone : '',
+                            $student->gender ?? '',
+                            $student->birth_date ? ($student->birth_date instanceof \Carbon\Carbon ? $student->birth_date->format('Y-m-d') : $student->birth_date) : '',
+                            $student->section?->program?->department?->name ?? 'N/A',
+                            $student->section?->program?->name ?? 'N/A',
+                            $student->section?->name ?? 'N/A',
+                            $student->year_level ?? 'N/A',
+                            $student->guardian_name ?? '',
+                            $student->guardian_contact ?? '',
+                            $student->status ?? 'Active',
+                            $student->priority ?? 'Safe',
+                            $student->absence_count ?? 0,
+                            $student->created_at ? ($student->created_at instanceof \Carbon\Carbon ? $student->created_at->format('Y-m-d H:i:s') : $student->created_at) : '',
+                            $student->updated_at ? ($student->updated_at instanceof \Carbon\Carbon ? $student->updated_at->format('Y-m-d H:i:s') : $student->updated_at) : ''
+                        ]);
+                    } catch (\Exception $e) {
+                        \Log::error('Error exporting student: ' . $e->getMessage(), [
+                            'student_id' => $student->id ?? 'unknown'
+                        ]);
+                        // Continue with next student
+                        continue;
+                    }
+                }
+
+                fclose($file);
+            };
+
+            return response()->stream($callback, 200, $headers);
+        } catch (\Exception $e) {
+            \Log::error('CSV Export failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
+        }
     }
 
     private function exportStudentsToXml($students, $studentId = null)
     {
-        if ($studentId) {
-            $student = $students->first();
-            $filename = 'student_' . ($student->student_number ?? $student->id) . '_' . date('Y-m-d_H-i-s') . '.xml';
-        } else {
-            $filename = 'student_records_' . date('Y-m-d_H-i-s') . '.xml';
-        }
-        
-        $xml = new \SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?><students></students>');
-        
-        foreach ($students as $student) {
-            $studentNode = $xml->addChild('student');
-            $studentNode->addChild('id', htmlspecialchars($student->id));
-            $studentNode->addChild('student_number', htmlspecialchars($student->student_number));
-            $studentNode->addChild('first_name', htmlspecialchars($student->first_name));
-            $studentNode->addChild('last_name', htmlspecialchars($student->last_name));
-            $studentNode->addChild('email', htmlspecialchars($student->email));
-            $studentNode->addChild('gender', htmlspecialchars($student->gender));
-            $studentNode->addChild('birth_date', htmlspecialchars($student->birth_date));
-            $studentNode->addChild('department', htmlspecialchars($student->section?->program?->department?->name ?? 'N/A'));
-            $studentNode->addChild('program', htmlspecialchars($student->section?->program?->name ?? 'N/A'));
-            $studentNode->addChild('section', htmlspecialchars($student->section?->name ?? 'N/A'));
-            $studentNode->addChild('year_level', htmlspecialchars($student->year_level ?? 'N/A'));
-            $studentNode->addChild('guardian_name', htmlspecialchars($student->guardian_name));
-            $studentNode->addChild('guardian_contact', htmlspecialchars($student->guardian_contact));
-            $studentNode->addChild('status', htmlspecialchars($student->status ?? 'Active'));
-            $studentNode->addChild('priority', htmlspecialchars($student->priority ?? 'Safe'));
-            $studentNode->addChild('absence_count', htmlspecialchars($student->absence_count ?? 0));
-            $studentNode->addChild('created_at', htmlspecialchars($student->created_at?->format('Y-m-d H:i:s')));
-            $studentNode->addChild('updated_at', htmlspecialchars($student->updated_at?->format('Y-m-d H:i:s')));
-        }
+        try {
+            if ($studentId) {
+                $student = $students->first();
+                $filename = 'student_' . ($student->student_number ?? $student->id) . '_' . date('Y-m-d_H-i-s') . '.xml';
+            } else {
+                $filename = 'student_records_' . date('Y-m-d_H-i-s') . '.xml';
+            }
+            
+            $xml = new \SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?><students></students>');
+            
+            foreach ($students as $student) {
+                try {
+                    $studentNode = $xml->addChild('student');
+                    $studentNode->addChild('id', htmlspecialchars((string)($student->id ?? '')));
+                    $studentNode->addChild('student_number', htmlspecialchars((string)($student->student_number ?? '')));
+                    $studentNode->addChild('first_name', htmlspecialchars((string)($student->first_name ?? '')));
+                    $studentNode->addChild('last_name', htmlspecialchars((string)($student->last_name ?? '')));
+                    $studentNode->addChild('email', htmlspecialchars((string)($student->email ?? '')));
+                    $studentNode->addChild('phone', htmlspecialchars((string)($student->phone ?? '')));
+                    $studentNode->addChild('gender', htmlspecialchars((string)($student->gender ?? '')));
+                    
+                    $birthDate = '';
+                    if ($student->birth_date) {
+                        if ($student->birth_date instanceof \Carbon\Carbon) {
+                            $birthDate = $student->birth_date->format('Y-m-d');
+                        } else {
+                            $birthDate = (string) $student->birth_date;
+                        }
+                    }
+                    $studentNode->addChild('birth_date', htmlspecialchars($birthDate));
+                    
+                    $studentNode->addChild('department', htmlspecialchars((string)($student->section?->program?->department?->name ?? 'N/A')));
+                    $studentNode->addChild('program', htmlspecialchars((string)($student->section?->program?->name ?? 'N/A')));
+                    $studentNode->addChild('section', htmlspecialchars((string)($student->section?->name ?? 'N/A')));
+                    $studentNode->addChild('year_level', htmlspecialchars((string)($student->year_level ?? 'N/A')));
+                    $studentNode->addChild('guardian_name', htmlspecialchars((string)($student->guardian_name ?? '')));
+                    $studentNode->addChild('guardian_contact', htmlspecialchars((string)($student->guardian_contact ?? '')));
+                    $studentNode->addChild('status', htmlspecialchars((string)($student->status ?? 'Active')));
+                    $studentNode->addChild('priority', htmlspecialchars((string)($student->priority ?? 'Safe')));
+                    $studentNode->addChild('absence_count', htmlspecialchars((string)($student->absence_count ?? 0)));
+                    
+                    $createdAt = '';
+                    if ($student->created_at) {
+                        if ($student->created_at instanceof \Carbon\Carbon) {
+                            $createdAt = $student->created_at->format('Y-m-d H:i:s');
+                        } else {
+                            $createdAt = (string) $student->created_at;
+                        }
+                    }
+                    $studentNode->addChild('created_at', htmlspecialchars($createdAt));
+                    
+                    $updatedAt = '';
+                    if ($student->updated_at) {
+                        if ($student->updated_at instanceof \Carbon\Carbon) {
+                            $updatedAt = $student->updated_at->format('Y-m-d H:i:s');
+                        } else {
+                            $updatedAt = (string) $student->updated_at;
+                        }
+                    }
+                    $studentNode->addChild('updated_at', htmlspecialchars($updatedAt));
+                } catch (\Exception $e) {
+                    \Log::error('Error exporting student to XML: ' . $e->getMessage(), [
+                        'student_id' => $student->id ?? 'unknown'
+                    ]);
+                    // Continue with next student
+                    continue;
+                }
+            }
 
-        $headers = [
-            'Content-Type' => 'application/xml',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-        ];
+            $headers = [
+                'Content-Type' => 'application/xml; charset=UTF-8',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            ];
 
-        return response($xml->asXML(), 200, $headers);
+            return response($xml->asXML(), 200, $headers);
+        } catch (\Exception $e) {
+            \Log::error('XML Export failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
+        }
     }
 
     // Cleanup Duplicate Departments and Programs

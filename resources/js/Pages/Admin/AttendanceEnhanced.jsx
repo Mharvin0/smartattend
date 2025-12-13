@@ -14,7 +14,6 @@ export default function AttendanceEnhanced({
     calendarData, 
     filters 
 }) {
-    const [activeTab, setActiveTab] = useState('overview');
     const [selectedDate, setSelectedDate] = useState(filters.date || new Date().toISOString().split('T')[0]);
     const [selectedSection, setSelectedSection] = useState(filters.section_id || '');
     const [selectedDepartment, setSelectedDepartment] = useState(filters.department_id || '');
@@ -254,10 +253,6 @@ export default function AttendanceEnhanced({
         { value: 'excused', label: 'Excused', color: 'text-blue-600', bg: 'bg-blue-100' },
     ];
 
-    const tabs = [
-        { id: 'overview', name: 'Overview', icon: '📊' },
-    ];
-
     const getComplianceStatusColor = (status) => {
         switch (status) {
             case 'excellent': return 'text-green-600 bg-green-100';
@@ -277,7 +272,7 @@ export default function AttendanceEnhanced({
 
     return (
         <AuthenticatedLayout>
-            <Head title="Enhanced Attendance Management" />
+            <Head title="Attendance Management" />
             <div className="min-h-screen bg-gradient-to-br from-slate-50/80 via-gray-50/60 to-zinc-50/70 py-8">
                 <div className="w-full px-6 py-8 space-y-6">
                     {/* Header */}
@@ -285,7 +280,7 @@ export default function AttendanceEnhanced({
                         <div className="flex items-center justify-between">
                             <div>
                                 <h2 className="text-4xl font-bold bg-gradient-to-r from-slate-600 via-gray-600 to-zinc-600 bg-clip-text text-transparent">
-                                    Enhanced Attendance
+                                    Attendance
                                 </h2>
                                 <p className="text-gray-600 mt-2 text-lg">
                                     Advanced attendance tracking and analytics
@@ -299,30 +294,8 @@ export default function AttendanceEnhanced({
                         </div>
                     )}
 
-                    {/* Tab Navigation */}
-                    <div className="card">
-                        <div className="border-b border-gray-200">
-                            <nav className="-mb-px flex space-x-8">
-                                {tabs.map((tab) => (
-                                    <button
-                                        key={tab.id}
-                                        onClick={() => setActiveTab(tab.id)}
-                                        className={`${
-                                            activeTab === tab.id
-                                                ? 'border-brand-primary text-brand-primary'
-                                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                        } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm flex items-center`}
-                                    >
-                                        <span className="mr-2">{tab.icon}</span>
-                                        {tab.name}
-                                    </button>
-                                ))}
-                            </nav>
-                        </div>
-                    </div>
-
-                    {/* Quick Stats Cards - Only show on Overview tab */}
-                    {activeTab === 'overview' && (
+                    {/* Quick Stats Cards */}
+                    {(
                         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
                             <div className="card">
                                 <div className="flex items-center">
@@ -390,8 +363,8 @@ export default function AttendanceEnhanced({
                         </div>
                     )}
 
-                    {/* Filters - Show on all tabs except reports */}
-                    {activeTab !== 'reports' && (
+                    {/* Filters */}
+                    {(
                         <div className="card">
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="text-lg font-medium text-gray-900">Filters</h3>
@@ -517,54 +490,73 @@ export default function AttendanceEnhanced({
                         </div>
                     )}
 
-                    {/* Tab Content */}
-                    <div className="card">
-                        {activeTab === 'overview' && (
-                            <div>
-                                <h3 className="text-lg font-medium text-gray-900 mb-6">Recent Attendance Records</h3>
-                                <div className="overflow-x-auto w-full">
-                                    <table className="w-full divide-y divide-gray-200">
-                                        <thead className="bg-gray-50">
+                    {/* Recent Attendance Records Table */}
+                    <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl border border-white/20 overflow-hidden flex flex-col">
+                        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex-shrink-0">
+                            <h3 className="text-lg font-semibold text-gray-900">Recent Attendance Records</h3>
+                        </div>
+                        <div className="overflow-x-auto overflow-y-auto flex-1 table-scroll" style={{ maxHeight: 'calc(100vh - 400px)' }}>
+                            <div className="inline-block min-w-full align-middle">
+                                <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                                    <table className="min-w-full divide-y divide-gray-300">
+                                        <thead className="bg-gray-50 sticky top-0 z-10">
                                             <tr>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Section</th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Student</th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Section</th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Status</th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Date</th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Time</th>
                                             </tr>
                                         </thead>
-                                        <tbody className="bg-white divide-y divide-gray-200">
-                                            {recentRecords.map((record) => (
-                                                <tr key={record.id}>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                                        {record.student?.first_name} {record.student?.last_name}
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                        {record.student?.section?.name || 'N/A'}
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap">
-                                                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                                                            statusOptions.find(s => s.value === record.status)?.bg || 'bg-gray-100'
-                                                        } ${
-                                                            statusOptions.find(s => s.value === record.status)?.color || 'text-gray-600'
-                                                        }`}>
-                                                            {statusOptions.find(s => s.value === record.status)?.label || record.status}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                        {new Date(record.date).toLocaleDateString()}
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                        {new Date(record.created_at).toLocaleTimeString()}
+                                        <tbody className="divide-y divide-gray-200 bg-white">
+                                            {recentRecords && recentRecords.length > 0 ? (
+                                                recentRecords.map((record) => (
+                                                    <tr key={record.id} className="hover:bg-gray-50 transition-colors duration-150">
+                                                        <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                            {record.student?.first_name} {record.student?.last_name}
+                                                        </td>
+                                                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                            {record.student?.section?.name || 'N/A'}
+                                                        </td>
+                                                        <td className="px-4 py-4 whitespace-nowrap">
+                                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                                                record.status === 'present'
+                                                                    ? 'bg-green-100 text-green-800'
+                                                                    : record.status === 'late'
+                                                                    ? 'bg-yellow-100 text-yellow-800'
+                                                                    : record.status === 'absent'
+                                                                    ? 'bg-red-100 text-red-800'
+                                                                    : 'bg-blue-100 text-blue-800'
+                                                            }`}>
+                                                                {statusOptions.find(s => s.value === record.status)?.label || record.status}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                            {new Date(record.date).toLocaleDateString()}
+                                                        </td>
+                                                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                            {new Date(record.created_at).toLocaleTimeString()}
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            ) : (
+                                                <tr>
+                                                    <td colSpan="5" className="px-6 py-12 text-center text-sm text-gray-500">
+                                                        <div className="flex flex-col items-center">
+                                                            <svg className="h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                                                            </svg>
+                                                            <p className="text-lg font-medium text-gray-900">No attendance records found</p>
+                                                            <p className="text-sm text-gray-500 mt-1">Try adjusting your filters</p>
+                                                        </div>
                                                     </td>
                                                 </tr>
-                                            ))}
+                                            )}
                                         </tbody>
                                     </table>
                                 </div>
                             </div>
-                        )}
-
+                        </div>
                     </div>
                 </div>
             </div>

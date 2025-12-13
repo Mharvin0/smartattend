@@ -509,71 +509,18 @@ class AttendanceController extends Controller
 		];
 
 		try {
-			// Get all teachers and their assigned sections
-			$teachers = \App\Models\User::role('Teacher')
-				->with(['sections.program.department'])
-				->get()
-				->map(function($teacher) use ($filters) {
-					$sections = $teacher->sections;
-					$totalSections = $sections->count();
-					
-					// Calculate expected attendance records for this teacher's sections
-					$expectedRecords = 0;
-					$actualRecords = 0;
-					$lateRecords = 0;
-					
-					foreach ($sections as $section) {
-						// Count expected attendance days in the date range
-						$startDate = Carbon::parse($filters['date_range'][0]);
-						$endDate = Carbon::parse($filters['date_range'][1]);
-						$daysDiff = $startDate->diffInDays($endDate);
-						$expectedRecords += $section->students->count() * $daysDiff;
-						
-						// Count actual attendance records recorded by this teacher
-						$actualRecords += AttendanceRecord::whereHas('student', function($query) use ($section) {
-								$query->where('section_id', $section->id);
-							})
-							->where('recorded_by', $teacher->id)
-							->whereBetween('date', $filters['date_range'])
-							->count();
-						
-						// Count late submissions (records created more than 1 hour after class time)
-						$lateRecords += AttendanceRecord::whereHas('student', function($query) use ($section) {
-								$query->where('section_id', $section->id);
-							})
-							->where('recorded_by', $teacher->id)
-							->whereBetween('date', $filters['date_range'])
-							->whereRaw('TIMESTAMPDIFF(HOUR, CONCAT(date, " ", TIME(schedules.time_start)), created_at) > 1')
-							->join('schedules', 'attendance_records.schedule_id', '=', 'schedules.id')
-							->count();
-					}
-					
-					$complianceRate = $expectedRecords > 0 ? round(($actualRecords / $expectedRecords) * 100, 2) : 0;
-					$timelinessRate = $actualRecords > 0 ? round((($actualRecords - $lateRecords) / $actualRecords) * 100, 2) : 0;
-					
-					return [
-						'id' => $teacher->id,
-						'name' => $teacher->name,
-						'email' => $teacher->email,
-						'total_sections' => $totalSections,
-						'expected_records' => $expectedRecords,
-						'actual_records' => $actualRecords,
-						'late_records' => $lateRecords,
-						'compliance_rate' => $complianceRate,
-						'timeliness_rate' => $timelinessRate,
-						'status' => $this->getComplianceStatus($complianceRate, $timelinessRate),
-						'departments' => $sections->pluck('program.department.name')->unique()->values(),
-					];
-				});
+			// Note: CSDL Users don't take attendance, so this function returns empty data
+			// This can be updated later to track CSDL user activity instead
+			$csdlUsers = collect([]);
 
 			return response()->json([
-				'teachers' => $teachers,
+				'teachers' => $csdlUsers,
 				'filters' => $filters,
 				'summary' => [
-					'total_teachers' => $teachers->count(),
-					'average_compliance' => $teachers->avg('compliance_rate'),
-					'average_timeliness' => $teachers->avg('timeliness_rate'),
-					'compliant_teachers' => $teachers->where('compliance_rate', '>=', 90)->count(),
+					'total_teachers' => 0,
+					'average_compliance' => 0,
+					'average_timeliness' => 0,
+					'compliant_teachers' => 0,
 				],
 			]);
 		} catch (\Exception $e) {

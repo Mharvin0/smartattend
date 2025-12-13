@@ -13,11 +13,10 @@ use App\Http\Controllers\Admin\SubjectController;
 use App\Http\Controllers\Admin\ScheduleAdminController;
 use App\Http\Controllers\Admin\DepartmentController;
 use App\Http\Controllers\Admin\AdminPageController;
-use App\Http\Controllers\Teacher\TeacherPageController;
-use App\Http\Controllers\Teacher\DashboardController as TeacherDashboardController;
-use App\Http\Controllers\Teacher\StudentController;
-use App\Http\Controllers\Teacher\ClassController;
-use App\Http\Controllers\Teacher\ReportController as TeacherReportController;
+use App\Http\Controllers\Admin\AdminTrackingController;
+use App\Http\Controllers\CSDL\CSDLPageController;
+use App\Http\Controllers\CSDL\DashboardController as CSDLDashboardController;
+use App\Http\Controllers\CSDL\ReportController as CSDLReportController;
 use App\Http\Controllers\Super\SystemAdminController;
 use App\Http\Controllers\Super\SuperAdminController;
 
@@ -48,7 +47,8 @@ Route::middleware('auth')->group(function () {
         ]);
     })->name('debug.auth');
 
-    // Admin (PedroHub) routes - Only for Admin and Super Admin roles
+    // Admin (PedroHub) routes - Only for Admin and Super Admin roles (explicitly exclude CSDL)
+    // CSDL users are blocked at the controller level
     Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
         Route::get('/dashboard', [AdminPageController::class, 'index'])->name('dashboard');
         Route::get('/admin-page', [AdminPageController::class, 'index'])->name('admin-page');
@@ -76,7 +76,26 @@ Route::middleware('auth')->group(function () {
 				Route::post('/attendance/generate-report', [AttendanceController::class, 'generateReport'])->name('attendance.generate-report');
         Route::get('/attendance/student/{student}/history', [AttendanceController::class, 'studentHistory'])->name('attendance.student.history');
 
-        // Interventions
+        // Student Tracking (replaces Interventions)
+        Route::get('/tracking', [AdminTrackingController::class, 'index'])->name('tracking');
+        Route::post('/tracking/track-student', [AdminTrackingController::class, 'trackStudent'])->name('tracking.track-student');
+        Route::get('/tracking/archived', [AdminTrackingController::class, 'getArchivedTracking'])->name('tracking.archived-tracking');
+        Route::get('/tracking/deleted', [AdminTrackingController::class, 'getDeletedTracking'])->name('tracking.deleted-tracking');
+        Route::get('/tracking/export', [AdminTrackingController::class, 'exportTracking'])->name('tracking.export-tracking');
+        Route::get('/tracking/{id}', [AdminTrackingController::class, 'viewTracking'])->name('tracking.view-tracking');
+        Route::put('/tracking/{id}', [AdminTrackingController::class, 'updateTracking'])->name('tracking.update-tracking');
+        Route::post('/tracking/{id}/archive', [AdminTrackingController::class, 'archiveTracking'])->name('tracking.archive-tracking');
+        Route::post('/tracking/{id}/unarchive', [AdminTrackingController::class, 'unarchiveTracking'])->name('tracking.unarchive-tracking');
+        Route::post('/tracking/{id}/restore', [AdminTrackingController::class, 'restoreTracking'])->name('tracking.restore-tracking');
+        Route::delete('/tracking/{id}', [AdminTrackingController::class, 'deleteTracking'])->name('tracking.delete-tracking');
+        
+        // Student attention management routes
+        Route::get('/tracking/students/deleted', [AdminTrackingController::class, 'getDeletedStudents'])->name('tracking.deleted-students');
+        Route::post('/tracking/students/{id}/restore', [AdminTrackingController::class, 'restoreStudent'])->name('tracking.restore-student');
+        Route::post('/tracking/students/{id}/archive-from-attention', [AdminTrackingController::class, 'archiveStudentFromAttention'])->name('tracking.archive-student-from-attention');
+        Route::delete('/tracking/students/{id}', [AdminTrackingController::class, 'destroyStudent'])->name('tracking.delete-student');
+
+        // Interventions (legacy - kept for backward compatibility)
         Route::get('/interventions', [InterventionController::class, 'index'])->name('interventions');
         Route::post('/interventions', [InterventionController::class, 'store'])->name('interventions.store');
         Route::patch('/interventions/{intervention}', [InterventionController::class, 'update'])->name('interventions.update');
@@ -112,29 +131,48 @@ Route::middleware('auth')->group(function () {
         // Students
         Route::get('/students', [\App\Http\Controllers\Admin\StudentController::class, 'index'])->name('students');
         Route::post('/students', [\App\Http\Controllers\Admin\StudentController::class, 'store'])->name('students.store');
+        Route::patch('/students/{student}', [\App\Http\Controllers\Admin\StudentController::class, 'update'])->name('students.update');
         Route::post('/students/import', [\App\Http\Controllers\Admin\StudentController::class, 'import'])->name('students.import');
+        Route::post('/students/export', [\App\Http\Controllers\Admin\StudentController::class, 'export'])->name('students.export');
         Route::post('/students/update-priority', [\App\Http\Controllers\Admin\StudentController::class, 'updatePriority'])->name('students.update-priority');
+        Route::post('/students/{student}/send-to-csdl', [\App\Http\Controllers\Admin\StudentController::class, 'sendToCSDL'])->name('students.send-to-csdl');
         Route::delete('/students/{student}', [\App\Http\Controllers\Admin\StudentController::class, 'destroy'])->name('students.destroy');
         Route::get('/students/{student}', [\App\Http\Controllers\Admin\StudentController::class, 'show'])->name('students.show');
     });
 
-    // Teacher routes - Only for Teacher role
-    Route::middleware(['role:Teacher'])->prefix('teacher')->name('teacher.')->group(function () {
-        Route::get('/', [TeacherDashboardController::class, 'index'])->name('dashboard');
-        Route::get('/teacher-page', [TeacherPageController::class, 'index'])->name('teacher-page');
-        Route::get('/teacher-page/live-data', [TeacherPageController::class, 'getLiveData'])->name('teacher-page.live-data');
-        Route::post('/teacher-page/quick-attendance', [TeacherPageController::class, 'quickAttendance'])->name('teacher-page.quick-attendance');
+    // CSDL routes - Only for CSDL role
+    Route::middleware(['role:CSDL'])->prefix('csdl')->name('csdl.')->group(function () {
+        Route::get('/', [CSDLDashboardController::class, 'index'])->name('dashboard');
+        Route::get('/csdl-page', [CSDLPageController::class, 'index'])->name('csdl-page');
+        Route::post('/csdl-page/track-student', [CSDLPageController::class, 'trackStudent'])->name('csdl-page.track-student');
+        Route::get('/csdl-page/tracking/archived', [CSDLPageController::class, 'getArchivedTracking'])->name('csdl-page.archived-tracking');
+        Route::get('/csdl-page/tracking/deleted', [CSDLPageController::class, 'getDeletedTracking'])->name('csdl-page.deleted-tracking');
+        Route::get('/csdl-page/tracking/export', [CSDLPageController::class, 'exportTracking'])->name('csdl-page.export-tracking');
+        Route::get('/csdl-page/tracking/{id}', [CSDLPageController::class, 'viewTracking'])->name('csdl-page.view-tracking');
+        Route::put('/csdl-page/tracking/{id}', [CSDLPageController::class, 'updateTracking'])->name('csdl-page.update-tracking');
+        Route::post('/csdl-page/tracking/{id}/archive', [CSDLPageController::class, 'archiveTracking'])->name('csdl-page.archive-tracking');
+        Route::post('/csdl-page/tracking/{id}/unarchive', [CSDLPageController::class, 'unarchiveTracking'])->name('csdl-page.unarchive-tracking');
+        Route::post('/csdl-page/tracking/{id}/restore', [CSDLPageController::class, 'restoreTracking'])->name('csdl-page.restore-tracking');
+        Route::delete('/csdl-page/tracking/{id}', [CSDLPageController::class, 'deleteTracking'])->name('csdl-page.delete-tracking');
         
-        // Teacher functional pages
-        Route::get('/students', [StudentController::class, 'index'])->name('students');
-        Route::get('/classes', [ClassController::class, 'index'])->name('classes');
-        Route::get('/reports', [TeacherReportController::class, 'index'])->name('reports');
+        // Student attention management routes
+        Route::get('/csdl-page/students/deleted', [CSDLPageController::class, 'getDeletedStudents'])->name('csdl-page.deleted-students');
+        Route::post('/csdl-page/students/{id}/restore', [CSDLPageController::class, 'restoreStudent'])->name('csdl-page.restore-student');
+        Route::post('/csdl-page/students/{id}/archive-from-attention', [CSDLPageController::class, 'archiveStudentFromAttention'])->name('csdl-page.archive-student-from-attention');
+        Route::delete('/csdl-page/students/{id}', [CSDLPageController::class, 'destroyStudent'])->name('csdl-page.delete-student');
+        Route::get('/reports', [CSDLReportController::class, 'index'])->name('reports');
+        Route::get('/reports/export', [CSDLReportController::class, 'export'])->name('reports.export');
+        Route::get('/reports/{id}', [CSDLReportController::class, 'show'])->name('reports.show');
+        Route::post('/reports/{id}/archive', [CSDLReportController::class, 'archive'])->name('reports.archive');
+        Route::post('/reports/{id}/unarchive', [CSDLReportController::class, 'unarchive'])->name('reports.unarchive');
+        Route::delete('/reports/{id}', [CSDLReportController::class, 'destroy'])->name('reports.destroy');
+        Route::post('/reports/{id}/restore', [CSDLReportController::class, 'restore'])->name('reports.restore');
     });
 
-    // Redirect teachers away from admin routes (only if they don't have admin roles)
-    Route::middleware(['auth', 'role:Teacher'])->group(function () {
+    // Redirect CSDL away from admin routes (only if they don't have admin roles)
+    Route::middleware(['auth', 'role:CSDL'])->group(function () {
         Route::get('/admin', function () {
-            return redirect()->route('teacher.dashboard');
+            return redirect()->route('csdl.dashboard');
         });
     });
 
@@ -150,6 +188,9 @@ Route::middleware('auth')->group(function () {
         });
         Route::get('/attendance', [SystemAdminController::class, 'attendance'])->name('attendance');
         Route::get('/sections', [SystemAdminController::class, 'sections'])->name('sections');
+        Route::post('/sections', [SystemAdminController::class, 'storeSection'])->name('sections.store');
+        Route::put('/sections/{id}', [SystemAdminController::class, 'updateSection'])->name('sections.update');
+        Route::delete('/sections/{id}', [SystemAdminController::class, 'destroySection'])->name('sections.destroy');
         
         // Sections Management - Import routes only
         Route::get('/sections/import', [SectionController::class, 'importForm'])->name('sections.import');
@@ -170,21 +211,45 @@ Route::middleware('auth')->group(function () {
         
         // Student Management
         Route::post('/students', [SystemAdminController::class, 'storeStudent'])->name('students.store');
+        Route::patch('/students/{id}', [SystemAdminController::class, 'updateStudent'])->name('students.update');
+        Route::post('/students/{id}/send-to-csdl', [SystemAdminController::class, 'sendStudentToCSDL'])->name('students.send-to-csdl');
+        Route::get('/students/deleted', [SystemAdminController::class, 'getDeletedStudents'])->name('students.deleted');
+        Route::post('/students/{id}/restore', [SystemAdminController::class, 'restoreStudent'])->name('students.restore');
         Route::delete('/students/{id}', [SystemAdminController::class, 'destroyStudent'])->name('students.destroy');
         Route::post('/students/import', [SystemAdminController::class, 'importStudents'])->name('students.import');
         Route::post('/students/export', [SystemAdminController::class, 'exportStudents'])->name('students.export');
+        Route::get('/departments/{id}/teachers', [SystemAdminController::class, 'getDepartmentTeachers'])->name('departments.get-teachers');
         
         // Cleanup Duplicates
         Route::post('/cleanup-duplicates', [SystemAdminController::class, 'cleanupDuplicates'])->name('cleanup.duplicates');
         
-        // Management remarks
-        Route::post('/management/remarks', [SystemAdminController::class, 'storeManagementRemark'])->name('management.remarks.store');
-        Route::delete('/management/remarks/{id}', [SystemAdminController::class, 'destroyManagementRemark'])->name('management.remarks.destroy');
+        // Student Tracking routes
+        Route::post('/management/track-student', [SystemAdminController::class, 'trackStudent'])->name('management.track-student');
+        // These specific routes must come before the {id} routes to avoid route conflicts
+        Route::get('/management/tracking/archived', [SystemAdminController::class, 'getArchivedTracking'])->name('management.archived-tracking');
+        Route::get('/management/tracking/deleted', [SystemAdminController::class, 'getDeletedTracking'])->name('management.deleted-tracking');
+        Route::get('/management/tracking/export', [SystemAdminController::class, 'exportTracking'])->name('management.export-tracking');
+        Route::get('/management/tracking/{id}', [SystemAdminController::class, 'viewTracking'])->name('management.view-tracking');
+        Route::post('/management/tracking/{id}/archive', [SystemAdminController::class, 'archiveTracking'])->name('management.archive-tracking');
+        Route::post('/management/tracking/{id}/unarchive', [SystemAdminController::class, 'unarchiveTracking'])->name('management.unarchive-tracking');
+        Route::post('/management/tracking/{id}/restore', [SystemAdminController::class, 'restoreTracking'])->name('management.restore-tracking');
+        Route::put('/management/tracking/{id}', [SystemAdminController::class, 'updateTracking'])->name('management.update-tracking');
+        Route::delete('/management/tracking/{id}', [SystemAdminController::class, 'deleteTracking'])->name('management.delete-tracking');
+        
+        // Student attention management routes
+        Route::post('/management/students/{id}/archive-from-attention', [SystemAdminController::class, 'archiveStudentFromAttention'])->name('management.archive-student-from-attention');
+        Route::delete('/management/students/{id}', [SystemAdminController::class, 'destroyStudent'])->name('management.delete-student');
 
-        // Teacher Management Routes
+        // Teacher/Adviser Management Routes
+        Route::get('/teachers', [SystemAdminController::class, 'teachers'])->name('teachers');
         Route::post('/teachers', [SystemAdminController::class, 'storeTeacher'])->name('teachers.store');
         Route::put('/teachers/{id}', [SystemAdminController::class, 'updateTeacher'])->name('teachers.update');
         Route::delete('/teachers/{id}', [SystemAdminController::class, 'destroyTeacher'])->name('teachers.destroy');
+        
+        // CSDL User Management Routes
+        Route::post('/csdl-users', [SystemAdminController::class, 'storeCSDLUser'])->name('csdl-users.store');
+        Route::put('/csdl-users/{id}', [SystemAdminController::class, 'updateCSDLUser'])->name('csdl-users.update');
+        Route::delete('/csdl-users/{id}', [SystemAdminController::class, 'destroyCSDLUser'])->name('csdl-users.destroy');
         
         // Intervention Management Routes
         Route::post('/interventions', [SystemAdminController::class, 'storeIntervention'])->name('interventions.store');
