@@ -15,9 +15,27 @@ export default function StudentProfile({ student, attendance, interventions }) {
 	const handleSubmit = (e) => {
 		e.preventDefault();
 		setIsSubmitting(true);
-		router.patch(route('admin.students.update', student.id), form, {
+		// Ensure absence_count is an integer
+		const formData = {
+			...form,
+			absence_count: parseInt(form.absence_count) || 0,
+		};
+		router.patch(route('admin.students.update', student.id), formData, {
 			onFinish: () => setIsSubmitting(false),
-			onSuccess: () => setShowEdit(false),
+			onSuccess: (page) => {
+				setShowEdit(false);
+				// Update form state with new values
+				setForm({
+					status: formData.status || student.status || 'Normal',
+					absence_count: formData.absence_count ?? student.absence_count ?? 0,
+				});
+				// Reload to get updated student data
+				router.reload({ only: ['student'] });
+			},
+			onError: (errors) => {
+				console.error('Error updating student:', errors);
+				alert('Failed to update student. Please check the form and try again.');
+			},
 		});
 	};
 

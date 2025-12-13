@@ -12,7 +12,13 @@ class UserController extends Controller
 {
 	public function index()
 	{
-		$users = User::with('roles:name')->orderBy('name')->get(['id','name','email']);
+		// Exclude users with Teacher role - teachers are managed separately in the Teachers tab
+		$users = User::with('roles:name')
+			->whereDoesntHave('roles', function($query) {
+				$query->where('name', 'Teacher');
+			})
+			->orderBy('name')
+			->get(['id','name','email']);
 		return Inertia::render('Super/Users', [
 			'users' => $users,
 			'roles' => ['Super Admin','Admin','CSDL'],
@@ -56,6 +62,11 @@ class UserController extends Controller
 
 	public function destroy(User $user)
 	{
+		// Prevent deleting users with Teacher role - they are managed in the Teachers tab
+		if ($user->hasRole('Teacher')) {
+			return back()->withErrors(['message' => 'Cannot delete Teacher users. Please manage teachers in the Teachers tab.']);
+		}
+		
 		$user->delete();
 		return back()->with('success','User deleted');
 	}

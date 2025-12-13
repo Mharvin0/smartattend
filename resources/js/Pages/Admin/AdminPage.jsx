@@ -192,7 +192,7 @@ export default function AdminPage() {
                                         {record.student?.first_name || record.student?.name} {record.student?.last_name}
                                     </p>
                                     <p className="text-sm text-gray-500">
-                                        {record.student?.section?.name || record.student?.section} • {record.status} • {record.time || record.date}
+                                        {record.student?.section?.name || (typeof record.student?.section === 'string' ? record.student?.section : 'N/A')} • {record.status} • {record.time || record.date}
                                             </p>
                                         </div>
                                     </div>

@@ -66,8 +66,9 @@ class ReportController extends Controller
         $startOfMonth = $today->copy()->startOfMonth();
         $endOfMonth = $today->copy()->endOfMonth();
 
-        // Base query based on tab
-        $query = StudentTracking::with(['student.section.program.department', 'trackedBy']);
+        // Base query based on tab - filter out records without valid students
+        $query = StudentTracking::with(['student.section.program.department', 'trackedBy'])
+            ->whereHas('student');
         
         if ($tab === 'archived') {
             $query->where('archived', true);
@@ -173,8 +174,9 @@ class ReportController extends Controller
             ->orderBy('name')
             ->get();
 
-        // Get recent tracking records
+        // Get recent tracking records - filter out records without valid students
         $recentTracking = $query
+            ->whereHas('student')
             ->orderBy('date', 'desc')
             ->orderBy('created_at', 'desc')
             ->limit(50)
@@ -193,10 +195,10 @@ class ReportController extends Controller
                     'archived_at' => $tracking->archived_at ? $tracking->archived_at->format('Y-m-d H:i') : null,
                     'deleted_at' => $tracking->deleted_at ? $tracking->deleted_at->format('Y-m-d H:i') : null,
                     'student' => [
-                        'id' => $tracking->student->id,
-                        'name' => $tracking->student->first_name . ' ' . $tracking->student->last_name,
-                        'student_number' => $tracking->student->student_number,
-                        'section' => $tracking->student->section?->name ?? 'No Section',
+                        'id' => $tracking->student?->id ?? null,
+                        'name' => ($tracking->student?->first_name ?? '') . ' ' . ($tracking->student?->last_name ?? ''),
+                        'student_number' => $tracking->student?->student_number ?? 'N/A',
+                        'section' => $tracking->student?->section?->name ?? 'No Section',
                     ],
                     'tracked_by' => $tracking->trackedBy?->name ?? 'Unknown',
                     'tracked_by_id' => $tracking->tracked_by,
@@ -222,6 +224,7 @@ class ReportController extends Controller
     public function show($id)
     {
         $tracking = StudentTracking::withTrashed()
+            ->whereHas('student')
             ->with(['student.section.program.department', 'trackedBy'])
             ->findOrFail($id);
 
@@ -240,11 +243,11 @@ class ReportController extends Controller
                 'deleted_at' => $tracking->deleted_at ? $tracking->deleted_at->format('Y-m-d H:i') : null,
                 'notes' => $tracking->notes,
                 'student' => [
-                    'id' => $tracking->student->id,
-                    'name' => $tracking->student->first_name . ' ' . $tracking->student->last_name,
-                    'student_number' => $tracking->student->student_number,
-                    'section' => $tracking->student->section?->name ?? 'No Section',
-                    'department' => $tracking->student->section?->program?->department?->name ?? 'No Department',
+                    'id' => $tracking->student?->id ?? null,
+                    'name' => ($tracking->student?->first_name ?? '') . ' ' . ($tracking->student?->last_name ?? ''),
+                    'student_number' => $tracking->student?->student_number ?? 'N/A',
+                    'section' => $tracking->student?->section?->name ?? 'No Section',
+                    'department' => $tracking->student?->section?->program?->department?->name ?? 'No Department',
                 ],
                 'tracked_by' => $tracking->trackedBy?->name ?? 'Unknown',
                 'tracked_by_id' => $tracking->tracked_by,
@@ -309,8 +312,9 @@ class ReportController extends Controller
             'search' => $request->get('search') ?: null,
         ];
 
-        // Build query (same as index)
-        $query = StudentTracking::with(['student.section.program.department', 'trackedBy']);
+        // Build query (same as index) - filter out records without valid students
+        $query = StudentTracking::with(['student.section.program.department', 'trackedBy'])
+            ->whereHas('student');
         
         if ($tab === 'archived') {
             $query->where('archived', true);
@@ -414,12 +418,17 @@ class ReportController extends Controller
 
             // Data rows
             foreach ($trackings as $tracking) {
+                // Skip records without valid students
+                if (!$tracking->student) {
+                    continue;
+                }
+                
                 fputcsv($file, [
                     $tracking->id,
-                    $tracking->student->first_name . ' ' . $tracking->student->last_name,
-                    $tracking->student->student_number ?? '',
-                    $tracking->student->section?->name ?? 'N/A',
-                    $tracking->student->section?->program?->department?->name ?? 'N/A',
+                    ($tracking->student?->first_name ?? '') . ' ' . ($tracking->student?->last_name ?? ''),
+                    $tracking->student?->student_number ?? '',
+                    $tracking->student?->section?->name ?? 'N/A',
+                    $tracking->student?->section?->program?->department?->name ?? 'N/A',
                     ucfirst(str_replace('_', ' ', $tracking->type)),
                     $tracking->date->format('Y-m-d'),
                     $tracking->time ? Carbon::parse($tracking->time)->format('H:i') : '',

@@ -426,9 +426,13 @@ export default function SuperDashboard({ auth, users, systemStats, activityLogs,
                                             </div>
                                         </div>
                                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                            log.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                            log.status === 'success' ? 'bg-green-100 text-green-800' :
+                                            log.status === 'warning' ? 'bg-yellow-100 text-yellow-800' :
+                                            'bg-red-100 text-red-800'
                                         }`}>
-                                            {log.success ? 'Success' : 'Failed'}
+                                            {log.status === 'success' ? 'Success' :
+                                             log.status === 'warning' ? 'Warning' :
+                                             'Failed'}
                                         </span>
                                     </div>
                                 ))

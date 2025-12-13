@@ -119,6 +119,13 @@ class StudentController extends Controller
             'pns_count' => $pnsCount,
         ];
 
+        // Ensure students have attendance_status calculated
+        $students = $students->map(function ($student) {
+            $student->updatePriority();
+            $student->refresh();
+            return $student;
+        });
+
         return Inertia::render('Admin/Students', [
             'students' => $students,
             'departments' => $departments,
@@ -135,6 +142,7 @@ class StudentController extends Controller
     {
         // Update priority for this student
         $student->updatePriority();
+        $student->refresh();
         
         $studentData = [
             'id' => $student->id,
@@ -145,7 +153,8 @@ class StudentController extends Controller
             'program' => $student->section?->program?->name ?? 'No Program',
             'department' => $student->section?->program?->department?->name ?? 'No Department',
             'year_level' => $student->section?->year_level ?? 'N/A',
-            'status' => $student->status ?? 'Active',
+            'status' => $student->status ?? $student->attendance_status ?? 'Normal',
+            'attendance_status' => $student->attendance_status ?? 'Normal',
             'priority' => $student->priority ?? 'Safe',
             'absence_count' => $student->absence_count ?? 0,
         ];
@@ -174,17 +183,37 @@ class StudentController extends Controller
 
 	public function update(Request $request, Student $student)
 	{
-		$validated = $request->validate([
-			'status' => 'required|string|in:Normal,SLIP,PNS',
-			'absence_count' => 'required|integer|min:0',
-		]);
+		try {
+			$validated = $request->validate([
+				'status' => 'nullable|string|in:Normal,SLIP,PNS',
+				'absence_count' => 'nullable|integer|min:0',
+			]);
 
-		$student->status = $validated['status'];
-		$student->absence_count = $validated['absence_count'];
-		$student->calculatePriority();
-		$student->save();
+			// Only update fields that are provided
+			if (isset($validated['status'])) {
+				$student->status = $validated['status'];
+			}
+			if (isset($validated['absence_count'])) {
+				$student->absence_count = (int)$validated['absence_count'];
+			}
+			
+			// Recalculate priority if status or absence_count changed
+			if (isset($validated['status']) || isset($validated['absence_count'])) {
+				$student->calculatePriority();
+			}
+			
+			if (!$student->save()) {
+				throw new \Exception('Failed to save student to database');
+			}
 
-		return back()->with('success', 'Student updated successfully.');
+			return back()->with('success', 'Student updated successfully.');
+		} catch (\Illuminate\Validation\ValidationException $e) {
+			return back()->withErrors($e->errors())->withInput();
+		} catch (\Exception $e) {
+			\Log::error('Error updating student: ' . $e->getMessage());
+			\Log::error('Stack trace: ' . $e->getTraceAsString());
+			return back()->with('error', 'Failed to update student: ' . $e->getMessage());
+		}
 	}
 
     public function store(Request $request)

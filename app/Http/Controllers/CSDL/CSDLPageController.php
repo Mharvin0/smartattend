@@ -89,6 +89,7 @@ class CSDLPageController extends Controller
 
         // Get recent tracking records - CSDL users can see all records (excluding archived and soft-deleted)
         $recentTracking = StudentTracking::with(['student.section.program.department', 'trackedBy'])
+            ->whereHas('student')
             ->where('archived', false)
             ->orderBy('date', 'desc')
             ->orderBy('created_at', 'desc')
@@ -105,16 +106,17 @@ class CSDLPageController extends Controller
                     'follow_up_required' => $tracking->follow_up_required,
                     'follow_up_date' => $tracking->follow_up_date ? $tracking->follow_up_date->format('Y-m-d') : null,
                     'student' => [
-                        'id' => $tracking->student->id,
-                        'name' => $tracking->student->first_name . ' ' . $tracking->student->last_name,
-                        'section' => $tracking->student->section?->name ?? 'N/A',
+                        'id' => $tracking->student?->id ?? null,
+                        'name' => ($tracking->student?->first_name ?? '') . ' ' . ($tracking->student?->last_name ?? ''),
+                        'section' => $tracking->student?->section?->name ?? 'N/A',
                     ],
                     'tracked_by' => $tracking->trackedBy?->name ?? 'Unknown',
                     'tracked_by_id' => $tracking->tracked_by,
                     'notes' => $tracking->notes,
                     'can_edit' => true, // CSDL users can edit all tracking records
                 ];
-            });
+            })
+            ->filter(fn($tracking) => $tracking['student']['id'] !== null);
 
         // Statistics
         $stats = [

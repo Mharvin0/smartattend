@@ -152,9 +152,12 @@ export default function Users({ users, roles }) {
 													<button className="text-blue-600 hover:text-blue-800 font-medium text-sm transition-colors">
 														Edit
 													</button>
-													<button className="text-red-600 hover:text-red-800 font-medium text-sm transition-colors">
-														Delete
-													</button>
+													{/* Hide delete button for Teacher role users - they are managed in Teachers tab */}
+													{u.roles?.[0]?.name !== 'Teacher' && (
+														<button className="text-red-600 hover:text-red-800 font-medium text-sm transition-colors">
+															Delete
+														</button>
+													)}
 												</div>
 											</td>
 										</tr>

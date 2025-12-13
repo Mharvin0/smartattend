@@ -111,6 +111,7 @@ class AdminPageController extends Controller
 
         // Get recent attendance records with live data
         $recentRecords = AttendanceRecord::with(['student.section.program.department', 'schedule.subject'])
+            ->whereHas('student')
             ->orderBy('created_at', 'desc')
             ->limit(10)
             ->get()
@@ -121,13 +122,13 @@ class AdminPageController extends Controller
                     'date' => $record->date,
                     'time' => $record->created_at->format('H:i'),
                     'student' => [
-                        'first_name' => $record->student->first_name ?? '',
-                        'last_name' => $record->student->last_name ?? '',
-                        'student_number' => $record->student->student_number ?? '',
+                        'first_name' => $record->student?->first_name ?? '',
+                        'last_name' => $record->student?->last_name ?? '',
+                        'student_number' => $record->student?->student_number ?? '',
                         'section' => [
-                            'name' => $record->student->section?->name ?? '',
-                            'program' => $record->student->section?->program?->name ?? '',
-                            'department' => $record->student->section?->program?->department?->name ?? '',
+                            'name' => $record->student?->section?->name ?? '',
+                            'program' => $record->student?->section?->program?->name ?? '',
+                            'department' => $record->student?->section?->program?->department?->name ?? '',
                         ],
                     ],
                     'schedule' => [
@@ -136,7 +137,8 @@ class AdminPageController extends Controller
                         'time_end' => $record->schedule?->time_end ?? '',
                     ],
                 ];
-            });
+            })
+            ->filter(fn($record) => $record['student']['first_name'] !== '' || $record['student']['last_name'] !== '');
 
         // Get live analytics data
         $analytics = [
@@ -176,6 +178,7 @@ class AdminPageController extends Controller
 
         // Recent activity
         $recentActivity = AttendanceRecord::with(['student.section.program.department'])
+            ->whereHas('student')
             ->orderBy('created_at', 'desc')
             ->limit(5)
             ->get()
@@ -185,12 +188,13 @@ class AdminPageController extends Controller
                     'status' => $record->status,
                     'time' => $record->created_at->format('H:i'),
                     'student' => [
-                        'name' => $record->student->first_name . ' ' . $record->student->last_name,
-                        'section' => $record->student->section?->name ?? 'N/A',
-                        'department' => $record->student->section?->program?->department?->name ?? 'N/A',
+                        'name' => ($record->student?->first_name ?? '') . ' ' . ($record->student?->last_name ?? ''),
+                        'section' => $record->student?->section?->name ?? 'N/A',
+                        'department' => $record->student?->section?->program?->department?->name ?? 'N/A',
                     ],
                 ];
-            });
+            })
+            ->filter(fn($activity) => !empty($activity['student']['name']));
 
         return response()->json([
             'stats' => $stats,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import DataTable from '@/Components/DataTable';
@@ -42,6 +42,10 @@ export default function SystemAdmin({
     const [liveDepartmentTrends, setLiveDepartmentTrends] = useState(departmentTrends);
     const [liveWeeklyStatusProgress, setLiveWeeklyStatusProgress] = useState(weeklyStatusProgressProp);
     const [lastRefresh, setLastRefresh] = useState(new Date());
+    // Local state for students to allow immediate updates
+    const [localStudents, setLocalStudents] = useState(students);
+    // Ref to track previous students IDs to prevent unnecessary updates
+    const prevStudentsIdsRef = useRef(null);
     
     useEffect(() => {
         const interval = setInterval(() => {
@@ -268,8 +272,21 @@ export default function SystemAdmin({
         ? programs?.filter(p => p.department_id == selectedDepartment) || []
         : programs || [];
 
+    // Update local students when props change (only if students array actually changed)
+    useEffect(() => {
+        // Get current students IDs
+        const newIds = students?.map(s => s.id).sort().join(',') || '';
+        const prevIds = prevStudentsIdsRef.current;
+        
+        // Only update if IDs actually changed
+        if (newIds !== prevIds) {
+            setLocalStudents(students);
+            prevStudentsIdsRef.current = newIds;
+        }
+    }, [students]);
+
     // Filter students
-    const filteredStudents = students?.filter(student => {
+    const filteredStudents = localStudents?.filter(student => {
         const matchesDepartment = !selectedDepartment || student.section?.program?.department_id == selectedDepartment;
         const matchesProgram = !selectedProgram || student.section?.program_id == selectedProgram;
         const matchesYearLevel = !selectedYearLevel || student.year_level == selectedYearLevel;
@@ -2879,7 +2896,7 @@ export default function SystemAdmin({
                                     <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
                                     </svg>
-                                    {filteredStudents.length} Students
+                                    {localStudents?.length || 0} Students
                                 </span>
                             </div>
                         </div>
@@ -2996,7 +3013,7 @@ export default function SystemAdmin({
                                 Clear Filters
                             </button>
                             <div className="text-sm text-gray-500">
-                                Showing {filteredStudents.length} of {students?.length || 0} students
+                                Showing {filteredStudents.length} of {localStudents?.length || 0} students
                             </div>
                         </div>
                     </div>
@@ -3068,18 +3085,18 @@ export default function SystemAdmin({
                                                             </span>
                                             </td>
                                                 <td className="px-4 py-4 whitespace-nowrap">
-                                                {student.attendance_status && (
+                                                {(student.attendance_status || student.status) && (
                                                     <span 
                                                         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                                            student.attendance_status === 'Normal'
+                                                            (student.attendance_status || student.status) === 'Normal'
                                                                 ? 'bg-green-100 text-green-800'
-                                                                : student.attendance_status === 'SLIP'
+                                                                : (student.attendance_status || student.status) === 'SLIP'
                                                                 ? 'bg-yellow-100 text-yellow-800'
                                                                 : 'bg-red-100 text-red-800'
                                                         }`}
-                                                        title={student.attendance_status === 'PNS' ? 'Probable No-Show: No attendance at all' : ''}
+                                                        title={(student.attendance_status || student.status) === 'PNS' ? 'Probable No-Show: No attendance at all' : ''}
                                                     >
-                                                        {student.attendance_status === 'PNS' ? 'Probable No-Show' : student.attendance_status}
+                                                        {(student.attendance_status || student.status) === 'PNS' ? 'Probable No-Show' : (student.attendance_status || student.status)}
                                                 </span>
                                             )}
                                         </td>
@@ -4715,13 +4732,69 @@ export default function SystemAdmin({
                                     onSubmit={(e) => {
                                         e.preventDefault();
         setIsSavingStudent(true);
-        router.patch(route('super.students.update', selectedStudent.id), editStudentForm, {
-            onSuccess: () => {
+        // Ensure absence_count is an integer
+        const formData = {
+            ...editStudentForm,
+            absence_count: parseInt(editStudentForm.absence_count) || 0,
+        };
+        router.patch(route('super.students.update', selectedStudent.id), formData, {
+            onSuccess: (page) => {
                 setIsSavingStudent(false);
                 setShowStudentModal(false);
-                router.reload({ only: ['students'] });
+                
+                // Update local students state immediately with new values
+                setLocalStudents(prevStudents => 
+                    prevStudents.map(student => {
+                        if (student.id === selectedStudent.id) {
+                            const updatedStudent = {
+                                ...student,
+                                first_name: formData.first_name !== undefined ? formData.first_name : student.first_name,
+                                last_name: formData.last_name !== undefined ? formData.last_name : student.last_name,
+                                email: formData.email !== undefined ? formData.email : student.email,
+                                phone: formData.phone !== undefined ? formData.phone : student.phone,
+                                guardian_name: formData.guardian_name !== undefined ? formData.guardian_name : student.guardian_name,
+                                guardian_contact: formData.guardian_contact !== undefined ? formData.guardian_contact : student.guardian_contact,
+                                year_level: formData.year_level !== undefined ? formData.year_level : student.year_level,
+                                status: formData.status !== undefined ? formData.status : student.status,
+                                absence_count: formData.absence_count !== undefined ? parseInt(formData.absence_count) : student.absence_count,
+                            };
+                            
+                            // Calculate attendance_status based on absence_count (simplified logic)
+                            // This matches the backend calculation: >=8 = PNS, >=4 = SLIP, else Normal
+                            const absCount = updatedStudent.absence_count || 0;
+                            if (absCount >= 8) {
+                                updatedStudent.attendance_status = 'PNS';
+                            } else if (absCount >= 4) {
+                                updatedStudent.attendance_status = 'SLIP';
+                            } else {
+                                updatedStudent.attendance_status = 'Normal';
+                            }
+                            
+                            // If status was explicitly set, use that instead
+                            if (formData.status) {
+                                updatedStudent.attendance_status = formData.status;
+                            }
+                            
+                            return updatedStudent;
+                        }
+                        return student;
+                    })
+                );
+                
+                // Reload from server to get properly computed attributes and ensure data consistency
+                setTimeout(() => {
+                    router.reload({ 
+                        only: ['students'],
+                        preserveScroll: true,
+                        preserveState: false
+                    });
+                }, 100);
             },
-            onError: () => setIsSavingStudent(false),
+            onError: (errors) => {
+                setIsSavingStudent(false);
+                console.error('Error updating student:', errors);
+                alert('Failed to update student. Please check the form and try again.');
+            },
             onFinish: () => setIsSavingStudent(false),
         });
                                     }}

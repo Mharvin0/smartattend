@@ -50,17 +50,90 @@ class SystemAdminController extends Controller
 
     public function index()
     {
-        return Inertia::render('Super/SystemAdmin', [
-            'activeTab' => 'dashboard',
-            'pageTitle' => 'Dashboard',
-            'users' => \App\Models\User::with('roles')->get(),
-            'systemStats' => $this->getSystemStats(),
-            'activityLogs' => $this->getRecentActivityLogs(),
-            'integrations' => $this->getIntegrationStatus(),
-            'systemTools' => $this->getSystemToolsData(),
-            'auditLogs' => AuditLog::with('user')->orderBy('created_at', 'desc')->limit(50)->get(),
-            'weeklyStatusProgress' => $this->getWeeklyStatusProgress(),
-        ]);
+        try {
+            // Optimize queries - limit users and use chunking if needed
+            $users = \App\Models\User::with('roles')->limit(100)->get();
+            
+            // Wrap potentially slow operations in try-catch
+            $systemStats = null;
+            $activityLogs = [];
+            $weeklyStatusProgress = [];
+            
+            try {
+                $systemStats = $this->getSystemStats();
+            } catch (\Exception $e) {
+                \Log::error('Error getting system stats: ' . $e->getMessage());
+                $systemStats = $this->getDefaultSystemStats();
+            }
+            
+            try {
+                $activityLogs = $this->getRecentActivityLogs();
+            } catch (\Exception $e) {
+                \Log::error('Error getting activity logs: ' . $e->getMessage());
+                $activityLogs = [];
+            }
+            
+            try {
+                $weeklyStatusProgress = $this->getWeeklyStatusProgress();
+            } catch (\Exception $e) {
+                \Log::error('Error getting weekly status progress: ' . $e->getMessage());
+                $weeklyStatusProgress = [];
+            }
+            
+            return Inertia::render('Super/SystemAdmin', [
+                'activeTab' => 'dashboard',
+                'pageTitle' => 'Dashboard',
+                'users' => $users,
+                'systemStats' => $systemStats,
+                'activityLogs' => $activityLogs,
+                'integrations' => $this->getIntegrationStatus(),
+                'systemTools' => $this->getSystemToolsData(),
+                'auditLogs' => AuditLog::with('user')->orderBy('created_at', 'desc')->limit(50)->get(),
+                'weeklyStatusProgress' => $weeklyStatusProgress,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error in SystemAdminController@index: ' . $e->getMessage());
+            \Log::error($e->getTraceAsString());
+            
+            // Return a minimal response to prevent complete failure
+            return Inertia::render('Super/SystemAdmin', [
+                'activeTab' => 'dashboard',
+                'pageTitle' => 'Dashboard',
+                'users' => [],
+                'systemStats' => $this->getDefaultSystemStats(),
+                'activityLogs' => [],
+                'integrations' => $this->getIntegrationStatus(),
+                'systemTools' => $this->getSystemToolsData(),
+                'auditLogs' => [],
+                'weeklyStatusProgress' => [],
+                'error' => 'Some data could not be loaded. Please refresh the page.',
+            ]);
+        }
+    }
+    
+    private function getDefaultSystemStats()
+    {
+        return [
+            'activeSessions' => 0,
+            'totalUsers' => 0,
+            'totalStudents' => 0,
+            'totalCSDLUsers' => 0,
+            'totalSections' => 0,
+            'totalSubjects' => 0,
+            'totalDepartments' => 0,
+            'totalPrograms' => 0,
+            'totalAttendanceRecords' => 0,
+            'todayAttendance' => 0,
+            'averageAttendanceRate' => 0,
+            'totalInterventions' => 0,
+            'activeInterventions' => 0,
+            'recentStudents' => 0,
+            'recentAttendance' => 0,
+            'databaseSize' => 'Unknown',
+            'systemHealth' => 0,
+            'serverUptime' => ['load_1min' => 0, 'load_5min' => 0, 'load_15min' => 0],
+            'memoryUsage' => ['current' => '0MB', 'limit' => 'Unknown', 'percentage' => 0],
+        ];
     }
 
     public function interventions()
@@ -130,6 +203,7 @@ class SystemAdminController extends Controller
 
         // Get recent tracking records - Super Admin can see all records (excluding archived and soft-deleted)
         $recentTracking = \App\Models\StudentTracking::with(['student.section.program.department', 'trackedBy'])
+            ->whereHas('student')
             ->where('archived', false)
             ->orderBy('date', 'desc')
             ->orderBy('created_at', 'desc')
@@ -146,11 +220,11 @@ class SystemAdminController extends Controller
                     'follow_up_required' => $tracking->follow_up_required,
                     'follow_up_date' => $tracking->follow_up_date ? $tracking->follow_up_date->format('Y-m-d') : null,
                     'student' => [
-                        'id' => $tracking->student->id,
-                        'name' => $tracking->student->first_name . ' ' . $tracking->student->last_name,
-                        'section' => $tracking->student->section?->name ?? 'N/A',
-                        'department' => $tracking->student->section?->program?->department?->name ?? 'N/A',
-                        'program' => $tracking->student->section?->program?->name ?? 'N/A',
+                        'id' => $tracking->student?->id ?? null,
+                        'name' => ($tracking->student?->first_name ?? '') . ' ' . ($tracking->student?->last_name ?? ''),
+                        'section' => $tracking->student?->section?->name ?? 'N/A',
+                        'department' => $tracking->student?->section?->program?->department?->name ?? 'N/A',
+                        'program' => $tracking->student?->section?->program?->name ?? 'N/A',
                     ],
                     'tracked_by' => $tracking->trackedBy?->name ?? 'Unknown',
                     'tracked_by_id' => $tracking->tracked_by,
@@ -158,7 +232,8 @@ class SystemAdminController extends Controller
                     'archived' => $tracking->archived,
                     'can_edit' => true, // Super Admin can edit all tracking records
                 ];
-            });
+            })
+            ->filter(fn($tracking) => $tracking['student']['id'] !== null);
 
         // Statistics
         $stats = [
@@ -255,6 +330,7 @@ class SystemAdminController extends Controller
     public function viewTracking($id)
     {
         $tracking = \App\Models\StudentTracking::with(['student.section.program.department', 'trackedBy'])
+            ->whereHas('student')
             ->findOrFail($id);
 
         return response()->json([
@@ -270,12 +346,12 @@ class SystemAdminController extends Controller
                 'follow_up_date' => $tracking->follow_up_date ? $tracking->follow_up_date->format('Y-m-d') : null,
                 'notes' => $tracking->notes,
                 'student' => [
-                    'id' => $tracking->student->id,
-                    'name' => $tracking->student->first_name . ' ' . $tracking->student->last_name,
-                    'student_number' => $tracking->student->student_number,
-                    'section' => $tracking->student->section?->name ?? 'N/A',
-                    'department' => $tracking->student->section?->program?->department?->name ?? 'N/A',
-                    'program' => $tracking->student->section?->program?->name ?? 'N/A',
+                    'id' => $tracking->student?->id ?? null,
+                    'name' => ($tracking->student?->first_name ?? '') . ' ' . ($tracking->student?->last_name ?? ''),
+                    'student_number' => $tracking->student?->student_number ?? 'N/A',
+                    'section' => $tracking->student?->section?->name ?? 'N/A',
+                    'department' => $tracking->student?->section?->program?->department?->name ?? 'N/A',
+                    'program' => $tracking->student?->section?->program?->name ?? 'N/A',
                 ],
                 'tracked_by' => $tracking->trackedBy?->name ?? 'Unknown',
                 'created_at' => $tracking->created_at->format('Y-m-d H:i'),
@@ -1106,9 +1182,15 @@ class SystemAdminController extends Controller
     {
         try {
             $databaseName = config('database.connections.mysql.database');
-            $result = \DB::select("SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS 'size_mb' FROM information_schema.tables WHERE table_schema = ?", [$databaseName]);
+            if (!$databaseName) {
+                return 'Unknown';
+            }
+            // Use a simpler query that's faster and won't hang
+            // Limit to prevent hanging on large databases
+            $result = \DB::select("SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS 'size_mb' FROM information_schema.tables WHERE table_schema = ? LIMIT 1", [$databaseName]);
             return isset($result[0]->size_mb) ? $result[0]->size_mb . 'MB' : 'Unknown';
         } catch (\Exception $e) {
+            \Log::warning('Could not get database size: ' . $e->getMessage());
             return 'Unknown';
         }
     }
@@ -1150,18 +1232,21 @@ class SystemAdminController extends Controller
             }
 
             $recentAttendance = \App\Models\AttendanceRecord::with('student')
+                ->whereHas('student')
                 ->orderBy('created_at', 'desc')
                 ->limit(3)
                 ->get();
 
             foreach ($recentAttendance as $record) {
-                $logs[] = [
-                    'id' => 'attendance_' . $record->id,
-                    'type' => 'info',
-                    'message' => 'Attendance recorded: ' . ($record->student->first_name ?? 'Unknown') . ' - ' . $record->status,
-                    'user' => 'system',
-                    'timestamp' => $record->created_at->format('Y-m-d H:i:s'),
-                ];
+                if ($record->student) {
+                    $logs[] = [
+                        'id' => 'attendance_' . $record->id,
+                        'type' => 'info',
+                        'message' => 'Attendance recorded: ' . ($record->student?->first_name ?? 'Unknown') . ' - ' . $record->status,
+                        'user' => 'system',
+                        'timestamp' => $record->created_at->format('Y-m-d H:i:s'),
+                    ];
+                }
             }
 
             usort($logs, function($a, $b) {
@@ -2383,33 +2468,67 @@ class SystemAdminController extends Controller
 
     public function updateStudent(Request $request, $id)
     {
-        $student = \App\Models\Student::findOrFail($id);
+        try {
+            $student = \App\Models\Student::findOrFail($id);
 
-        $validated = $request->validate([
-            'first_name' => 'required|string|max:255',
-            'last_name' => 'required|string|max:255',
-            'email' => 'required|email|unique:students,email,' . $student->id,
-            'phone' => 'nullable|digits:11',
-            'guardian_name' => 'nullable|string|max:255',
-            'guardian_contact' => 'nullable|digits:11',
-            'year_level' => 'nullable|string',
-            'status' => 'required|string|in:Normal,SLIP,PNS',
-            'absence_count' => 'required|integer|min:0',
-        ]);
+            $validated = $request->validate([
+                'first_name' => 'nullable|string|max:255',
+                'last_name' => 'nullable|string|max:255',
+                'email' => 'nullable|email|unique:students,email,' . $student->id,
+                'phone' => 'nullable|string|max:11|regex:/^[0-9]*$/',
+                'guardian_name' => 'nullable|string|max:255',
+                'guardian_contact' => 'nullable|string|max:11|regex:/^[0-9]*$/',
+                'year_level' => 'nullable|string',
+                'status' => 'nullable|string|in:Normal,SLIP,PNS',
+                'absence_count' => 'nullable|integer|min:0',
+            ]);
 
-        $student->first_name = $validated['first_name'];
-        $student->last_name = $validated['last_name'];
-        $student->email = $validated['email'];
-        $student->phone = $validated['phone'] ?? null;
-        $student->guardian_name = $validated['guardian_name'] ?? null;
-        $student->guardian_contact = $validated['guardian_contact'] ?? null;
-        $student->year_level = $validated['year_level'] ?? null;
-        $student->status = $validated['status'];
-        $student->absence_count = $validated['absence_count'];
-        $student->calculatePriority();
-        $student->save();
+            // Only update fields that are provided
+            if (isset($validated['first_name'])) {
+                $student->first_name = $validated['first_name'];
+            }
+            if (isset($validated['last_name'])) {
+                $student->last_name = $validated['last_name'];
+            }
+            if (isset($validated['email'])) {
+                $student->email = $validated['email'];
+            }
+            if (isset($validated['phone'])) {
+                $student->phone = !empty($validated['phone']) ? $validated['phone'] : null;
+            }
+            if (isset($validated['guardian_name'])) {
+                $student->guardian_name = !empty($validated['guardian_name']) ? $validated['guardian_name'] : null;
+            }
+            if (isset($validated['guardian_contact'])) {
+                $student->guardian_contact = !empty($validated['guardian_contact']) ? $validated['guardian_contact'] : null;
+            }
+            if (isset($validated['year_level'])) {
+                $student->year_level = !empty($validated['year_level']) ? $validated['year_level'] : null;
+            }
+            if (isset($validated['status'])) {
+                $student->status = $validated['status'];
+            }
+            if (isset($validated['absence_count'])) {
+                $student->absence_count = (int)$validated['absence_count'];
+            }
+            
+            // Recalculate priority if status or absence_count changed
+            if (isset($validated['status']) || isset($validated['absence_count'])) {
+                $student->calculatePriority();
+            }
+            
+            if (!$student->save()) {
+                throw new \Exception('Failed to save student to database');
+            }
 
-        return back()->with('success', 'Student updated successfully.');
+            return back()->with('success', 'Student updated successfully.');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return back()->withErrors($e->errors())->withInput();
+        } catch (\Exception $e) {
+            \Log::error('Error updating student: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            return back()->with('error', 'Failed to update student: ' . $e->getMessage());
+        }
     }
 
     public function sendStudentToCSDL(Request $request, $id)
@@ -2576,11 +2695,11 @@ class SystemAdminController extends Controller
                 try {
                     fputcsv($output, [
                         $tracking->id ?? '',
-                        ($tracking->student ? ($tracking->student->first_name . ' ' . $tracking->student->last_name) : 'N/A'),
-                        $tracking->student->student_number ?? '',
-                        $tracking->student->section?->name ?? 'N/A',
-                        $tracking->student->department?->name ?? $tracking->student->section?->program?->department?->name ?? 'N/A',
-                        $tracking->student->program?->name ?? $tracking->student->section?->program?->name ?? 'N/A',
+                        ($tracking->student ? (($tracking->student->first_name ?? '') . ' ' . ($tracking->student->last_name ?? '')) : 'N/A'),
+                        $tracking->student?->student_number ?? 'N/A',
+                        $tracking->student?->section?->name ?? 'N/A',
+                        $tracking->student?->department?->name ?? $tracking->student?->section?->program?->department?->name ?? 'N/A',
+                        $tracking->student?->program?->name ?? $tracking->student?->section?->program?->name ?? 'N/A',
                         ucfirst(str_replace('_', ' ', $tracking->type ?? '')),
                         $tracking->date ? $tracking->date->format('Y-m-d') : '',
                         $tracking->time ? \Carbon\Carbon::parse($tracking->time)->format('H:i') : '',
