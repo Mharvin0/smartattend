@@ -145,21 +145,90 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
         });
     };
 
-    const handleExport = () => {
-        const params = new URLSearchParams();
+    const handleExportReport = () => {
+        // Only export if on active tab, not archived or deleted
+        if (activeTab !== 'active') {
+            alert('Only active tracking records can be exported. Please switch to the Active tab.');
+            return;
+        }
         
-        if (activeTab) params.append('tab', activeTab);
-        if (typeFilter) params.append('type', typeFilter);
-        if (statusFilter) params.append('status', statusFilter);
-        if (departmentFilter) params.append('department_id', departmentFilter);
-        if (programFilter) params.append('program_id', programFilter);
-        if (sectionFilter) params.append('section_id', sectionFilter);
-        if (trackedByFilter) params.append('tracked_by', trackedByFilter);
-        if (dateFromFilter) params.append('date_from', dateFromFilter);
-        if (dateToFilter) params.append('date_to', dateToFilter);
-        if (searchFilter) params.append('search', searchFilter);
-
-        window.location.href = route('csdl.reports.export') + '?' + params.toString();
+        // Add print styles to the page
+        const style = document.createElement('style');
+        style.textContent = `
+            @media print {
+                @page {
+                    margin: 1cm 1.5cm;
+                    size: A4 landscape;
+                }
+                body * {
+                    visibility: hidden;
+                }
+                .print-section, .print-section * {
+                    visibility: visible;
+                }
+                .print-section {
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    width: 100%;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                }
+                .print-section .p-6 {
+                    width: 100%;
+                    max-width: 100%;
+                    margin: 0 auto;
+                    padding: 0;
+                }
+                .print-section table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 16px;
+                    margin: 0 auto;
+                    table-layout: fixed;
+                }
+                .print-section th,
+                .print-section td {
+                    padding: 10px 12px;
+                    border: 1px solid #000;
+                    text-align: left;
+                    word-wrap: break-word;
+                    vertical-align: top;
+                    line-height: 1.5;
+                    font-size: 16px;
+                }
+                .print-section th {
+                    background-color: #f3f4f6 !important;
+                    font-weight: bold;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                    font-size: 16px;
+                    padding: 12px;
+                    text-align: center;
+                }
+                .print-section thead {
+                    display: table-header-group;
+                }
+                .print-section tbody tr {
+                    page-break-inside: avoid;
+                    page-break-after: auto;
+                }
+                .no-print {
+                    display: none !important;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        // Trigger print
+        window.print();
+        
+        // Remove the style after printing
+        setTimeout(() => {
+            document.head.removeChild(style);
+        }, 1000);
     };
 
     const getTypeIcon = (type) => {
@@ -189,11 +258,11 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
                     </div>
                     <div className="flex items-center space-x-2">
                         <button 
-                            onClick={handleExport}
+                            onClick={handleExportReport}
                             className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 flex items-center gap-2"
                         >
                             <Download className="h-4 w-4" />
-                            Export Report
+                            Export
                         </button>
                     </div>
                 </div>
@@ -422,7 +491,7 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
                     </div>
 
                     {/* Recent Records */}
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto print-section">
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>

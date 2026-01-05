@@ -1,29 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Phone, Home, Users, Calendar, CheckCircle, XCircle, Clock, AlertCircle, Download } from 'lucide-react';
+import { Phone, Home, Users, Calendar, CheckCircle, XCircle, Clock, AlertCircle, Download, ChevronDown } from 'lucide-react';
 
-export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTracking = [], stats = {} }) {
+export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsSentToCSDL = [], recentTracking = [], stats = {}, programs = [] }) {
     const [selectedStudent, setSelectedStudent] = useState(null);
     const [showTrackingModal, setShowTrackingModal] = useState(false);
     const [editingTracking, setEditingTracking] = useState(null);
     const [viewingTracking, setViewingTracking] = useState(null);
     const [showViewTrackingModal, setShowViewTrackingModal] = useState(false);
-    const [trackingTab, setTrackingTab] = useState('recent'); // 'recent', 'archived', 'deleted'
+    const [trackingTab, setTrackingTab] = useState('recent'); // 'recent', 'archived'
     const [archivedTracking, setArchivedTracking] = useState([]);
-    const [deletedTracking, setDeletedTracking] = useState([]);
     const [isLoadingTracking, setIsLoadingTracking] = useState(false);
-    const [studentTab, setStudentTab] = useState('active'); // 'active', 'deleted'
-    const [deletedStudents, setDeletedStudents] = useState([]);
-    const [isLoadingDeletedStudents, setIsLoadingDeletedStudents] = useState(false);
     const [trackingForm, setTrackingForm] = useState({
         type: 'call',
         date: new Date().toISOString().split('T')[0],
         time: '',
         notes: '',
         status: 'completed',
-        outcome: '',
-        follow_up_required: '',
         follow_up_date: '',
     });
 
@@ -37,8 +31,6 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
             time: '',
             notes: '',
             status: 'completed',
-            outcome: '',
-            follow_up_required: '',
             follow_up_date: '',
         });
     };
@@ -56,8 +48,6 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
             time: tracking.time || '',
             notes: tracking.notes || '',
             status: tracking.status,
-            outcome: tracking.outcome || '',
-            follow_up_required: tracking.follow_up_required || '',
             follow_up_date: tracking.follow_up_date || '',
         });
     };
@@ -87,8 +77,6 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
                     time: '',
                     notes: '',
                     status: 'completed',
-                    outcome: '',
-                    follow_up_required: '',
                     follow_up_date: '',
                 });
                 router.reload();
@@ -119,66 +107,13 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
         });
     };
 
-    const fetchDeletedTracking = () => {
-        setIsLoadingTracking(true);
-        fetch(route('admin.tracking.deleted-tracking'), {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-            },
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                setDeletedTracking(data.tracking || []);
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching deleted tracking:', error);
-        })
-        .finally(() => {
-            setIsLoadingTracking(false);
-        });
-    };
 
     useEffect(() => {
         if (trackingTab === 'archived') {
             fetchArchivedTracking();
-        } else if (trackingTab === 'deleted') {
-            fetchDeletedTracking();
         }
     }, [trackingTab]);
 
-    const fetchDeletedStudents = () => {
-        setIsLoadingDeletedStudents(true);
-        fetch(route('admin.tracking.deleted-students'), {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-            },
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                setDeletedStudents(data.students || []);
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching deleted students:', error);
-            setDeletedStudents([]);
-        })
-        .finally(() => {
-            setIsLoadingDeletedStudents(false);
-        });
-    };
-
-    useEffect(() => {
-        if (studentTab === 'deleted') {
-            fetchDeletedStudents();
-        }
-    }, [studentTab]);
 
     const getPriorityColor = (priority) => {
         switch (priority) {
@@ -195,25 +130,199 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
     const getStatusColor = (status) => {
         switch (status) {
             case 'completed': return 'bg-green-100 text-green-800';
-            case 'scheduled': return 'bg-blue-100 text-blue-800';
-            case 'cancelled': return 'bg-red-100 text-red-800';
-            case 'no_answer': return 'bg-yellow-100 text-yellow-800';
+            case 'cancelled': return 'bg-gray-100 text-gray-800';
+            case 'no_answer': return 'bg-red-100 text-red-800';
+            case 'pending': return 'bg-yellow-100 text-yellow-800';
+            case 'to_follow': return 'bg-blue-100 text-blue-800';
+            case 'processing': return 'bg-purple-100 text-purple-800';
             default: return 'bg-gray-100 text-gray-800';
         }
+    };
+
+    const handleStatusUpdate = (studentId, trackingId, newStatus) => {
+        if (trackingId) {
+            // Update existing tracking record
+            router.put(route('admin.tracking.update-tracking', trackingId), {
+                type: 'call',
+                date: new Date().toISOString().split('T')[0],
+                time: '',
+                notes: '',
+                status: newStatus,
+                follow_up_date: '',
+            }, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    router.reload({ only: ['recentTracking', 'studentsNeedingCalls'] });
+                },
+            });
+        } else {
+            // Create new tracking record
+            router.post(route('admin.tracking.track-student'), {
+                student_id: studentId,
+                type: 'call',
+                date: new Date().toISOString().split('T')[0],
+                time: '',
+                notes: '',
+                status: newStatus,
+                follow_up_date: '',
+            }, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    router.reload({ only: ['recentTracking', 'studentsNeedingCalls'] });
+                },
+            });
+        }
+    };
+
+    const handleExportTracking = () => {
+        // Only export if on recent tab, not archived or deleted
+        if (trackingTab !== 'recent') {
+            alert('Only recent tracking records can be exported. Please switch to the Recent tab.');
+            return;
+        }
+        
+        // Add print styles to the page
+        const style = document.createElement('style');
+        style.textContent = `
+            @media print {
+                @page {
+                    margin: 1cm 1.5cm;
+                    size: A4 landscape;
+                }
+                body * {
+                    visibility: hidden;
+                }
+                .print-section, .print-section * {
+                    visibility: visible;
+                }
+                .print-section {
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    width: 100%;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                }
+                .print-section .space-y-4 > div {
+                    display: none;
+                }
+                .print-section .p-6 {
+                    width: 100%;
+                    max-width: 100%;
+                    margin: 0 auto;
+                    padding: 0;
+                }
+                .print-section table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 16px;
+                    margin: 0 auto;
+                    table-layout: fixed;
+                }
+                .print-section th,
+                .print-section td {
+                    padding: 10px 12px;
+                    border: 1px solid #000;
+                    text-align: left;
+                    word-wrap: break-word;
+                    vertical-align: top;
+                    line-height: 1.5;
+                    font-size: 16px;
+                }
+                .print-section th {
+                    background-color: #f3f4f6 !important;
+                    font-weight: bold;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                    font-size: 16px;
+                    padding: 12px;
+                    text-align: center;
+                }
+                .print-section thead {
+                    display: table-header-group;
+                }
+                .print-section tbody tr {
+                    page-break-inside: avoid;
+                    page-break-after: auto;
+                }
+                .no-print {
+                    display: none !important;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        // Create a hidden table for printing
+        const printSection = document.querySelector('.print-section');
+        if (printSection && recentTracking.length > 0) {
+            const existingTable = printSection.querySelector('.print-table');
+            if (existingTable) {
+                existingTable.remove();
+            }
+            
+            const table = document.createElement('table');
+            table.className = 'print-table';
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th style="width: 12%;">Student Name</th>
+                        <th style="width: 10%;">Student Number</th>
+                        <th style="width: 10%;">Section</th>
+                        <th style="width: 6%;">Type</th>
+                        <th style="width: 8%;">Date</th>
+                        <th style="width: 7%;">Time</th>
+                        <th style="width: 8%;">Status</th>
+                        <th style="width: 10%;">Tracked By</th>
+                        <th style="width: 29%;">Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${recentTracking.map(tracking => `
+                        <tr>
+                            <td>${tracking.student?.name || 'N/A'}</td>
+                            <td>${tracking.student?.student_number || 'N/A'}</td>
+                            <td>${tracking.student?.section || 'N/A'}</td>
+                            <td>${tracking.type === 'call' ? 'Call' : 'Home Visit'}</td>
+                            <td>${tracking.date || 'N/A'}</td>
+                            <td>${tracking.time || 'N/A'}</td>
+                            <td>${(tracking.status || 'pending').charAt(0).toUpperCase() + (tracking.status || 'pending').slice(1).replace('_', ' ')}</td>
+                            <td>${tracking.tracked_by || 'N/A'}</td>
+                            <td>${tracking.notes || 'N/A'}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            `;
+            
+            const p6Div = printSection.querySelector('.p-6');
+            if (p6Div) {
+                p6Div.appendChild(table);
+            }
+        }
+        
+        // Trigger print
+        window.print();
+        
+        // Clean up after printing
+        setTimeout(() => {
+            const printTable = document.querySelector('.print-table');
+            if (printTable) {
+                printTable.remove();
+            }
+            document.head.removeChild(style);
+        }, 1000);
     };
 
     return (
         <AuthenticatedLayout>
             <Head title="Admin Student Tracking" />
             
-            <div className="space-y-6">
+            <div className="space-y-8 py-6">
                 {/* Header */}
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-3xl font-bold tracking-tight">Student Tracking</h1>
-                        <p className="text-gray-600">
-                            Track calls and home visits for students in need
-                        </p>
                     </div>
                 </div>
 
@@ -265,95 +374,99 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
                     </div>
                 </div>
 
-                {/* Students Needing Attention */}
-                <div className="bg-white rounded-lg shadow">
-                    <div className="px-6 py-4 border-b border-gray-200">
-                        <div className="flex items-center justify-between">
-                            <h3 className="text-lg font-semibold text-gray-900">Students Needing Attention</h3>
-                            <div className="flex space-x-1 border-b border-gray-200">
-                                <button
-                                    onClick={() => setStudentTab('active')}
-                                    className={`px-4 py-2 text-sm font-medium ${
-                                        studentTab === 'active'
-                                            ? 'text-blue-600 border-b-2 border-blue-600'
-                                            : 'text-gray-500 hover:text-gray-700'
-                                    }`}
-                                >
-                                    Active
-                                </button>
-                                <button
-                                    onClick={() => setStudentTab('deleted')}
-                                    className={`px-4 py-2 text-sm font-medium ${
-                                        studentTab === 'deleted'
-                                            ? 'text-blue-600 border-b-2 border-blue-600'
-                                            : 'text-gray-500 hover:text-gray-700'
-                                    }`}
-                                >
-                                    Deleted
-                                </button>
-                            </div>
-                        </div>
+                {/* Students Needing Calls (Admin handles) */}
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
+                    <div className="px-6 py-4 border-b border-gray-100">
+                        <h3 className="text-base font-semibold text-gray-900">Students Needing Calls</h3>
+                        <p className="text-xs text-gray-500 mt-0.5">Update status using the radio buttons below</p>
                     </div>
                     <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                                <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Student</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Absences</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Tracking</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                        <table className="min-w-full">
+                            <thead>
+                                <tr className="border-b border-gray-100">
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Student</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Priority</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Absences</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Contact</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Last Tracking</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                                {studentTab === 'active' ? (
-                                    studentsNeedingCalls.length > 0 ? (
-                                        studentsNeedingCalls.map((student) => (
-                                        <tr key={student.id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <div className="text-sm font-medium text-gray-900">{student.name}</div>
-                                                <div className="text-sm text-gray-500">{student.student_number}</div>
+                            <tbody className="divide-y divide-gray-50">
+                                {studentsNeedingCalls.length > 0 ? (
+                                    studentsNeedingCalls.map((student) => (
+                                        <tr key={student.id} className="hover:bg-gray-50/50 transition-colors">
+                                            <td className="px-4 py-3.5">
+                                                <div className="font-medium text-gray-900 text-sm">{student.name}</div>
+                                                <div className="text-xs text-gray-400 mt-0.5">{student.student_number}</div>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                                    student.tracking_status === 'completed' ? 'bg-green-100 text-green-800' :
-                                                    student.tracking_status === 'scheduled' ? 'bg-yellow-100 text-yellow-800' :
-                                                    student.tracking_status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
-                                                    student.tracking_status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                                                    'bg-gray-100 text-gray-800'
-                                                }`}>
-                                                    {student.tracking_status || 'No Status'}
-                                                </span>
+                                            <td className="px-4 py-3.5">
+                                                <div className="flex items-center gap-3">
+                                                    <label className="flex items-center gap-1.5 cursor-pointer group">
+                                                        <input
+                                                            type="radio"
+                                                            name={`status-${student.id}`}
+                                                            value="completed"
+                                                            checked={student.tracking_status === 'completed'}
+                                                            onChange={() => handleStatusUpdate(student.id, student.last_tracking?.id, 'completed')}
+                                                            className="w-3.5 h-3.5 text-green-600 focus:ring-2 focus:ring-green-500 focus:ring-offset-1 border-gray-300"
+                                                        />
+                                                        <span className="text-xs font-medium text-gray-600 group-hover:text-gray-900">Completed</span>
+                                                    </label>
+                                                    <label className="flex items-center gap-1.5 cursor-pointer group">
+                                                        <input
+                                                            type="radio"
+                                                            name={`status-${student.id}`}
+                                                            value="cancelled"
+                                                            checked={student.tracking_status === 'cancelled'}
+                                                            onChange={() => handleStatusUpdate(student.id, student.last_tracking?.id, 'cancelled')}
+                                                            className="w-3.5 h-3.5 text-gray-500 focus:ring-2 focus:ring-gray-400 focus:ring-offset-1 border-gray-300"
+                                                        />
+                                                        <span className="text-xs font-medium text-gray-600 group-hover:text-gray-900">Cancelled</span>
+                                                    </label>
+                                                    <label className="flex items-center gap-1.5 cursor-pointer group">
+                                                        <input
+                                                            type="radio"
+                                                            name={`status-${student.id}`}
+                                                            value="no_answer"
+                                                            checked={student.tracking_status === 'no_answer'}
+                                                            onChange={() => handleStatusUpdate(student.id, student.last_tracking?.id, 'no_answer')}
+                                                            className="w-3.5 h-3.5 text-red-600 focus:ring-2 focus:ring-red-500 focus:ring-offset-1 border-gray-300"
+                                                        />
+                                                        <span className="text-xs font-medium text-gray-600 group-hover:text-gray-900">No answer</span>
+                                                    </label>
+                                                </div>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPriorityColor(student.priority)}`}>
+                                            <td className="px-4 py-3.5">
+                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium ${getPriorityColor(student.priority)}`}>
                                                     {student.priority}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {student.absence_count}
+                                            <td className="px-4 py-3.5">
+                                                <span className="text-sm text-gray-600 font-medium">{student.absence_count}</span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {student.guardian_contact || 'N/A'}
+                                            <td className="px-4 py-3.5">
+                                                <span className="text-sm text-gray-600">{student.guardian_contact || '—'}</span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-3.5">
                                                 {student.last_tracking ? (
-                                                    <div>
-                                                        <div className="flex items-center gap-1">
-                                                            {getTypeIcon(student.last_tracking.type)}
-                                                            <span className="capitalize">{student.last_tracking.type.replace('_', ' ')}</span>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-gray-400">{getTypeIcon(student.last_tracking.type)}</span>
+                                                        <div>
+                                                            <div className="text-xs font-medium text-gray-700 capitalize">{student.last_tracking.type.replace('_', ' ')}</div>
+                                                            <div className="text-xs text-gray-400">{student.last_tracking.date}</div>
                                                         </div>
-                                                        <div className="text-xs">{student.last_tracking.date}</div>
                                                     </div>
-                                                ) : 'Never'}
+                                                ) : (
+                                                    <span className="text-xs text-gray-400">Never</span>
+                                                )}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                            <td className="px-4 py-3.5">
                                                 <div className="flex items-center gap-2">
                                                     <button
                                                         onClick={() => handleTrackStudent(student)}
-                                                        className="text-blue-600 hover:text-blue-900"
+                                                        className="text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
                                                     >
                                                         Track
                                                     </button>
@@ -371,42 +484,12 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
                                                                 });
                                                             }
                                                         }}
-                                                        className="relative group p-1.5 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 rounded-md transition-colors"
+                                                        className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
                                                         title="Archive"
                                                     >
-                                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                                                         </svg>
-                                                        <span className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                                                            Archive
-                                                        </span>
-                                                    </button>
-                                                    <button
-                                                        onClick={() => {
-                                                            if (confirm('Are you sure you want to delete this student? This action cannot be undone.')) {
-                                                                router.delete(route('admin.tracking.delete-student', student.id), {
-                                                                    preserveScroll: true,
-                                                                    onSuccess: () => {
-                                                                        router.reload({ only: ['studentsNeedingCalls'] });
-                                                                        if (studentTab === 'deleted') {
-                                                                            fetchDeletedStudents();
-                                                                        }
-                                                                    },
-                                                                    onError: () => {
-                                                                        alert('Failed to delete student');
-                                                                    }
-                                                                });
-                                                            }
-                                                        }}
-                                                        className="relative group p-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
-                                                        title="Delete"
-                                                    >
-                                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                        </svg>
-                                                        <span className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                                                            Delete
-                                                        </span>
                                                     </button>
                                                 </div>
                                             </td>
@@ -414,108 +497,99 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
                                     ))
                                 ) : (
                                     <tr>
-                                        <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
-                                            No students need attention at this time
+                                        <td colSpan="7" className="px-4 py-16 text-center">
+                                            <div className="text-sm text-gray-400">No students need attention at this time</div>
                                         </td>
                                     </tr>
-                                )
-                            ) : (
-                                isLoadingDeletedStudents ? (
-                                    <tr>
-                                        <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
-                                            <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-gray-900"></div>
-                                            <p className="mt-2">Loading...</p>
-                                        </td>
-                                    </tr>
-                                ) : deletedStudents.length > 0 ? (
-                                    deletedStudents.map((student) => (
-                                            <tr key={student.id} className="hover:bg-gray-50">
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="text-sm font-medium text-gray-900">{student.name}</div>
-                                                    <div className="text-sm text-gray-500">{student.student_number}</div>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                                        student.tracking_status === 'completed' ? 'bg-green-100 text-green-800' :
-                                                        student.tracking_status === 'scheduled' ? 'bg-yellow-100 text-yellow-800' :
-                                                        student.tracking_status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
-                                                        student.tracking_status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                                                        'bg-gray-100 text-gray-800'
-                                                    }`}>
-                                                        {student.tracking_status || 'No Status'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPriorityColor(student.priority)}`}>
-                                                        {student.priority}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {student.absence_count}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {student.guardian_contact || 'N/A'}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {student.deleted_at ? (
-                                                        <div className="text-xs text-gray-400">Deleted: {student.deleted_at}</div>
-                                                    ) : 'N/A'}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                                    <button
-                                                        onClick={() => {
-                                                            if (confirm('Are you sure you want to restore this student?')) {
-                                                                router.post(route('admin.tracking.restore-student', student.id), {}, {
-                                                                    preserveScroll: true,
-                                                                    onSuccess: () => {
-                                                                        fetchDeletedStudents();
-                                                                        router.reload({ only: ['studentsNeedingCalls'] });
-                                                                    },
-                                                                    onError: () => {
-                                                                        alert('Failed to restore student');
-                                                                    }
-                                                                });
-                                                            }
-                                                        }}
-                                                        className="text-green-600 hover:text-green-900"
-                                                    >
-                                                        Restore
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                    ))
-                                ) : (
-                                    <tr>
-                                        <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
-                                            No deleted students
-                                        </td>
-                                    </tr>
-                                )
-                            )}
+                                )}
                             </tbody>
                         </table>
                     </div>
                 </div>
 
+                {/* Students Sent to CSDL for Home Visits (View Only) */}
+                {studentsSentToCSDL.length > 0 && (
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
+                        <div className="px-6 py-4 border-b border-gray-100">
+                            <h3 className="text-base font-semibold text-gray-900">Students Sent to CSDL for Home Visits</h3>
+                            <p className="text-xs text-gray-500 mt-0.5">View only — These students are being handled by CSDL</p>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full">
+                                <thead>
+                                    <tr className="border-b border-gray-100">
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Student</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Priority</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Absences</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Contact</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Last Tracking</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-50">
+                                    {studentsSentToCSDL.map((student) => (
+                                        <tr key={student.id} className="hover:bg-gray-50/50 transition-colors">
+                                            <td className="px-4 py-3.5">
+                                                <div className="font-medium text-gray-900 text-sm">{student.name}</div>
+                                                <div className="text-xs text-gray-400 mt-0.5">{student.student_number}</div>
+                                            </td>
+                                            <td className="px-4 py-3.5">
+                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium ${getStatusColor(student.tracking_status)}`}>
+                                                    {student.tracking_status === 'completed' ? 'Completed' : 
+                                                     student.tracking_status === 'no_answer' ? 'No answer' : 
+                                                     student.tracking_status && student.tracking_status !== 'No Status' ? student.tracking_status.replace('_', ' ') : 'No Status'}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3.5">
+                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium ${getPriorityColor(student.priority)}`}>
+                                                    {student.priority}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3.5">
+                                                <span className="text-sm text-gray-600 font-medium">{student.absence_count}</span>
+                                            </td>
+                                            <td className="px-4 py-3.5">
+                                                <span className="text-sm text-gray-600">{student.guardian_contact || '—'}</span>
+                                            </td>
+                                            <td className="px-4 py-3.5">
+                                                {student.last_tracking ? (
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-gray-400">{getTypeIcon(student.last_tracking.type)}</span>
+                                                        <div>
+                                                            <div className="text-xs font-medium text-gray-700 capitalize">{student.last_tracking.type.replace('_', ' ')}</div>
+                                                            <div className="text-xs text-gray-400">{student.last_tracking.date}</div>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-xs text-gray-400">Never</span>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
                 {/* Tracking Records with Tabs */}
-                <div className="bg-white rounded-lg shadow">
-                    <div className="px-6 py-4 border-b border-gray-200">
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm print-section">
+                    <div className="px-6 py-4 border-b border-gray-100">
                         <div className="flex items-center justify-between">
-                            <h3 className="text-lg font-semibold text-gray-900">Tracking Records</h3>
-                            <div className="flex items-center gap-3">
-                                <a
-                                    href={route('admin.tracking.export-tracking', { tab: trackingTab })}
-                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
+                            <h3 className="text-base font-semibold text-gray-900">Tracking Records</h3>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handleExportTracking}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg transition-colors text-xs font-medium"
                                     title={`Export ${trackingTab} tracking records`}
-                                    download
                                 >
-                                    <Download className="h-4 w-4" />
-                                    Export {trackingTab === 'recent' ? 'Recent' : trackingTab === 'archived' ? 'Archived' : 'Deleted'}
-                                </a>
-                                <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                                    <Download className="h-3.5 w-3.5" />
+                                    Export
+                                </button>
+                                <div className="flex items-center gap-0.5 bg-gray-50 rounded-lg p-0.5">
                                 <button
                                     onClick={() => setTrackingTab('recent')}
-                                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                                         trackingTab === 'recent'
                                             ? 'bg-white text-gray-900 shadow-sm'
                                             : 'text-gray-600 hover:text-gray-900'
@@ -525,7 +599,7 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
                                 </button>
                                 <button
                                     onClick={() => setTrackingTab('archived')}
-                                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                                         trackingTab === 'archived'
                                             ? 'bg-white text-gray-900 shadow-sm'
                                             : 'text-gray-600 hover:text-gray-900'
@@ -533,62 +607,50 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
                                 >
                                     Archived
                                 </button>
-                                <button
-                                    onClick={() => setTrackingTab('deleted')}
-                                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                                        trackingTab === 'deleted'
-                                            ? 'bg-white text-gray-900 shadow-sm'
-                                            : 'text-gray-600 hover:text-gray-900'
-                                    }`}
-                                >
-                                    Deleted
-                                </button>
                             </div>
                             </div>
                         </div>
                     </div>
-                    <div className="p-6">
+                    <div className="p-4">
                         {isLoadingTracking ? (
-                            <div className="text-center py-8 text-gray-500">
-                                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
-                                <p className="mt-2">Loading...</p>
+                            <div className="text-center py-12 text-gray-400">
+                                <div className="inline-block animate-spin rounded-full h-6 w-6 border-2 border-gray-300 border-t-gray-600"></div>
+                                <p className="mt-2 text-xs">Loading...</p>
                             </div>
                         ) : (
-                            <div className="space-y-4">
-                                {(trackingTab === 'recent' ? recentTracking : 
-                                  trackingTab === 'archived' ? archivedTracking : 
-                                  deletedTracking).length > 0 ? (
-                                    (trackingTab === 'recent' ? recentTracking : 
-                                     trackingTab === 'archived' ? archivedTracking : 
-                                     deletedTracking).map((tracking) => (
-                                    <div key={tracking.id} className="flex items-center justify-between p-4 border rounded-lg">
-                                        <div className="flex items-center gap-4">
-                                            <div className={`p-2 rounded-full ${tracking.type === 'call' ? 'bg-blue-100' : 'bg-green-100'}`}>
+                            <div className="space-y-2">
+                                {(trackingTab === 'recent' ? recentTracking : archivedTracking).length > 0 ? (
+                                    (trackingTab === 'recent' ? recentTracking : archivedTracking).map((tracking) => (
+                                    <div key={tracking.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:border-gray-200 hover:bg-gray-50/50 transition-all">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`p-1.5 rounded-lg ${tracking.type === 'call' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'}`}>
                                                 {getTypeIcon(tracking.type)}
                                             </div>
                                             <div>
-                                                <p className="font-medium">{tracking.student.name}</p>
-                                                <p className="text-sm text-gray-500">{tracking.student.section}</p>
+                                                <p className="font-medium text-gray-900 text-sm">{tracking.student.name}</p>
+                                                <p className="text-xs text-gray-500 mt-0.5">{tracking.student.section}</p>
                                                 {tracking.notes && (
-                                                    <p className="text-sm text-gray-600 mt-1">{tracking.notes}</p>
+                                                    <p className="text-xs text-gray-600 mt-1.5 max-w-md line-clamp-1">{tracking.notes}</p>
                                                 )}
                                             </div>
                                         </div>
-                                        <div className="text-right">
-                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(tracking.status)}`}>
-                                                {tracking.status}
-                                            </span>
-                                            <p className="text-sm text-gray-500 mt-1">
-                                                {tracking.date} {tracking.time && `at ${tracking.time}`}
-                                            </p>
-                                            <p className="text-xs text-gray-400">by {tracking.tracked_by}</p>
-                                            {trackingTab === 'archived' && tracking.archived_at && (
-                                                <p className="text-xs text-gray-400 mt-1">Archived: {tracking.archived_at}</p>
-                                            )}
-                                            {trackingTab === 'deleted' && tracking.deleted_at && (
-                                                <p className="text-xs text-gray-400 mt-1">Deleted: {tracking.deleted_at}</p>
-                                            )}
-                                            <div className="flex items-center gap-2 mt-2">
+                                        <div className="flex items-center gap-4">
+                                            <div className="text-right">
+                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium ${getStatusColor(tracking.status)}`}>
+                                                    {tracking.status === 'completed' ? 'Completed' : 
+                                                     tracking.status === 'cancelled' ? 'Cancelled' : 
+                                                     tracking.status === 'no_answer' ? 'No answer' : 
+                                                     tracking.status ? tracking.status.replace('_', ' ') : 'No Status'}
+                                                </span>
+                                                <p className="text-xs text-gray-500 mt-1.5">
+                                                    {tracking.date} {tracking.time && `• ${tracking.time}`}
+                                                </p>
+                                                <p className="text-xs text-gray-400 mt-0.5">by {tracking.tracked_by}</p>
+                                                {trackingTab === 'archived' && tracking.archived_at && (
+                                                    <p className="text-xs text-gray-400 mt-0.5">Archived: {tracking.archived_at}</p>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-2">
                                                 {trackingTab === 'recent' && (
                                                     <button
                                                         onClick={() => {
@@ -611,7 +673,7 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
                                                                 alert('Failed to load tracking details');
                                                             });
                                                         }}
-                                                        className="text-blue-600 hover:text-blue-900 text-sm font-medium"
+                                                        className="text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
                                                         title="View Details"
                                                     >
                                                         View
@@ -633,32 +695,10 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
                                                                 });
                                                             }
                                                         }}
-                                                        className="text-green-600 hover:text-green-900 text-sm font-medium"
+                                                        className="text-xs font-medium text-green-600 hover:text-green-700 transition-colors"
                                                         title="Unarchive"
                                                     >
                                                         Unarchive
-                                                    </button>
-                                                )}
-                                                {trackingTab === 'deleted' && (
-                                                    <button
-                                                        onClick={() => {
-                                                            if (confirm('Are you sure you want to restore this tracking record?')) {
-                                                                router.post(route('admin.tracking.restore-tracking', tracking.id), {}, {
-                                                                    preserveScroll: true,
-                                                                    onSuccess: () => {
-                                                                        fetchDeletedTracking();
-                                                                        router.reload({ only: ['recentTracking'] });
-                                                                    },
-                                                                    onError: () => {
-                                                                        alert('Failed to restore tracking record');
-                                                                    }
-                                                                });
-                                                            }
-                                                        }}
-                                                        className="text-green-600 hover:text-green-900 text-sm font-medium"
-                                                        title="Restore"
-                                                    >
-                                                        Restore
                                                     </button>
                                                 )}
                                             </div>
@@ -666,12 +706,11 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
                                     </div>
                                     ))
                                 ) : (
-                                    <div className="text-center py-8 text-gray-500">
-                                        <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                                        <p>
+                                    <div className="text-center py-12 text-gray-400">
+                                        <Calendar className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                                        <p className="text-sm font-medium">
                                             {trackingTab === 'recent' && 'No tracking records yet'}
                                             {trackingTab === 'archived' && 'No archived tracking records'}
-                                            {trackingTab === 'deleted' && 'No deleted tracking records'}
                                         </p>
                                     </div>
                                 )}
@@ -766,15 +805,14 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
                                 <div className="space-y-5">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
-                                        <select
-                                            value={trackingForm.type}
-                                            onChange={(e) => setTrackingForm({ ...trackingForm, type: e.target.value })}
-                                            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            required
-                                        >
-                                            <option value="call">Call</option>
-                                            <option value="home_visit">Home Visit</option>
-                                        </select>
+                                        <input
+                                            type="text"
+                                            value="Call"
+                                            disabled
+                                            className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 text-gray-600 cursor-not-allowed"
+                                        />
+                                        <input type="hidden" name="type" value="call" />
+                                        <p className="text-xs text-gray-500 mt-1">Admin can only track calls. Home visits are handled by CSDL.</p>
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
@@ -783,6 +821,7 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
                                                 type="date"
                                                 value={trackingForm.date}
                                                 onChange={(e) => setTrackingForm({ ...trackingForm, date: e.target.value })}
+                                                min={new Date().toISOString().split('T')[0]}
                                                 className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                                 required
                                             />
@@ -793,23 +832,59 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
                                                 type="time"
                                                 value={trackingForm.time}
                                                 onChange={(e) => setTrackingForm({ ...trackingForm, time: e.target.value })}
+                                                min={(() => {
+                                                    if (trackingForm.date === new Date().toISOString().split('T')[0]) {
+                                                        const now = new Date();
+                                                        const hours = String(now.getHours()).padStart(2, '0');
+                                                        const minutes = String(now.getMinutes()).padStart(2, '0');
+                                                        return `${hours}:${minutes}`;
+                                                    }
+                                                    return undefined;
+                                                })()}
                                                 className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                             />
                                         </div>
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
-                                        <select
-                                            value={trackingForm.status}
-                                            onChange={(e) => setTrackingForm({ ...trackingForm, status: e.target.value })}
-                                            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            required
-                                        >
-                                            <option value="completed">Completed</option>
-                                            <option value="scheduled">Scheduled</option>
-                                            <option value="cancelled">Cancelled</option>
-                                            <option value="no_answer">No Answer</option>
-                                        </select>
+                                        <div className="flex items-center gap-6">
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="status"
+                                                    value="completed"
+                                                    checked={trackingForm.status === 'completed'}
+                                                    onChange={(e) => setTrackingForm({ ...trackingForm, status: e.target.value })}
+                                                    className="w-4 h-4 text-green-600 focus:ring-green-500"
+                                                    required
+                                                />
+                                                <span className="text-sm font-medium text-gray-700">Completed</span>
+                                            </label>
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="status"
+                                                    value="cancelled"
+                                                    checked={trackingForm.status === 'cancelled'}
+                                                    onChange={(e) => setTrackingForm({ ...trackingForm, status: e.target.value })}
+                                                    className="w-4 h-4 text-gray-600 focus:ring-gray-500"
+                                                    required
+                                                />
+                                                <span className="text-sm font-medium text-gray-700">Cancelled</span>
+                                            </label>
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="status"
+                                                    value="no_answer"
+                                                    checked={trackingForm.status === 'no_answer'}
+                                                    onChange={(e) => setTrackingForm({ ...trackingForm, status: e.target.value })}
+                                                    className="w-4 h-4 text-red-600 focus:ring-red-500"
+                                                    required
+                                                />
+                                                <span className="text-sm font-medium text-gray-700">No answer</span>
+                                            </label>
+                                        </div>
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-2">Follow-up Date (optional)</label>
@@ -817,6 +892,7 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
                                             type="date"
                                             value={trackingForm.follow_up_date}
                                             onChange={(e) => setTrackingForm({ ...trackingForm, follow_up_date: e.target.value })}
+                                            min={new Date().toISOString().split('T')[0]}
                                             className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
                                     </div>
@@ -832,26 +908,6 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
                                             className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                             rows="4"
                                             placeholder="Enter notes about this tracking record..."
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">Outcome (optional)</label>
-                                        <textarea
-                                            value={trackingForm.outcome}
-                                            onChange={(e) => setTrackingForm({ ...trackingForm, outcome: e.target.value })}
-                                            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            rows="3"
-                                            placeholder="Enter the outcome of this interaction..."
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">Follow-up Required (optional)</label>
-                                        <textarea
-                                            value={trackingForm.follow_up_required}
-                                            onChange={(e) => setTrackingForm({ ...trackingForm, follow_up_required: e.target.value })}
-                                            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            rows="3"
-                                            placeholder="Enter any follow-up actions required..."
                                         />
                                     </div>
                                 </div>
@@ -1046,19 +1102,7 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], recentTra
                                             <p className="text-gray-900 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg border border-gray-200 min-h-[120px]">{viewingTracking.notes}</p>
                                         </div>
                                     )}
-                                    {viewingTracking.outcome && (
-                                        <div>
-                                            <h4 className="font-semibold text-gray-900 mb-3 text-base">Outcome</h4>
-                                            <p className="text-gray-900 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg border border-gray-200 min-h-[120px]">{viewingTracking.outcome}</p>
-                                        </div>
-                                    )}
-                                    {viewingTracking.follow_up_required && (
-                                        <div>
-                                            <h4 className="font-semibold text-gray-900 mb-3 text-base">Follow-up Required</h4>
-                                            <p className="text-gray-900 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg border border-gray-200 min-h-[120px]">{viewingTracking.follow_up_required}</p>
-                                        </div>
-                                    )}
-                                    {!viewingTracking.notes && !viewingTracking.outcome && !viewingTracking.follow_up_required && (
+                                    {!viewingTracking.notes && (
                                         <div className="flex items-center justify-center h-full text-gray-400">
                                             <p className="text-sm">No additional notes or information</p>
                                         </div>

@@ -36,6 +36,11 @@ class AuthenticatedSessionController extends Controller
         // Redirect based on user role (check Super Admin first, as they may have multiple roles)
         $user = Auth::user();
         
+        // Check if password needs to be changed on first login
+        if ($user->password_changed_at === null) {
+            return redirect()->route('password.change.first-time');
+        }
+        
         // Clear any intended URL to prevent redirecting to wrong dashboard
         $intended = $request->session()->pull('url.intended');
         

@@ -36,23 +36,51 @@ class AdminTrackingController extends Controller
 
     public function index()
     {
-        // Get students that need calls or home visits
-        // Include students with priority 'Call Needed' or 'PNS', OR students with active scheduled tracking records
-        $studentsWithScheduledTracking = StudentTracking::where('status', 'scheduled')
+        $user = auth()->user();
+        
+        // Get programs from admin's assigned department(s) - fixed filter
+        $departmentIds = $user->getAssignedDepartmentIds();
+        $programIds = \App\Models\Program::whereIn('department_id', $departmentIds)
+            ->pluck('id')
+            ->toArray();
+        
+        // Admin only handles calls - get students that need calls
+        $studentsWithActiveCallTracking = StudentTracking::where('type', 'call')
+            ->whereIn('status', ['pending', 'to_follow', 'processing', 'completed', 'cancelled', 'no_answer'])
             ->where('archived', false)
+            ->whereHas('student', function($q) use ($programIds) {
+                if (!empty($programIds)) {
+                    $q->whereHas('section', function($sectionQ) use ($programIds) {
+                        $sectionQ->whereIn('program_id', $programIds);
+                    });
+                }
+            })
             ->pluck('student_id')
             ->unique()
             ->values()
             ->toArray();
         
-        $studentsNeedingCalls = Student::where(function($query) use ($studentsWithScheduledTracking) {
-                $query->whereIn('priority', ['Call Needed', 'PNS']);
-                if (!empty($studentsWithScheduledTracking)) {
-                    $query->orWhereIn('id', $studentsWithScheduledTracking);
+        // Filter students by programs from admin's assigned department(s)
+        $studentsNeedingCalls = Student::query()
+            ->when(!empty($programIds), function($query) use ($programIds) {
+                $query->whereHas('section', function($q) use ($programIds) {
+                    $q->whereIn('program_id', $programIds);
+                });
+            })
+            ->when(empty($programIds), function($query) {
+                // If no programs, return empty result
+                $query->whereRaw('1 = 0');
+            })
+            ->where(function($query) use ($studentsWithActiveCallTracking) {
+                // Only show students with 'Call Needed' priority (admin handles calls)
+                $query->where('priority', 'Call Needed');
+                if (!empty($studentsWithActiveCallTracking)) {
+                    $query->orWhereIn('id', $studentsWithActiveCallTracking);
                 }
             })
             ->with(['section.program.department', 'department', 'program', 'studentTracking' => function($query) {
-                $query->where('archived', false)
+                $query->where('type', 'call') // Only get call tracking records
+                    ->where('archived', false)
                     ->orderBy('date', 'desc')
                     ->orderBy('created_at', 'desc')
                     ->limit(1);
@@ -60,9 +88,9 @@ class AdminTrackingController extends Controller
             ->orderBy('priority', 'desc')
             ->orderBy('absence_count', 'desc')
             ->get()
-            ->map(function ($student) use ($studentsWithScheduledTracking) {
-                // Only update priority if student doesn't have active scheduled tracking
-                if (!in_array($student->id, $studentsWithScheduledTracking)) {
+            ->map(function ($student) use ($studentsWithActiveCallTracking) {
+                // Only update priority if student doesn't have active tracking
+                if (!in_array($student->id, $studentsWithActiveCallTracking)) {
                     $student->updatePriority();
                 }
                 $latestTracking = $student->studentTracking->first();
@@ -82,10 +110,62 @@ class AdminTrackingController extends Controller
                 ];
             });
 
-        // Get recent tracking records (excluding archived and soft-deleted)
+        // Get students sent to CSDL for home visits (view only) - filtered by programs
+        $studentsSentToCSDL = Student::query()
+            ->when(!empty($programIds), function($query) use ($programIds) {
+                $query->whereHas('section', function($q) use ($programIds) {
+                    $q->whereIn('program_id', $programIds);
+                });
+            })
+            ->when(empty($programIds), function($query) {
+                $query->whereRaw('1 = 0');
+            })
+            ->where('priority', 'PNS')
+            ->whereHas('studentTracking', function($query) {
+                $query->where('type', 'home_visit')
+                    ->where('archived', false);
+            })
+            ->with(['section.program.department', 'department', 'program', 'studentTracking' => function($query) {
+                $query->where('type', 'home_visit')
+                    ->where('archived', false)
+                    ->orderBy('date', 'desc')
+                    ->orderBy('created_at', 'desc')
+                    ->limit(1);
+            }])
+            ->orderBy('absence_count', 'desc')
+            ->get()
+            ->map(function ($student) {
+                $latestTracking = $student->studentTracking->first();
+                return [
+                    'id' => $student->id,
+                    'name' => $student->first_name . ' ' . $student->last_name,
+                    'student_number' => $student->student_number,
+                    'email' => $student->email,
+                    'section' => $student->section?->name ?? 'N/A',
+                    'department' => $student->department?->name ?? $student->section?->program?->department?->name ?? 'N/A',
+                    'program' => $student->program?->name ?? $student->section?->program?->name ?? 'N/A',
+                    'priority' => $student->priority ?? 'Safe',
+                    'absence_count' => $student->absence_count ?? 0,
+                    'guardian_contact' => $student->guardian_contact,
+                    'tracking_status' => $latestTracking?->status ?? 'No Status',
+                    'last_tracking' => $this->getLastTracking($student->id, 'home_visit'),
+                    'sent_to_csdl' => true,
+                ];
+            });
+
+        // Get recent tracking records - Admin sees both calls (they handle) and home visits (view only)
+        // Filter by programs from admin's assigned department(s)
         $recentTracking = StudentTracking::with(['student.section.program.department', 'trackedBy'])
+            ->whereHas('student', function($q) use ($programIds) {
+                if (!empty($programIds)) {
+                    $q->whereHas('section', function($sectionQ) use ($programIds) {
+                        $sectionQ->whereIn('program_id', $programIds);
+                    });
+                } else {
+                    $q->whereRaw('1 = 0'); // No programs = no results
+                }
+            })
             ->where('archived', false)
-            ->whereHas('student') // Only include tracking records with valid students
             ->orderBy('date', 'desc')
             ->orderBy('created_at', 'desc')
             ->limit(10)
@@ -108,7 +188,7 @@ class AdminTrackingController extends Controller
                     'tracked_by' => $tracking->trackedBy?->name ?? 'Unknown',
                     'tracked_by_id' => $tracking->tracked_by,
                     'notes' => $tracking->notes,
-                    'can_edit' => true,
+                    'can_edit' => $tracking->type === 'call', // Admin can only edit call records
                 ];
             })
             ->filter(function ($tracking) {
@@ -116,14 +196,52 @@ class AdminTrackingController extends Controller
             })
             ->values();
 
-        // Statistics
+        // Statistics - filtered by programs from admin's assigned department(s)
         $stats = [
-            'students_needing_calls' => Student::where('priority', 'Call Needed')->count(),
-            'students_needing_visits' => Student::where('priority', 'PNS')->count(),
-            'total_tracked_today' => StudentTracking::where('archived', false)
+            'students_needing_calls' => Student::query()
+                ->when(!empty($programIds), function($query) use ($programIds) {
+                    $query->whereHas('section', function($q) use ($programIds) {
+                        $q->whereIn('program_id', $programIds);
+                    });
+                })
+                ->when(empty($programIds), function($query) {
+                    $query->whereRaw('1 = 0');
+                })
+                ->where('priority', 'Call Needed')
+                ->count(),
+            'students_needing_visits' => Student::query()
+                ->when(!empty($programIds), function($query) use ($programIds) {
+                    $query->whereHas('section', function($q) use ($programIds) {
+                        $q->whereIn('program_id', $programIds);
+                    });
+                })
+                ->when(empty($programIds), function($query) {
+                    $query->whereRaw('1 = 0');
+                })
+                ->where('priority', 'PNS')
+                ->count(),
+            'total_tracked_today' => StudentTracking::whereHas('student', function($q) use ($programIds) {
+                    if (!empty($programIds)) {
+                        $q->whereHas('section', function($sectionQ) use ($programIds) {
+                            $sectionQ->whereIn('program_id', $programIds);
+                        });
+                    } else {
+                        $q->whereRaw('1 = 0');
+                    }
+                })
+                ->where('archived', false)
                 ->whereDate('date', Carbon::today())
                 ->count(),
-            'total_tracked_this_week' => StudentTracking::where('archived', false)
+            'total_tracked_this_week' => StudentTracking::whereHas('student', function($q) use ($programIds) {
+                    if (!empty($programIds)) {
+                        $q->whereHas('section', function($sectionQ) use ($programIds) {
+                            $sectionQ->whereIn('program_id', $programIds);
+                        });
+                    } else {
+                        $q->whereRaw('1 = 0');
+                    }
+                })
+                ->where('archived', false)
                 ->whereBetween('date', [
                     Carbon::now()->startOfWeek(),
                     Carbon::now()->endOfWeek()
@@ -131,10 +249,25 @@ class AdminTrackingController extends Controller
                 ->count(),
         ];
 
+        // Get programs for display (fixed based on admin's department)
+        $programs = \App\Models\Program::whereIn('department_id', $departmentIds)
+            ->with('department')
+            ->orderBy('name')
+            ->get()
+            ->map(function($program) {
+                return [
+                    'id' => $program->id,
+                    'name' => $program->name,
+                    'department' => $program->department?->name ?? 'N/A',
+                ];
+            });
+
         return Inertia::render('Admin/AdminTrackingPage', [
             'studentsNeedingCalls' => $studentsNeedingCalls,
+            'studentsSentToCSDL' => $studentsSentToCSDL,
             'recentTracking' => $recentTracking,
             'stats' => $stats,
+            'programs' => $programs, // Fixed programs based on admin's department
         ]);
     }
 
@@ -142,11 +275,11 @@ class AdminTrackingController extends Controller
     {
         $validated = $request->validate([
             'student_id' => 'required|exists:students,id',
-            'type' => 'required|in:call,home_visit',
+            'type' => 'required|in:call', // Admin can only create call records
             'date' => 'required|date',
             'time' => 'nullable|date_format:H:i',
             'notes' => 'nullable|string',
-            'status' => 'required|in:completed,scheduled,cancelled,no_answer',
+            'status' => 'required|in:completed,cancelled,no_answer', // Admin can only set these statuses for calls
             'outcome' => 'nullable|string',
             'follow_up_required' => 'nullable|string',
             'follow_up_date' => 'nullable|date|after:today',
@@ -155,7 +288,7 @@ class AdminTrackingController extends Controller
         $tracking = StudentTracking::create([
             'student_id' => $validated['student_id'],
             'tracked_by' => auth()->id(),
-            'type' => $validated['type'],
+            'type' => 'call', // Force call type for admin
             'date' => $validated['date'],
             'time' => $validated['time'] ? Carbon::parse($validated['time'])->format('H:i:s') : null,
             'notes' => $validated['notes'] ?? null,
@@ -171,20 +304,25 @@ class AdminTrackingController extends Controller
     public function updateTracking(Request $request, $id)
     {
         $tracking = StudentTracking::findOrFail($id);
+        
+        // Admin can only update call records, not home visits
+        if ($tracking->type !== 'call') {
+            abort(403, 'Admin users can only modify call records. Home visits are handled by CSDL.');
+        }
 
         $validated = $request->validate([
-            'type' => 'required|in:call,home_visit',
+            'type' => 'required|in:call', // Admin can only update call records
             'date' => 'required|date',
             'time' => 'nullable|date_format:H:i',
             'notes' => 'nullable|string',
-            'status' => 'required|in:completed,scheduled,cancelled,no_answer',
+            'status' => 'required|in:completed,cancelled,no_answer', // Admin can only set these statuses for calls
             'outcome' => 'nullable|string',
             'follow_up_required' => 'nullable|string',
             'follow_up_date' => 'nullable|date',
         ]);
 
         $tracking->update([
-            'type' => $validated['type'],
+            'type' => 'call', // Force call type
             'date' => $validated['date'],
             'time' => $validated['time'] ? Carbon::parse($validated['time'])->format('H:i:s') : null,
             'notes' => $validated['notes'] ?? null,
@@ -238,9 +376,23 @@ class AdminTrackingController extends Controller
 
     public function getArchivedTracking()
     {
+        $user = auth()->user();
+        $departmentIds = $user->getAssignedDepartmentIds();
+        $programIds = \App\Models\Program::whereIn('department_id', $departmentIds)
+            ->pluck('id')
+            ->toArray();
+        
         $archivedTracking = StudentTracking::with(['student.section.program.department', 'trackedBy'])
+            ->whereHas('student', function($q) use ($programIds) {
+                if (!empty($programIds)) {
+                    $q->whereHas('section', function($sectionQ) use ($programIds) {
+                        $sectionQ->whereIn('program_id', $programIds);
+                    });
+                } else {
+                    $q->whereRaw('1 = 0');
+                }
+            })
             ->where('archived', true)
-            ->whereHas('student') // Only include tracking records with valid students
             ->orderBy('archived_at', 'desc')
             ->orderBy('date', 'desc')
             ->get()
@@ -264,7 +416,7 @@ class AdminTrackingController extends Controller
                     'notes' => $tracking->notes,
                     'archived' => $tracking->archived,
                     'archived_at' => $tracking->archived_at ? $tracking->archived_at->format('Y-m-d H:i') : null,
-                    'can_edit' => true,
+                    'can_edit' => $tracking->type === 'call', // Admin can only edit call records
                 ];
             })
             ->filter(function ($tracking) {
@@ -280,10 +432,24 @@ class AdminTrackingController extends Controller
 
     public function getDeletedTracking()
     {
+        $user = auth()->user();
+        $departmentIds = $user->getAssignedDepartmentIds();
+        $programIds = \App\Models\Program::whereIn('department_id', $departmentIds)
+            ->pluck('id')
+            ->toArray();
+        
         $deletedTracking = StudentTracking::withTrashed()
             ->with(['student.section.program.department', 'trackedBy'])
+            ->whereHas('student', function($q) use ($programIds) {
+                if (!empty($programIds)) {
+                    $q->whereHas('section', function($sectionQ) use ($programIds) {
+                        $sectionQ->whereIn('program_id', $programIds);
+                    });
+                } else {
+                    $q->whereRaw('1 = 0');
+                }
+            })
             ->whereNotNull('deleted_at')
-            ->whereHas('student') // Only include tracking records with valid students
             ->orderBy('deleted_at', 'desc')
             ->get()
             ->map(function ($tracking) {
@@ -305,7 +471,7 @@ class AdminTrackingController extends Controller
                     'tracked_by_id' => $tracking->tracked_by,
                     'notes' => $tracking->notes,
                     'deleted_at' => $tracking->deleted_at ? $tracking->deleted_at->format('Y-m-d H:i') : null,
-                    'can_edit' => true,
+                    'can_edit' => $tracking->type === 'call', // Admin can only edit call records
                 ];
             })
             ->filter(function ($tracking) {
@@ -529,9 +695,10 @@ class AdminTrackingController extends Controller
         }
     }
 
-    private function getLastTracking($studentId)
+    private function getLastTracking($studentId, $type = 'call')
     {
         $tracking = StudentTracking::where('student_id', $studentId)
+            ->where('type', $type)
             ->where('archived', false)
             ->orderBy('date', 'desc')
             ->orderBy('created_at', 'desc')
@@ -542,6 +709,7 @@ class AdminTrackingController extends Controller
         }
         
         return [
+            'id' => $tracking->id,
             'type' => $tracking->type,
             'date' => $tracking->date->format('Y-m-d'),
             'status' => $tracking->status,

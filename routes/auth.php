@@ -57,3 +57,11 @@ Route::middleware('auth')->group(function () {
     Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])
         ->name('logout');
 });
+
+// First-time password change routes (must be accessible even if password hasn't been changed)
+Route::middleware('auth')->group(function () {
+    Route::get('change-password', [\App\Http\Controllers\Auth\FirstTimePasswordController::class, 'show'])
+        ->name('password.change.first-time');
+    Route::put('change-password', [\App\Http\Controllers\Auth\FirstTimePasswordController::class, 'update'])
+        ->name('password.update.first-time');
+});

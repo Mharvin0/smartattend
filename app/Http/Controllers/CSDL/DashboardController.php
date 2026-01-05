@@ -41,22 +41,69 @@ class DashboardController extends Controller
     public function index()
     {
         try {
+            $user = auth()->user();
             $today = Carbon::today();
             $startOfWeek = $today->copy()->startOfWeek();
             $endOfWeek = $today->copy()->endOfWeek();
+            $departmentIds = $user->getAssignedDepartmentIds();
 
-            // Get statistics
+            // Get statistics - CSDL only sees home visits
             $stats = [
-                'students_needing_calls' => Student::where('priority', 'Call Needed')->count(),
-                'students_needing_visits' => Student::where('priority', 'PNS')->count(),
-                'total_tracked_today' => StudentTracking::whereDate('date', $today)->count(),
-                'total_tracked_this_week' => StudentTracking::whereBetween('date', [$startOfWeek, $endOfWeek])->count(),
-                'calls_today' => StudentTracking::whereDate('date', $today)->where('type', 'call')->count(),
-                'visits_today' => StudentTracking::whereDate('date', $today)->where('type', 'home_visit')->count(),
+                'students_needing_visits' => Student::forUser($user)->where('priority', 'PNS')->count(),
+                'total_tracked_today' => StudentTracking::where('type', 'home_visit')
+                    ->whereHas('student', function($q) use ($user, $departmentIds) {
+                        if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
+                            $q->where(function($subQ) use ($departmentIds) {
+                                $subQ->whereIn('department_id', $departmentIds)
+                                     ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
+                                         $progQ->whereIn('department_id', $departmentIds);
+                                     });
+                            });
+                        }
+                    })
+                    ->whereDate('date', $today)
+                    ->count(),
+                'total_tracked_this_week' => StudentTracking::where('type', 'home_visit')
+                    ->whereHas('student', function($q) use ($user, $departmentIds) {
+                        if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
+                            $q->where(function($subQ) use ($departmentIds) {
+                                $subQ->whereIn('department_id', $departmentIds)
+                                     ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
+                                         $progQ->whereIn('department_id', $departmentIds);
+                                     });
+                            });
+                        }
+                    })
+                    ->whereBetween('date', [$startOfWeek, $endOfWeek])
+                    ->count(),
+                'visits_today' => StudentTracking::where('type', 'home_visit')
+                    ->whereHas('student', function($q) use ($user, $departmentIds) {
+                        if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
+                            $q->where(function($subQ) use ($departmentIds) {
+                                $subQ->whereIn('department_id', $departmentIds)
+                                     ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
+                                         $progQ->whereIn('department_id', $departmentIds);
+                                     });
+                            });
+                        }
+                    })
+                    ->whereDate('date', $today)
+                    ->count(),
             ];
 
-            // Get recent tracking records - CSDL users can see all records (including ones created by System Admin)
+            // Get recent tracking records - CSDL only sees home visit records
             $recentTracking = StudentTracking::with(['student.section.program.department', 'trackedBy'])
+                ->where('type', 'home_visit')
+                ->whereHas('student', function($q) use ($user, $departmentIds) {
+                    if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
+                        $q->where(function($subQ) use ($departmentIds) {
+                            $subQ->whereIn('department_id', $departmentIds)
+                                 ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
+                                     $progQ->whereIn('department_id', $departmentIds);
+                                 });
+                        });
+                    }
+                })
                 ->orderBy('date', 'desc')
                 ->orderBy('created_at', 'desc')
                 ->limit(10)
@@ -83,8 +130,9 @@ class DashboardController extends Controller
                     ];
                 });
 
-            // Get students needing attention
-            $studentsNeedingAttention = Student::whereIn('priority', ['Call Needed', 'PNS'])
+            // Get students needing attention - CSDL only sees PNS students (home visits needed)
+            $studentsNeedingAttention = Student::forUser($user)
+                ->where('priority', 'PNS')
                 ->with(['section.program.department'])
                 ->orderBy('priority', 'desc')
                 ->orderBy('absence_count', 'desc')
@@ -113,11 +161,9 @@ class DashboardController extends Controller
             
             return Inertia::render('CSDL/Dashboard', [
                 'stats' => [
-                    'students_needing_calls' => 0,
                     'students_needing_visits' => 0,
                     'total_tracked_today' => 0,
                     'total_tracked_this_week' => 0,
-                    'calls_today' => 0,
                     'visits_today' => 0,
                 ],
                 'recentTracking' => [],

@@ -1,8 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Head, Link, useForm } from '@inertiajs/react';
 import ApplicationLogo from '@/Components/ApplicationLogo';
+import { Eye, EyeOff } from 'lucide-react';
 
 export default function Login({ status, canResetPassword }) {
+    const [showPassword, setShowPassword] = useState(false);
     const { data, setData, post, processing, errors, reset } = useForm({
         email: '',
         password: '',
@@ -88,14 +90,29 @@ export default function Login({ status, canResetPassword }) {
                                             </Link>
                                         )}
                                     </div>
-                                    <input
-                                        type="password"
-                                        className="mt-2 block w-full rounded-xl border-2 border-gray-200 bg-white px-5 py-4 text-gray-900 shadow-sm outline-none ring-0 transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10 text-lg"
-                                        placeholder="Enter your password"
-                                        value={data.password}
-                                        onChange={e => setData('password', e.target.value)}
-                                        autoComplete="current-password"
-                                    />
+                                    <div className="relative">
+                                        <input
+                                            type={showPassword ? 'text' : 'password'}
+                                            className="mt-2 block w-full rounded-xl border-2 border-gray-200 bg-white px-5 py-4 pr-12 text-gray-900 shadow-sm outline-none ring-0 transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10 text-lg"
+                                            placeholder="Enter your password"
+                                            value={data.password}
+                                            onChange={e => setData('password', e.target.value)}
+                                            autoComplete="current-password"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPassword(!showPassword)}
+                                            className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none transition-colors"
+                                            style={{ top: 'calc(50% + 0.5rem)' }}
+                                            tabIndex={-1}
+                                        >
+                                            {showPassword ? (
+                                                <EyeOff className="h-5 w-5" />
+                                            ) : (
+                                                <Eye className="h-5 w-5" />
+                                            )}
+                                        </button>
+                                    </div>
                                     {errors.password && <div className="mt-2 text-base text-red-600 font-medium">{errors.password}</div>}
                                 </div>
 

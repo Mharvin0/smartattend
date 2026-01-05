@@ -8,11 +8,12 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable, HasRoles;
+    use HasFactory, Notifiable, HasRoles, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -24,7 +25,9 @@ class User extends Authenticatable
         'email',
         'password',
         'department_id',
+        'optional_department_id',
         'program_id',
+        'password_changed_at',
     ];
 
     /**
@@ -47,6 +50,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'password_changed_at' => 'datetime',
         ];
     }
 
@@ -66,6 +70,29 @@ class User extends Authenticatable
     public function department()
     {
         return $this->belongsTo(Department::class);
+    }
+
+    /**
+     * Get the optional second department that this user belongs to.
+     */
+    public function optionalDepartment()
+    {
+        return $this->belongsTo(Department::class, 'optional_department_id');
+    }
+
+    /**
+     * Get all department IDs assigned to this user (primary and optional).
+     */
+    public function getAssignedDepartmentIds()
+    {
+        $departments = [];
+        if ($this->department_id) {
+            $departments[] = $this->department_id;
+        }
+        if ($this->optional_department_id) {
+            $departments[] = $this->optional_department_id;
+        }
+        return $departments;
     }
 
     /**

@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import DataTable from '@/Components/DataTable';
-import { Phone, Home, Users, Calendar, CheckCircle, XCircle, Clock, AlertCircle, Download } from 'lucide-react';
+import { Phone, Home, Users, Calendar, CheckCircle, XCircle, Clock, AlertCircle, Download, ChevronDown } from 'lucide-react';
 // route is available globally
 
 export default function SystemAdmin({ 
     users, 
     systemStats, 
     activityLogs, 
+    recentUserActivities = [],
     integrations, 
     systemTools, 
     auditLogs,
@@ -42,10 +43,15 @@ export default function SystemAdmin({
     const [liveDepartmentTrends, setLiveDepartmentTrends] = useState(departmentTrends);
     const [liveWeeklyStatusProgress, setLiveWeeklyStatusProgress] = useState(weeklyStatusProgressProp);
     const [lastRefresh, setLastRefresh] = useState(new Date());
+    const [departmentRates, setDepartmentRates] = useState([]);
     // Local state for students to allow immediate updates
     const [localStudents, setLocalStudents] = useState(students);
-    // Ref to track previous students IDs to prevent unnecessary updates
-    const prevStudentsIdsRef = useRef(null);
+    // Ref to track previous students hash to prevent unnecessary updates
+    const prevStudentsHashRef = useRef(null);
+    
+    // Pagination state for Students tab
+    const [studentsCurrentPage, setStudentsCurrentPage] = useState(1);
+    const studentsPerPage = 20;
     
     useEffect(() => {
         const interval = setInterval(() => {
@@ -53,6 +59,18 @@ export default function SystemAdmin({
         }, 30000); // 30 seconds
 
         return () => clearInterval(interval);
+    }, []);
+
+    useEffect(() => {
+        // Load department attendance rates
+        fetch(route('super.attendance.department-rates'))
+            .then(res => res.json())
+            .then(data => {
+                if (data.departments) {
+                    setDepartmentRates(data.departments);
+                }
+            })
+            .catch(err => console.error('Failed to load department rates:', err));
     }, []);
 
     const refreshDashboardData = async () => {
@@ -99,11 +117,9 @@ export default function SystemAdmin({
     const [showFilters, setShowFilters] = useState(false);
     const [showAddStudentModal, setShowAddStudentModal] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
-    const [showExportModal, setShowExportModal] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [importFile, setImportFile] = useState(null);
     const [importType, setImportType] = useState('csv');
-    const [exportFormat, setExportFormat] = useState('csv');
     const [selectedStudent, setSelectedStudent] = useState(null);
     const [editStudentForm, setEditStudentForm] = useState({
         first_name: '',
@@ -113,11 +129,13 @@ export default function SystemAdmin({
         guardian_name: '',
         guardian_contact: '',
         year_level: '',
-        status: 'Normal',
+        status: 'pending', // Tracking status: pending, processing, to_follow
         absence_count: 0,
+        attendance_status: 'Normal', // Auto-calculated: Normal, SLIP, PNS
     });
     const [isSavingStudent, setIsSavingStudent] = useState(false);
-    const studentStatusOptions = ['Normal', 'SLIP', 'PNS'];
+    const [studentFormErrors, setStudentFormErrors] = useState({});
+    const studentStatusOptions = ['Pending', 'Processing', 'To follow'];
     const [showStudentModal, setShowStudentModal] = useState(false);
     const [studentForm, setStudentForm] = useState({
         first_name: '',
@@ -206,7 +224,7 @@ export default function SystemAdmin({
         date: new Date().toISOString().split('T')[0],
         time: '',
         notes: '',
-        status: 'completed',
+        status: 'pending',
         outcome: '',
         follow_up_required: '',
         follow_up_date: '',
@@ -214,13 +232,27 @@ export default function SystemAdmin({
     const [editingTracking, setEditingTracking] = useState(null);
     const [viewingTracking, setViewingTracking] = useState(null);
     const [showViewTrackingModal, setShowViewTrackingModal] = useState(false);
-    const [trackingTab, setTrackingTab] = useState('recent'); // 'recent', 'archived', 'deleted'
+    const [trackingTab, setTrackingTab] = useState('recent'); // 'recent', 'archived'
     const [archivedTracking, setArchivedTracking] = useState([]);
-    const [deletedTracking, setDeletedTracking] = useState([]);
+    const [recentTrackingData, setRecentTrackingData] = useState(recentTracking || []);
     const [isLoadingTracking, setIsLoadingTracking] = useState(false);
-    const [studentTab, setStudentTab] = useState('active'); // 'active', 'deleted'
-    const [deletedStudents, setDeletedStudents] = useState([]);
-    const [isLoadingDeletedStudents, setIsLoadingDeletedStudents] = useState(false);
+    const [openStatusDropdown, setOpenStatusDropdown] = useState(null);
+    
+    // Tracking filters and pagination
+    const [trackingFilters, setTrackingFilters] = useState({
+        type: '',
+        status: '',
+        department_id: '',
+        date_from: '',
+        date_to: '',
+        search: '',
+    });
+    const [trackingPagination, setTrackingPagination] = useState({
+        current_page: 1,
+        last_page: 1,
+        total: 0,
+        per_page: 10,
+    });
     
     // Interventions legacy 
     const [interventionsData, setInterventionsData] = useState(interventions?.data || []);
@@ -272,21 +304,24 @@ export default function SystemAdmin({
         ? programs?.filter(p => p.department_id == selectedDepartment) || []
         : programs || [];
 
-    // Update local students when props change (only if students array actually changed)
+    // Update local students when props change
+    // Update whenever students prop changes to reflect any edits (absence_count, status, etc.)
     useEffect(() => {
-        // Get current students IDs
-        const newIds = students?.map(s => s.id).sort().join(',') || '';
-        const prevIds = prevStudentsIdsRef.current;
-        
-        // Only update if IDs actually changed
-        if (newIds !== prevIds) {
-            setLocalStudents(students);
-            prevStudentsIdsRef.current = newIds;
+        if (students) {
+            // Only update if the data actually changed to prevent infinite loops
+            // Compare by creating a hash of student IDs and key fields
+            const currentHash = students.map(s => `${s.id}-${s.absence_count}-${s.status}-${s.priority}`).join('|');
+            const prevHash = prevStudentsHashRef.current;
+            
+            if (currentHash !== prevHash) {
+                setLocalStudents(students);
+                prevStudentsHashRef.current = currentHash;
+            }
         }
     }, [students]);
 
     // Filter students
-    const filteredStudents = localStudents?.filter(student => {
+    const filteredStudents = (localStudents || []).filter(student => {
         const matchesDepartment = !selectedDepartment || student.section?.program?.department_id == selectedDepartment;
         const matchesProgram = !selectedProgram || student.section?.program_id == selectedProgram;
         const matchesYearLevel = !selectedYearLevel || student.year_level == selectedYearLevel;
@@ -297,7 +332,18 @@ export default function SystemAdmin({
             student.student_number?.toLowerCase().includes(searchTerm.toLowerCase());
         
         return matchesDepartment && matchesProgram && matchesYearLevel && matchesStatus && matchesSearch;
-    }) || [];
+    });
+    
+    // Pagination for Students tab - Always calculate these values
+    const studentsTotalPages = Math.ceil((filteredStudents?.length || 0) / studentsPerPage);
+    const studentsStartIndex = (studentsCurrentPage - 1) * studentsPerPage;
+    const studentsEndIndex = studentsStartIndex + studentsPerPage;
+    const paginatedStudents = (filteredStudents || []).slice(studentsStartIndex, studentsEndIndex);
+    
+    // Reset to page 1 when filters change
+    useEffect(() => {
+        setStudentsCurrentPage(1);
+    }, [selectedDepartment, selectedProgram, selectedYearLevel, selectedStatus, searchTerm]);
 
     // Set Students sub-tab as active when coming from Students navigation
     useEffect(() => {
@@ -1077,9 +1123,7 @@ export default function SystemAdmin({
             date: new Date().toISOString().split('T')[0],
             time: '',
             notes: '',
-            status: 'completed',
-            outcome: '',
-            follow_up_required: '',
+            status: 'pending',
             follow_up_date: '',
         });
     };
@@ -1097,95 +1141,120 @@ export default function SystemAdmin({
             time: tracking.time || '',
             notes: tracking.notes || '',
             status: tracking.status,
-            outcome: tracking.outcome || '',
-            follow_up_required: tracking.follow_up_required || '',
             follow_up_date: tracking.follow_up_date || '',
         });
     };
 
+    const fetchTrackingRecords = (page = 1, filters = {}) => {
+        setIsLoadingTracking(true);
+        const params = new URLSearchParams({
+            page: page.toString(),
+            per_page: '10',
+            ...filters,
+        });
+        
+        // Check if route exists before using it
+        let routeName;
+        try {
+            routeName = trackingTab === 'archived' 
+                ? 'super.management.archived-tracking' 
+                : 'super.management.get-tracking';
+            
+            // Test if route exists
+            route(routeName);
+        } catch (error) {
+            console.error('Route not found:', routeName, error);
+            setIsLoadingTracking(false);
+            // Use existing data if route doesn't exist
+            if (trackingTab === 'recent' && recentTracking) {
+                setRecentTrackingData(recentTracking);
+            }
+            return;
+        }
+        
+        fetch(`${route(routeName)}?${params.toString()}`, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (trackingTab === 'archived') {
+                    setArchivedTracking(data.tracking || []);
+                } else {
+                    setRecentTrackingData(data.tracking || []);
+                }
+                setTrackingPagination({
+                    current_page: data.current_page || 1,
+                    last_page: data.last_page || 1,
+                    total: data.total || 0,
+                    per_page: data.per_page || 10,
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching tracking records:', error);
+            // Fallback to existing data
+            if (trackingTab === 'recent' && recentTracking) {
+                setRecentTrackingData(recentTracking);
+            }
+        })
+        .finally(() => {
+            setIsLoadingTracking(false);
+        });
+    };
+
     const fetchArchivedTracking = () => {
-        setIsLoadingTracking(true);
-        fetch(route('super.management.archived-tracking'), {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-            },
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                setArchivedTracking(data.tracking || []);
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching archived tracking:', error);
-        })
-        .finally(() => {
-            setIsLoadingTracking(false);
-        });
+        fetchTrackingRecords(1, trackingFilters);
     };
 
-    const fetchDeletedTracking = () => {
-        setIsLoadingTracking(true);
-        fetch(route('super.management.deleted-tracking'), {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-            },
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                setDeletedTracking(data.tracking || []);
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching deleted tracking:', error);
-        })
-        .finally(() => {
-            setIsLoadingTracking(false);
-        });
+    const handleTrackingFilterChange = (key, value) => {
+        setTrackingFilters(prev => ({ ...prev, [key]: value }));
     };
 
+    const handleTrackingFilterApply = () => {
+        setTrackingPagination(prev => ({ ...prev, current_page: 1 }));
+        fetchTrackingRecords(1, trackingFilters);
+    };
+
+    const handleTrackingFilterReset = () => {
+        const resetFilters = {
+            type: '',
+            status: '',
+            department_id: '',
+            date_from: '',
+            date_to: '',
+            search: '',
+        };
+        setTrackingFilters(resetFilters);
+        setTrackingPagination(prev => ({ ...prev, current_page: 1 }));
+        fetchTrackingRecords(1, resetFilters);
+    };
+
+    const handleTrackingPageChange = (page) => {
+        fetchTrackingRecords(page, trackingFilters);
+    };
+
+    // Initialize with existing data, only fetch when filters are applied or tab changes
     useEffect(() => {
-        if (trackingTab === 'archived') {
-            fetchArchivedTracking();
-        } else if (trackingTab === 'deleted') {
-            fetchDeletedTracking();
+        if (trackingTab === 'recent' && recentTracking && recentTracking.length > 0) {
+            // Use existing data initially
+            setRecentTrackingData(recentTracking);
+            setTrackingPagination({
+                current_page: 1,
+                last_page: 1,
+                total: recentTracking.length,
+                per_page: 10,
+            });
+        } else if (trackingTab === 'archived') {
+            // Only fetch archived when tab is switched to archived
+            fetchTrackingRecords(1, trackingFilters);
         }
     }, [trackingTab]);
 
-    const fetchDeletedStudents = () => {
-        setIsLoadingDeletedStudents(true);
-        fetch(route('super.students.deleted'), {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-            },
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                setDeletedStudents(data.students || []);
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching deleted students:', error);
-            setDeletedStudents([]);
-        })
-        .finally(() => {
-            setIsLoadingDeletedStudents(false);
-        });
-    };
-
-    useEffect(() => {
-        if (studentTab === 'deleted') {
-            fetchDeletedStudents();
-        }
-    }, [studentTab]);
 
     const submitTracking = (e) => {
         e.preventDefault();
@@ -1213,9 +1282,7 @@ export default function SystemAdmin({
                     date: new Date().toISOString().split('T')[0],
                     time: '',
                     notes: '',
-                    status: 'completed',
-                    outcome: '',
-                    follow_up_required: '',
+                    status: 'pending',
                     follow_up_date: '',
                 });
             },
@@ -1237,11 +1304,200 @@ export default function SystemAdmin({
     const getStatusColor = (status) => {
         switch (status) {
             case 'completed': return 'bg-green-100 text-green-800';
-            case 'scheduled': return 'bg-blue-100 text-blue-800';
-            case 'cancelled': return 'bg-red-100 text-red-800';
-            case 'no_answer': return 'bg-yellow-100 text-yellow-800';
+            case 'cancelled': return 'bg-gray-100 text-gray-800';
+            case 'no_answer': return 'bg-red-100 text-red-800';
+            case 'pending': return 'bg-yellow-100 text-yellow-800';
+            case 'to_follow': return 'bg-blue-100 text-blue-800';
+            case 'processing': return 'bg-purple-100 text-purple-800';
             default: return 'bg-gray-100 text-gray-800';
         }
+    };
+
+    const handleStatusUpdate = (studentId, trackingId, newStatus) => {
+        if (trackingId) {
+            // Update existing tracking record
+            router.put(route('management.update-tracking', trackingId), {
+                status: newStatus,
+            }, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    router.reload({ only: ['recentTracking', 'studentsNeedingCalls'] });
+                },
+            });
+        } else {
+            // Create new tracking record
+            router.post(route('super.management.track-student'), {
+                student_id: studentId,
+                type: 'call',
+                date: new Date().toISOString().split('T')[0],
+                time: '',
+                notes: '',
+                status: newStatus,
+                outcome: '',
+                follow_up_required: '',
+                follow_up_date: '',
+            }, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    router.reload({ only: ['recentTracking', 'studentsNeedingCalls'] });
+                },
+            });
+        }
+    };
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (openStatusDropdown && !event.target.closest(`[data-dropdown-id="${openStatusDropdown}"]`)) {
+                setOpenStatusDropdown(null);
+            }
+        };
+        if (openStatusDropdown) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [openStatusDropdown]);
+
+    const handleExportTracking = () => {
+        // Only export if on recent tab, not archived or deleted
+        if (trackingTab !== 'recent') {
+            alert('Only recent tracking records can be exported. Please switch to the Recent tab.');
+            return;
+        }
+        
+        // Add print styles to the page
+        const style = document.createElement('style');
+        style.textContent = `
+            @media print {
+                @page {
+                    margin: 1cm 1.5cm;
+                    size: A4 landscape;
+                }
+                body * {
+                    visibility: hidden;
+                }
+                .print-section, .print-section * {
+                    visibility: visible;
+                }
+                .print-section {
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    width: 100%;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                }
+                .print-section .space-y-4 > div {
+                    display: none;
+                }
+                .print-section .p-6 {
+                    width: 100%;
+                    max-width: 100%;
+                    margin: 0 auto;
+                    padding: 0;
+                }
+                .print-section table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 16px;
+                    margin: 0 auto;
+                    table-layout: fixed;
+                }
+                .print-section th,
+                .print-section td {
+                    padding: 10px 12px;
+                    border: 1px solid #000;
+                    text-align: left;
+                    word-wrap: break-word;
+                    vertical-align: top;
+                    line-height: 1.5;
+                    font-size: 16px;
+                }
+                .print-section th {
+                    background-color: #f3f4f6 !important;
+                    font-weight: bold;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                    font-size: 16px;
+                    padding: 12px;
+                    text-align: center;
+                }
+                .print-section thead {
+                    display: table-header-group;
+                }
+                .print-section tbody tr {
+                    page-break-inside: avoid;
+                    page-break-after: auto;
+                }
+                .no-print {
+                    display: none !important;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        // Create a hidden table for printing
+        const printSection = document.querySelector('.print-section');
+        if (printSection && recentTracking.length > 0) {
+            const existingTable = printSection.querySelector('.print-table');
+            if (existingTable) {
+                existingTable.remove();
+            }
+            
+            const table = document.createElement('table');
+            table.className = 'print-table';
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th style="width: 12%;">Student Name</th>
+                        <th style="width: 10%;">Student Number</th>
+                        <th style="width: 10%;">Section</th>
+                        <th style="width: 6%;">Type</th>
+                        <th style="width: 8%;">Date</th>
+                        <th style="width: 7%;">Time</th>
+                        <th style="width: 8%;">Status</th>
+                        <th style="width: 10%;">Tracked By</th>
+                        <th style="width: 29%;">Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${recentTracking.map(tracking => `
+                        <tr>
+                            <td>${tracking.student?.name || 'N/A'}</td>
+                            <td>${tracking.student?.student_number || 'N/A'}</td>
+                            <td>${tracking.student?.section || 'N/A'}</td>
+                            <td>${tracking.type === 'call' ? 'Call' : 'Home Visit'}</td>
+                            <td>${tracking.date || 'N/A'}</td>
+                            <td>${tracking.time || 'N/A'}</td>
+                            <td>${(tracking.status || 'pending').charAt(0).toUpperCase() + (tracking.status || 'pending').slice(1).replace('_', ' ')}</td>
+                            <td>${tracking.tracked_by || 'N/A'}</td>
+                            <td>${tracking.notes || 'N/A'}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            `;
+            
+            const p6Div = printSection.querySelector('.p-6');
+            if (p6Div) {
+                p6Div.appendChild(table);
+            }
+        }
+        
+        // Trigger print
+        window.print();
+        
+        // Clean up after printing
+        setTimeout(() => {
+            const printTable = document.querySelector('.print-table');
+            if (printTable) {
+                printTable.remove();
+            }
+            document.head.removeChild(style);
+        }, 1000);
     };
 
     const renderManagement = () => {
@@ -1251,144 +1507,163 @@ export default function SystemAdmin({
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-3xl font-bold tracking-tight">Student Tracking</h1>
-                        <p className="text-gray-600">
-                            Track calls and home visits for students in need
-                        </p>
                     </div>
                 </div>
 
                 {/* Stats Cards */}
                 <div className="grid gap-4 md:grid-cols-4">
-                    <div className="bg-white rounded-lg shadow p-6">
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm font-medium text-gray-500">Need Calls</p>
-                                <p className="text-2xl font-semibold text-gray-900">{stats.students_needing_calls || 0}</p>
+                                <p className="text-xs font-medium text-gray-500">Need Calls</p>
+                                <p className="text-2xl font-semibold text-gray-900 mt-1">{stats.students_needing_calls || 0}</p>
                             </div>
-                            <div className="p-2 bg-yellow-100 rounded-lg">
-                                <Phone className="h-6 w-6 text-yellow-600" />
+                            <div className="p-2 bg-yellow-50 rounded-lg">
+                                <Phone className="h-5 w-5 text-yellow-600" />
                             </div>
                         </div>
                     </div>
-                    <div className="bg-white rounded-lg shadow p-6">
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm font-medium text-gray-500">Need Visits</p>
-                                <p className="text-2xl font-semibold text-gray-900">{stats.students_needing_visits || 0}</p>
+                                <p className="text-xs font-medium text-gray-500">Need Visits</p>
+                                <p className="text-2xl font-semibold text-gray-900 mt-1">{stats.students_needing_visits || 0}</p>
                             </div>
-                            <div className="p-2 bg-red-100 rounded-lg">
-                                <Home className="h-6 w-6 text-red-600" />
+                            <div className="p-2 bg-red-50 rounded-lg">
+                                <Home className="h-5 w-5 text-red-600" />
                             </div>
                         </div>
                     </div>
-                    <div className="bg-white rounded-lg shadow p-6">
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm font-medium text-gray-500">Tracked Today</p>
-                                <p className="text-2xl font-semibold text-gray-900">{stats.total_tracked_today || 0}</p>
+                                <p className="text-xs font-medium text-gray-500">Tracked Today</p>
+                                <p className="text-2xl font-semibold text-gray-900 mt-1">{stats.total_tracked_today || 0}</p>
                             </div>
-                            <div className="p-2 bg-blue-100 rounded-lg">
-                                <Calendar className="h-6 w-6 text-blue-600" />
+                            <div className="p-2 bg-blue-50 rounded-lg">
+                                <Calendar className="h-5 w-5 text-blue-600" />
                             </div>
                         </div>
                     </div>
-                    <div className="bg-white rounded-lg shadow p-6">
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm font-medium text-gray-500">This Week</p>
-                                <p className="text-2xl font-semibold text-gray-900">{stats.total_tracked_this_week || 0}</p>
+                                <p className="text-xs font-medium text-gray-500">This Week</p>
+                                <p className="text-2xl font-semibold text-gray-900 mt-1">{stats.total_tracked_this_week || 0}</p>
                             </div>
-                            <div className="p-2 bg-green-100 rounded-lg">
-                                <Users className="h-6 w-6 text-green-600" />
+                            <div className="p-2 bg-green-50 rounded-lg">
+                                <Users className="h-5 w-5 text-green-600" />
                             </div>
                         </div>
                     </div>
                 </div>
 
                 {/* Students Needing Attention */}
-                <div className="bg-white rounded-lg shadow">
-                    <div className="px-6 py-4 border-b border-gray-200">
-                        <div className="flex items-center justify-between">
-                            <h3 className="text-lg font-semibold text-gray-900">Students Needing Attention</h3>
-                            <div className="flex space-x-1 border-b border-gray-200">
-                                <button
-                                    onClick={() => setStudentTab('active')}
-                                    className={`px-4 py-2 text-sm font-medium ${
-                                        studentTab === 'active'
-                                            ? 'text-blue-600 border-b-2 border-blue-600'
-                                            : 'text-gray-500 hover:text-gray-700'
-                                    }`}
-                                >
-                                    Active
-                                </button>
-                                <button
-                                    onClick={() => setStudentTab('deleted')}
-                                    className={`px-4 py-2 text-sm font-medium ${
-                                        studentTab === 'deleted'
-                                            ? 'text-blue-600 border-b-2 border-blue-600'
-                                            : 'text-gray-500 hover:text-gray-700'
-                                    }`}
-                                >
-                                    Deleted
-                                </button>
-                            </div>
-                        </div>
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
+                    <div className="px-6 py-4 border-b border-gray-100">
+                        <h3 className="text-base font-semibold text-gray-900">Students Needing Attention</h3>
                     </div>
                     <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                                <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Student</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Program</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Absences</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                        <table className="min-w-full">
+                            <thead>
+                                <tr className="border-b border-gray-100">
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Student</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Department</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Program</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Priority</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Absences</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                                {studentTab === 'active' ? (
-                                    studentsNeedingCalls.length > 0 ? (
-                                        studentsNeedingCalls.map((student) => (
-                                        <tr key={student.id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <div className="text-sm font-medium text-gray-900">{student.name}</div>
-                                                <div className="text-sm text-gray-500">{student.student_number}</div>
+                            <tbody className="divide-y divide-gray-50">
+                                {studentsNeedingCalls.length > 0 ? (
+                                    studentsNeedingCalls.map((student) => (
+                                        <tr key={student.id} className="hover:bg-gray-50/50 transition-colors">
+                                            <td className="px-4 py-3.5">
+                                                <div className="font-medium text-gray-900 text-sm">{student.name}</div>
+                                                <div className="text-xs text-gray-400 mt-0.5">{student.student_number}</div>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                                    student.tracking_status === 'completed' ? 'bg-green-100 text-green-800' :
-                                                    student.tracking_status === 'scheduled' ? 'bg-yellow-100 text-yellow-800' :
-                                                    student.tracking_status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
-                                                    student.tracking_status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                                                    'bg-gray-100 text-gray-800'
-                                                }`}>
-                                                    {student.tracking_status || 'No Status'}
-                                                </span>
+                                            <td className="px-4 py-3.5">
+                                                <div className="relative" data-dropdown-id={student.id}>
+                                                    <button
+                                                        onClick={() => setOpenStatusDropdown(openStatusDropdown === student.id ? null : student.id)}
+                                                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                                                            student.tracking_status === 'pending'
+                                                                ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                                                                : student.tracking_status === 'to_follow'
+                                                                ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                                                                : student.tracking_status === 'processing'
+                                                                ? 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                        }`}
+                                                    >
+                                                        {student.tracking_status && student.tracking_status !== 'No Status' ? student.tracking_status.replace('_', ' ') : 'No Status'}
+                                                        <ChevronDown className="h-3 w-3" />
+                                                    </button>
+                                                    {openStatusDropdown === student.id && (
+                                                        <div className="absolute z-10 mt-1 w-28 bg-white rounded-lg shadow-lg border border-gray-100">
+                                                            <div className="py-1">
+                                                                <button
+                                                                    onClick={() => {
+                                                                        handleStatusUpdate(student.id, student.last_tracking?.id, 'pending');
+                                                                        setOpenStatusDropdown(null);
+                                                                    }}
+                                                                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 transition-colors ${
+                                                                        student.tracking_status === 'pending' ? 'bg-yellow-50 font-medium' : ''
+                                                                    }`}
+                                                                >
+                                                                    Pending
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        handleStatusUpdate(student.id, student.last_tracking?.id, 'processing');
+                                                                        setOpenStatusDropdown(null);
+                                                                    }}
+                                                                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 transition-colors ${
+                                                                        student.tracking_status === 'processing' ? 'bg-purple-50 font-medium' : ''
+                                                                    }`}
+                                                                >
+                                                                    Processing
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        handleStatusUpdate(student.id, student.last_tracking?.id, 'to_follow');
+                                                                        setOpenStatusDropdown(null);
+                                                                    }}
+                                                                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 transition-colors ${
+                                                                        student.tracking_status === 'to_follow' ? 'bg-blue-50 font-medium' : ''
+                                                                    }`}
+                                                                >
+                                                                    To follow
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {student.department}
+                                            <td className="px-4 py-3.5">
+                                                <span className="text-sm text-gray-600">{student.department}</span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {student.program}
+                                            <td className="px-4 py-3.5">
+                                                <span className="text-sm text-gray-600">{student.program}</span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPriorityColor(student.priority)}`}>
+                                            <td className="px-4 py-3.5">
+                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium ${getPriorityColor(student.priority)}`}>
                                                     {student.priority}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {student.absence_count}
+                                            <td className="px-4 py-3.5">
+                                                <span className="text-sm text-gray-600 font-medium">{student.absence_count}</span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                            <td className="px-4 py-3.5">
                                                 <div className="flex items-center gap-2">
-                                                <button
-                                                    onClick={() => handleTrackStudent(student)}
-                                                        className="text-blue-600 hover:text-blue-900"
-                                                >
-                                                    Track
-                                                </button>
+                                                    <button
+                                                        onClick={() => handleTrackStudent(student)}
+                                                        className="text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
+                                                    >
+                                                        Track
+                                                    </button>
                                                     <button
                                                         onClick={() => {
                                                             if (confirm('Are you sure you want to archive this student from the attention list?')) {
@@ -1403,127 +1678,23 @@ export default function SystemAdmin({
                                                                 });
                                                             }
                                                         }}
-                                                        className="relative group p-1.5 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 rounded-md transition-colors"
+                                                        className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
                                                         title="Archive"
                                                     >
-                                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                                                         </svg>
-                                                        <span className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                                                            Archive
-                                                        </span>
-                                                    </button>
-                                                    <button
-                                                        onClick={() => {
-                                                            if (confirm('Are you sure you want to delete this student? This action cannot be undone.')) {
-                                                                router.delete(route('super.management.delete-student', student.id), {
-                                                                    preserveScroll: true,
-                                                                    onSuccess: () => {
-                                                                        router.reload({ only: ['studentsNeedingCalls'] });
-                                                                        if (studentTab === 'deleted') {
-                                                                            fetchDeletedStudents();
-                                                                        }
-                                                                    },
-                                                                    onError: () => {
-                                                                        alert('Failed to delete student');
-                                                                    }
-                                                                });
-                                                            }
-                                                        }}
-                                                        className="relative group p-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
-                                                        title="Delete"
-                                                    >
-                                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                        </svg>
-                                                        <span className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                                                            Delete
-                                                        </span>
                                                     </button>
                                                 </div>
                                             </td>
                                         </tr>
-                                        ))
-                                    ) : (
-                                        <tr>
-                                            <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
-                                                No students need attention at this time
-                                            </td>
-                                        </tr>
-                                    )
+                                    ))
                                 ) : (
-                                    isLoadingDeletedStudents ? (
-                                        <tr>
-                                            <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
-                                                Loading deleted students...
-                                            </td>
-                                        </tr>
-                                    ) : deletedStudents.length > 0 ? (
-                                        deletedStudents.map((student) => (
-                                            <tr key={student.id} className="hover:bg-gray-50">
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="text-sm font-medium text-gray-900">{student.name}</div>
-                                                    <div className="text-sm text-gray-500">{student.student_number}</div>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                                        student.tracking_status === 'completed' ? 'bg-green-100 text-green-800' :
-                                                        student.tracking_status === 'scheduled' ? 'bg-yellow-100 text-yellow-800' :
-                                                        student.tracking_status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
-                                                        student.tracking_status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                                                        'bg-gray-100 text-gray-800'
-                                                    }`}>
-                                                        {student.tracking_status || 'No Status'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {student.department}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {student.program}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPriorityColor(student.priority)}`}>
-                                                        {student.priority}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {student.absence_count}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-xs text-gray-500">Deleted: {student.deleted_at}</span>
-                                                        <button
-                                                            onClick={() => {
-                                                                if (confirm('Are you sure you want to restore this student?')) {
-                                                                    router.post(route('super.students.restore', student.id), {}, {
-                                                                        preserveScroll: true,
-                                                                        onSuccess: () => {
-                                                                            fetchDeletedStudents();
-                                                                            router.reload({ only: ['studentsNeedingCalls'] });
-                                                                        },
-                                                                        onError: () => {
-                                                                            alert('Failed to restore student');
-                                                                        }
-                                                                    });
-                                                                }
-                                                            }}
-                                                            className="text-green-600 hover:text-green-900 text-sm font-medium"
-                                                            title="Restore"
-                                                        >
-                                                            Restore
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    ) : (
-                                        <tr>
-                                            <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
-                                                No deleted students found
-                                            </td>
-                                        </tr>
-                                    )
+                                    <tr>
+                                        <td colSpan="7" className="px-4 py-16 text-center">
+                                            <div className="text-sm text-gray-400">No students need attention at this time</div>
+                                        </td>
+                                    </tr>
                                 )}
                             </tbody>
                         </table>
@@ -1531,24 +1702,26 @@ export default function SystemAdmin({
                 </div>
 
                 {/* Tracking Records with Tabs */}
-                <div className="bg-white rounded-lg shadow">
-                    <div className="px-6 py-4 border-b border-gray-200">
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm print-section">
+                    <div className="px-6 py-4 border-b border-gray-100">
                         <div className="flex items-center justify-between">
-                            <h3 className="text-lg font-semibold text-gray-900">Tracking Records</h3>
-                            <div className="flex items-center gap-3">
-                                <a
-                                    href={route('super.management.export-tracking', { tab: trackingTab })}
-                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
-                                    title={`Export ${trackingTab} tracking records`}
-                                    download
-                                >
-                                    <Download className="h-4 w-4" />
-                                    Export {trackingTab === 'recent' ? 'Recent' : trackingTab === 'archived' ? 'Archived' : 'Deleted'}
-                                </a>
-                                <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                            <h3 className="text-base font-semibold text-gray-900">Tracking Records</h3>
+                            <div className="flex items-center gap-2">
                                 <button
-                                    onClick={() => setTrackingTab('recent')}
-                                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                                    onClick={handleExportTracking}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg transition-colors text-xs font-medium"
+                                    title={`Export ${trackingTab} tracking records`}
+                                >
+                                    <Download className="h-3.5 w-3.5" />
+                                    Export
+                                </button>
+                                <div className="flex items-center gap-0.5 bg-gray-50 rounded-lg p-0.5">
+                                <button
+                                    onClick={() => {
+                                        setTrackingTab('recent');
+                                        fetchTrackingRecords(1, trackingFilters);
+                                    }}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                                         trackingTab === 'recent'
                                             ? 'bg-white text-gray-900 shadow-sm'
                                             : 'text-gray-600 hover:text-gray-900'
@@ -1557,8 +1730,11 @@ export default function SystemAdmin({
                                     Recent
                                 </button>
                                 <button
-                                    onClick={() => setTrackingTab('archived')}
-                                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                                    onClick={() => {
+                                        setTrackingTab('archived');
+                                        fetchTrackingRecords(1, trackingFilters);
+                                    }}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                                         trackingTab === 'archived'
                                             ? 'bg-white text-gray-900 shadow-sm'
                                             : 'text-gray-600 hover:text-gray-900'
@@ -1566,63 +1742,144 @@ export default function SystemAdmin({
                                 >
                                     Archived
                                 </button>
-                                <button
-                                    onClick={() => setTrackingTab('deleted')}
-                                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                                        trackingTab === 'deleted'
-                                            ? 'bg-white text-gray-900 shadow-sm'
-                                            : 'text-gray-600 hover:text-gray-900'
-                                    }`}
-                                >
-                                    Deleted
-                                </button>
                             </div>
                             </div>
                         </div>
                     </div>
-                    <div className="p-6">
+                    
+                    {/* Filters Section - Inside the table */}
+                    <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
+                                <select
+                                    value={trackingFilters.type}
+                                    onChange={(e) => handleTrackingFilterChange('type', e.target.value)}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    <option value="">All</option>
+                                    <option value="call">Call</option>
+                                    <option value="home_visit">Home Visit</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
+                                <select
+                                    value={trackingFilters.status}
+                                    onChange={(e) => handleTrackingFilterChange('status', e.target.value)}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    <option value="">All</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="processing">Processing</option>
+                                    <option value="to_follow">To Follow</option>
+                                    <option value="completed">Completed</option>
+                                    <option value="cancelled">Cancelled</option>
+                                    <option value="no_answer">No Answer</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Department</label>
+                                <select
+                                    value={trackingFilters.department_id}
+                                    onChange={(e) => handleTrackingFilterChange('department_id', e.target.value)}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    <option value="">All</option>
+                                    {departments?.map((dept) => (
+                                        <option key={dept.id} value={dept.id}>{dept.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Date From</label>
+                                <input
+                                    type="date"
+                                    value={trackingFilters.date_from}
+                                    onChange={(e) => handleTrackingFilterChange('date_from', e.target.value)}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Date To</label>
+                                <input
+                                    type="date"
+                                    value={trackingFilters.date_to}
+                                    onChange={(e) => handleTrackingFilterChange('date_to', e.target.value)}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Search</label>
+                                <input
+                                    type="text"
+                                    placeholder="Student name/number"
+                                    value={trackingFilters.search}
+                                    onChange={(e) => handleTrackingFilterChange('search', e.target.value)}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 mt-3">
+                            <button
+                                onClick={handleTrackingFilterApply}
+                                className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 transition-colors"
+                            >
+                                Apply Filters
+                            </button>
+                            <button
+                                onClick={handleTrackingFilterReset}
+                                className="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-medium rounded-md hover:bg-gray-300 transition-colors"
+                            >
+                                Reset
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="p-4">
                         {isLoadingTracking ? (
-                            <div className="text-center py-8 text-gray-500">
-                                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
-                                <p className="mt-2">Loading...</p>
+                            <div className="text-center py-12 text-gray-400">
+                                <div className="inline-block animate-spin rounded-full h-6 w-6 border-2 border-gray-300 border-t-gray-600"></div>
+                                <p className="mt-2 text-xs">Loading...</p>
                             </div>
                         ) : (
-                        <div className="space-y-4">
-                                {(trackingTab === 'recent' ? recentTracking : 
-                                  trackingTab === 'archived' ? archivedTracking : 
-                                  deletedTracking).length > 0 ? (
-                                    (trackingTab === 'recent' ? recentTracking : 
-                                     trackingTab === 'archived' ? archivedTracking : 
-                                     deletedTracking).map((tracking) => (
-                                    <div key={tracking.id} className="flex items-center justify-between p-4 border rounded-lg">
-                                        <div className="flex items-center gap-4">
-                                            <div className={`p-2 rounded-full ${tracking.type === 'call' ? 'bg-blue-100' : 'bg-green-100'}`}>
+                        <div className="space-y-2">
+                                {(trackingTab === 'recent' ? recentTrackingData : archivedTracking).length > 0 ? (
+                                    (trackingTab === 'recent' ? recentTrackingData : archivedTracking).map((tracking) => (
+                                    <div key={tracking.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:border-gray-200 hover:bg-gray-50/50 transition-all">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`p-1.5 rounded-lg ${tracking.type === 'call' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'}`}>
                                                 {getTypeIcon(tracking.type)}
                                             </div>
                                             <div>
-                                                <p className="font-medium">{tracking.student.name}</p>
-                                                <p className="text-sm text-gray-500">{tracking.student.section}</p>
-                                                <p className="text-xs text-gray-400">{tracking.student.department} - {tracking.student.program}</p>
+                                                <p className="font-medium text-gray-900 text-sm">{tracking.student.name}</p>
+                                                <p className="text-xs text-gray-500 mt-0.5">{tracking.student.section}</p>
+                                                <p className="text-xs text-gray-400 mt-0.5">{tracking.student.department} • {tracking.student.program}</p>
                                                 {tracking.notes && (
-                                                    <p className="text-sm text-gray-600 mt-1">{tracking.notes}</p>
+                                                    <p className="text-xs text-gray-600 mt-1.5 max-w-md line-clamp-1">{tracking.notes}</p>
                                                 )}
                                             </div>
                                         </div>
-                                        <div className="text-right">
-                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(tracking.status)}`}>
-                                                {tracking.status}
-                                            </span>
-                                            <p className="text-sm text-gray-500 mt-1">
-                                                {tracking.date} {tracking.time && `at ${tracking.time}`}
-                                            </p>
-                                            <p className="text-xs text-gray-400">by {tracking.tracked_by}</p>
-                                            {trackingTab === 'archived' && tracking.archived_at && (
-                                                <p className="text-xs text-gray-400 mt-1">Archived: {tracking.archived_at}</p>
-                                            )}
-                                            {trackingTab === 'deleted' && tracking.deleted_at && (
-                                                <p className="text-xs text-gray-400 mt-1">Deleted: {tracking.deleted_at}</p>
-                                            )}
-                                            <div className="flex items-center gap-2 mt-2">
+                                        <div className="flex items-center gap-4">
+                                            <div className="text-right">
+                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium ${getStatusColor(tracking.status)}`}>
+                                                    {tracking.status === 'completed' ? 'Completed' : 
+                                                     tracking.status === 'cancelled' ? 'Cancelled' : 
+                                                     tracking.status === 'no_answer' ? 'No answer' : 
+                                                     tracking.status ? tracking.status.replace('_', ' ') : 'No Status'}
+                                                </span>
+                                                <p className="text-xs text-gray-500 mt-1.5">
+                                                    {tracking.date} {tracking.time && `• ${tracking.time}`}
+                                                </p>
+                                                <p className="text-xs text-gray-400 mt-0.5">by {tracking.tracked_by}</p>
+                                                {trackingTab === 'archived' && tracking.archived_at && (
+                                                    <p className="text-xs text-gray-400 mt-0.5">Archived: {tracking.archived_at}</p>
+                                                )}
+                                                {trackingTab === 'deleted' && tracking.deleted_at && (
+                                                    <p className="text-xs text-gray-400 mt-0.5">Deleted: {tracking.deleted_at}</p>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-2">
                                                 <button
                                                     onClick={() => {
                                                         fetch(route('super.management.view-tracking', tracking.id), {
@@ -1644,7 +1901,7 @@ export default function SystemAdmin({
                                                             alert('Failed to load tracking details');
                                                         });
                                                     }}
-                                                    className="text-blue-600 hover:text-blue-900 text-sm font-medium"
+                                                    className="text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
                                                     title="View Details"
                                                 >
                                                     View
@@ -1656,8 +1913,7 @@ export default function SystemAdmin({
                                                                 router.post(route('super.management.unarchive-tracking', tracking.id), {}, {
                                                                         preserveScroll: true,
                                                                         onSuccess: () => {
-                                                                        fetchArchivedTracking();
-                                                                        router.reload({ only: ['recentTracking'] });
+                                                                        fetchTrackingRecords(trackingPagination.current_page, trackingFilters);
                                                                         },
                                                                         onError: () => {
                                                                         alert('Failed to unarchive tracking record');
@@ -1665,7 +1921,7 @@ export default function SystemAdmin({
                                                                     });
                                                                 }
                                                             }}
-                                                        className="text-green-600 hover:text-green-900 text-sm font-medium"
+                                                        className="text-xs font-medium text-green-600 hover:text-green-700 transition-colors"
                                                         title="Unarchive"
                                                         >
                                                         Unarchive
@@ -1678,8 +1934,7 @@ export default function SystemAdmin({
                                                                 router.post(route('super.management.restore-tracking', tracking.id), {}, {
                                                                         preserveScroll: true,
                                                                         onSuccess: () => {
-                                                                        fetchDeletedTracking();
-                                                                        router.reload({ only: ['recentTracking'] });
+                                                                        fetchTrackingRecords(trackingPagination.current_page, trackingFilters);
                                                                         },
                                                                         onError: () => {
                                                                         alert('Failed to restore tracking record');
@@ -1687,7 +1942,7 @@ export default function SystemAdmin({
                                                                     });
                                                                 }
                                                             }}
-                                                        className="text-green-600 hover:text-green-900 text-sm font-medium"
+                                                        className="text-xs font-medium text-green-600 hover:text-green-700 transition-colors"
                                                         title="Restore"
                                                         >
                                                         Restore
@@ -1698,9 +1953,9 @@ export default function SystemAdmin({
                                     </div>
                                 ))
                             ) : (
-                                <div className="text-center py-8 text-gray-500">
-                                    <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                                        <p>
+                                <div className="text-center py-12 text-gray-400">
+                                    <Calendar className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                                        <p className="text-sm font-medium">
                                             {trackingTab === 'recent' && 'No tracking records yet'}
                                             {trackingTab === 'archived' && 'No archived tracking records'}
                                             {trackingTab === 'deleted' && 'No deleted tracking records'}
@@ -1708,6 +1963,58 @@ export default function SystemAdmin({
                                 </div>
                             )}
                         </div>
+                        )}
+                        
+                        {/* Pagination */}
+                        {trackingPagination.last_page > 1 && (
+                            <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+                                <div className="text-xs text-gray-600">
+                                    Showing {((trackingPagination.current_page - 1) * trackingPagination.per_page) + 1} to {Math.min(trackingPagination.current_page * trackingPagination.per_page, trackingPagination.total)} of {trackingPagination.total} results
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => handleTrackingPageChange(trackingPagination.current_page - 1)}
+                                        disabled={trackingPagination.current_page === 1}
+                                        className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Previous
+                                    </button>
+                                    <div className="flex items-center gap-1">
+                                        {Array.from({ length: Math.min(5, trackingPagination.last_page) }, (_, i) => {
+                                            let pageNum;
+                                            if (trackingPagination.last_page <= 5) {
+                                                pageNum = i + 1;
+                                            } else if (trackingPagination.current_page <= 3) {
+                                                pageNum = i + 1;
+                                            } else if (trackingPagination.current_page >= trackingPagination.last_page - 2) {
+                                                pageNum = trackingPagination.last_page - 4 + i;
+                                            } else {
+                                                pageNum = trackingPagination.current_page - 2 + i;
+                                            }
+                                            return (
+                                                <button
+                                                    key={pageNum}
+                                                    onClick={() => handleTrackingPageChange(pageNum)}
+                                                    className={`px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                                                        trackingPagination.current_page === pageNum
+                                                            ? 'bg-blue-600 text-white'
+                                                            : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                                                    }`}
+                                                >
+                                                    {pageNum}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    <button
+                                        onClick={() => handleTrackingPageChange(trackingPagination.current_page + 1)}
+                                        disabled={trackingPagination.current_page === trackingPagination.last_page}
+                                        className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
                         )}
                     </div>
                 </div>
@@ -1746,33 +2053,6 @@ export default function SystemAdmin({
                                                 </svg>
                                                 <span className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                                                     Archive
-                                                </span>
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    if (confirm('Are you sure you want to delete this tracking record? This action cannot be undone.')) {
-                                                        router.delete(route('super.management.delete-tracking', editingTracking.id), {
-                                                            preserveScroll: true,
-                                                            onSuccess: () => {
-                                                                setShowTrackingModal(false);
-                                                                setSelectedStudentForTracking(null);
-                                                                setEditingTracking(null);
-                                                                router.reload();
-                                                            },
-                                                            onError: () => {
-                                                                alert('Failed to delete tracking record');
-                                                            }
-                                                        });
-                                                    }
-                                                }}
-                                                className="relative group p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
-                                                title="Delete"
-                                            >
-                                                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                </svg>
-                                                <span className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                                                    Delete
                                                 </span>
                                             </button>
                                         </>
@@ -1814,6 +2094,7 @@ export default function SystemAdmin({
                                             type="date"
                                             value={trackingForm.date}
                                             onChange={(e) => setTrackingForm({ ...trackingForm, date: e.target.value })}
+                                            min={new Date().toISOString().split('T')[0]}
                                                     className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                             required
                                         />
@@ -1824,6 +2105,15 @@ export default function SystemAdmin({
                                             type="time"
                                             value={trackingForm.time}
                                             onChange={(e) => setTrackingForm({ ...trackingForm, time: e.target.value })}
+                                            min={(() => {
+                                                if (trackingForm.date === new Date().toISOString().split('T')[0]) {
+                                                    const now = new Date();
+                                                    const hours = String(now.getHours()).padStart(2, '0');
+                                                    const minutes = String(now.getMinutes()).padStart(2, '0');
+                                                    return `${hours}:${minutes}`;
+                                                }
+                                                return undefined;
+                                            })()}
                                                     className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
                                     </div>
@@ -1836,10 +2126,9 @@ export default function SystemAdmin({
                                                 className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         required
                                     >
-                                        <option value="completed">Completed</option>
-                                        <option value="scheduled">Scheduled</option>
-                                        <option value="cancelled">Cancelled</option>
-                                        <option value="no_answer">No Answer</option>
+                                        <option value="pending">Pending</option>
+                                        <option value="to_follow">To follow</option>
+                                        <option value="processing">Processing</option>
                                     </select>
                                 </div>
                                 <div>
@@ -1848,6 +2137,7 @@ export default function SystemAdmin({
                                                 type="date"
                                                 value={trackingForm.follow_up_date}
                                                 onChange={(e) => setTrackingForm({ ...trackingForm, follow_up_date: e.target.value })}
+                                                min={new Date().toISOString().split('T')[0]}
                                                 className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                             />
                                         </div>
@@ -1863,26 +2153,6 @@ export default function SystemAdmin({
                                                 className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                                 rows="4"
                                                 placeholder="Enter notes about this tracking record..."
-                                    />
-                                </div>
-                                <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">Outcome (optional)</label>
-                                    <textarea
-                                        value={trackingForm.outcome}
-                                        onChange={(e) => setTrackingForm({ ...trackingForm, outcome: e.target.value })}
-                                                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                                rows="3"
-                                                placeholder="Enter the outcome of this interaction..."
-                                    />
-                                </div>
-                                <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">Follow-up Required (optional)</label>
-                                    <textarea
-                                        value={trackingForm.follow_up_required}
-                                        onChange={(e) => setTrackingForm({ ...trackingForm, follow_up_required: e.target.value })}
-                                                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                                rows="3"
-                                                placeholder="Enter any follow-up actions required..."
                                     />
                                 </div>
                                 </div>
@@ -1944,32 +2214,6 @@ export default function SystemAdmin({
                                                 </svg>
                                                 <span className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                                                     Archive
-                                                </span>
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    if (confirm('Are you sure you want to delete this tracking record? This action cannot be undone.')) {
-                                                        router.delete(route('super.management.delete-tracking', viewingTracking.id), {
-                                                            preserveScroll: true,
-                                                            onSuccess: () => {
-                                                                setShowViewTrackingModal(false);
-                                                                setViewingTracking(null);
-                                                                router.reload();
-                                                            },
-                                                            onError: () => {
-                                                                alert('Failed to delete tracking record');
-                                                            }
-                                                        });
-                                                    }
-                                                }}
-                                                className="relative group p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
-                                                title="Delete"
-                                            >
-                                                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                </svg>
-                                                <span className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                                                    Delete
                                                 </span>
                                             </button>
                                         </>
@@ -2078,19 +2322,7 @@ export default function SystemAdmin({
                                                 <p className="text-gray-900 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg border border-gray-200 min-h-[120px]">{viewingTracking.notes}</p>
                                         </div>
                                     )}
-                                    {viewingTracking.outcome && (
-                                        <div>
-                                                <h4 className="font-semibold text-gray-900 mb-3 text-base">Outcome</h4>
-                                                <p className="text-gray-900 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg border border-gray-200 min-h-[120px]">{viewingTracking.outcome}</p>
-                                        </div>
-                                    )}
-                                    {viewingTracking.follow_up_required && (
-                                        <div>
-                                                <h4 className="font-semibold text-gray-900 mb-3 text-base">Follow-up Required</h4>
-                                                <p className="text-gray-900 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg border border-gray-200 min-h-[120px]">{viewingTracking.follow_up_required}</p>
-                                        </div>
-                                    )}
-                                        {!viewingTracking.notes && !viewingTracking.outcome && !viewingTracking.follow_up_required && (
+                                        {!viewingTracking.notes && (
                                             <div className="flex items-center justify-center h-full text-gray-400">
                                                 <p className="text-sm">No additional notes or information</p>
                                         </div>
@@ -2261,6 +2493,57 @@ export default function SystemAdmin({
                                     </div>
                                 </div>
                             )}
+                    </div>
+
+                    {/* Department Attendance Rates */}
+                    <div className="mb-8">
+                        <h4 className="text-lg font-semibold text-gray-900 mb-4">Department Attendance Rates</h4>
+                        <div className="space-y-4">
+                            {departmentRates.length > 0 ? (
+                                departmentRates.map((dept) => (
+                                    <div key={dept.id} className="border border-gray-200 rounded-lg p-6 bg-white">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <div>
+                                                <h4 className="text-lg font-medium text-gray-900">{dept.name}</h4>
+                                                <p className="text-sm text-gray-500">{dept.code || ''}</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className={`text-2xl font-bold ${
+                                                    dept.attendance_rate >= 90 ? 'text-green-600' : 
+                                                    dept.attendance_rate >= 80 ? 'text-yellow-600' : 
+                                                    'text-red-600'
+                                                }`}>
+                                                    {dept.attendance_rate}%
+                                                </p>
+                                                <p className="text-sm text-gray-500">{dept.total_records} records</p>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-4 gap-4">
+                                            <div className="text-center">
+                                                <p className="text-sm text-gray-500">Present</p>
+                                                <p className="text-lg font-semibold text-green-600">{dept.present || 0}</p>
+                                            </div>
+                                            <div className="text-center">
+                                                <p className="text-sm text-gray-500">Late</p>
+                                                <p className="text-lg font-semibold text-yellow-600">{dept.late || 0}</p>
+                                            </div>
+                                            <div className="text-center">
+                                                <p className="text-sm text-gray-500">Absent</p>
+                                                <p className="text-lg font-semibold text-red-600">{dept.absent || 0}</p>
+                                            </div>
+                                            <div className="text-center">
+                                                <p className="text-sm text-gray-500">Excused</p>
+                                                <p className="text-lg font-semibold text-blue-600">{dept.excused || 0}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="border border-gray-200 rounded-lg p-8 bg-white text-center">
+                                    <p className="text-gray-500">Loading department rates...</p>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2656,51 +2939,83 @@ export default function SystemAdmin({
         });
     };
 
-    const handleExportStudents = async (e) => {
-        e.preventDefault();
-        
-        setIsSubmitting(true);
-        const formData = new FormData();
-        formData.append('format', exportFormat);
-        
-        // Add filters if they are set
-        if (selectedDepartment) formData.append('department_id', selectedDepartment);
-        if (selectedProgram) formData.append('program_id', selectedProgram);
-        if (selectedYearLevel) formData.append('year_level', selectedYearLevel);
-        
-        try {
-            const response = await fetch(route('super.students.export'), {
-                method: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-                },
-                body: formData
-            });
-
-            if (response.ok) {
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                const contentDisposition = response.headers.get('Content-Disposition');
-                const filename = contentDisposition 
-                    ? contentDisposition.split('filename=')[1].replace(/"/g, '')
-                    : `students_${new Date().toISOString()}.${exportFormat}`;
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
-                setShowExportModal(false);
-                setNotification({ type: 'success', message: 'Students exported successfully!' });
-            } else {
-                throw new Error('Export failed');
+    const handleExportStudents = () => {
+        // Add print styles to the page
+        const style = document.createElement('style');
+        style.textContent = `
+            @media print {
+                @page {
+                    margin: 1cm 1.5cm;
+                    size: A4 landscape;
+                }
+                body * {
+                    visibility: hidden;
+                }
+                .print-section, .print-section * {
+                    visibility: visible;
+                }
+                .print-section {
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    width: 100%;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                }
+                .print-section .p-6 {
+                    width: 100%;
+                    max-width: 100%;
+                    margin: 0 auto;
+                    padding: 0;
+                }
+                .print-section table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 12px;
+                    margin: 0 auto;
+                    table-layout: fixed;
+                }
+                .print-section th,
+                .print-section td {
+                    padding: 8px 10px;
+                    border: 1px solid #000;
+                    text-align: left;
+                    word-wrap: break-word;
+                    line-height: 1.4;
+                    font-size: 12px;
+                }
+                .print-section th {
+                    background-color: #f3f4f6 !important;
+                    font-weight: bold;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                    font-size: 12px;
+                    padding: 10px;
+                    text-align: center;
+                }
+                .print-section thead {
+                    display: table-header-group;
+                }
+                .print-section tbody tr {
+                    page-break-inside: avoid;
+                    page-break-after: auto;
+                }
+                .no-print {
+                    display: none !important;
+                }
             }
-        } catch (error) {
-            setNotification({ type: 'error', message: 'Failed to export students. Please try again.' });
-        } finally {
-            setIsSubmitting(false);
-        }
+        `;
+        document.head.appendChild(style);
+        
+        // Trigger print
+        window.print();
+        
+        // Remove the style after printing
+        setTimeout(() => {
+            document.head.removeChild(style);
+        }, 1000);
     };
 
     const renderTeachers = () => {
@@ -2848,7 +3163,14 @@ export default function SystemAdmin({
         );
     };
 
-    const renderSettings = () => (
+    const renderSettings = () => {
+        // Calculate pagination values inside renderSettings to ensure they're always available
+        const studentsTotalPagesCalc = Math.ceil((filteredStudents?.length || 0) / studentsPerPage);
+        const studentsStartIndexCalc = (studentsCurrentPage - 1) * studentsPerPage;
+        const studentsEndIndexCalc = studentsStartIndexCalc + studentsPerPage;
+        const paginatedStudentsCalc = (filteredStudents || []).slice(studentsStartIndexCalc, studentsEndIndexCalc);
+        
+        return (
         <div className="space-y-6">
             {/* Students Tab - Always show when settings tab is active */}
             {activeTab === 'settings' && (
@@ -2884,13 +3206,11 @@ export default function SystemAdmin({
                                     Import Students
                                 </button>
                                 <button
-                                    onClick={() => setShowExportModal(true)}
+                                    onClick={handleExportStudents}
                                     className="bg-gradient-to-r from-purple-500 to-purple-600 text-white px-6 py-3 rounded-xl hover:from-purple-600 hover:to-purple-700 transition-all duration-300 font-medium flex items-center"
                                 >
-                                    <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                    Export Students
+                                    <Download className="h-4 w-4 mr-2" />
+                                    Export
                                 </button>
                                 <span className="inline-flex items-center px-4 py-2 rounded-full text-sm bg-blue-100 text-blue-800 font-medium">
                                     <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3013,13 +3333,13 @@ export default function SystemAdmin({
                                 Clear Filters
                             </button>
                             <div className="text-sm text-gray-500">
-                                Showing {filteredStudents.length} of {localStudents?.length || 0} students
+                                Showing {studentsStartIndex + 1}-{Math.min(studentsEndIndex, filteredStudents.length)} of {filteredStudents.length} students
                             </div>
                         </div>
                     </div>
 
                     {/* Students Table */}
-                    <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl border border-white/20 overflow-hidden flex flex-col">
+                    <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl border border-white/20 overflow-hidden flex flex-col print-section">
                         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex-shrink-0">
                             <h3 className="text-lg font-semibold text-gray-900">Student List</h3>
                         </div>
@@ -3033,8 +3353,7 @@ export default function SystemAdmin({
                                                 <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Name</th>
                                                 <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Email</th>
                                                 <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Phone</th>
-                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Section</th>
-                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Program</th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Department</th>
                                                 <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Year Level</th>
                                                 <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Status</th>
                                                 <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Absences</th>
@@ -3042,9 +3361,9 @@ export default function SystemAdmin({
                                 </tr>
                             </thead>
                                         <tbody className="divide-y divide-gray-200 bg-white">
-                                    {filteredStudents.length === 0 ? (
+                                    {paginatedStudentsCalc.length === 0 ? (
                                         <tr>
-                                            <td colSpan="10" className="px-6 py-12 text-center text-sm text-gray-500">
+                                            <td colSpan="9" className="px-6 py-12 text-center text-sm text-gray-500">
                                                 <div className="flex flex-col items-center">
                                                     <svg className="h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
@@ -3055,7 +3374,7 @@ export default function SystemAdmin({
                                             </td>
                                         </tr>
                                     ) : (
-                                        filteredStudents.map((student) => (
+                                        paginatedStudentsCalc.map((student) => (
                                             <tr key={student.id} className="hover:bg-gray-50 transition-colors duration-150">
                                                 <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                                 {student.student_id || student.student_number}
@@ -3072,33 +3391,34 @@ export default function SystemAdmin({
                                                     {student.phone || 'N/A'}
                                                 </td>
                                                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {student.section?.name || student.section || 'N/A'}
-                                        </td>
-                                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    <div className="max-w-xs truncate" title={student.section?.program?.name || student.program || 'N/A'}>
-                                                {student.section?.program?.name || student.program || 'N/A'}
-                                                    </div>
-                                        </td>
+                                                    {student.department?.name || student.section?.program?.department?.name || 'N/A'}
+                                                </td>
                                                 <td className="px-4 py-4 whitespace-nowrap">
                                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                                     {student.year_level || 'N/A'}
                                                             </span>
                                             </td>
                                                 <td className="px-4 py-4 whitespace-nowrap">
-                                                {(student.attendance_status || student.status) && (
-                                                    <span 
-                                                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                                            (student.attendance_status || student.status) === 'Normal'
-                                                                ? 'bg-green-100 text-green-800'
-                                                                : (student.attendance_status || student.status) === 'SLIP'
-                                                                ? 'bg-yellow-100 text-yellow-800'
-                                                                : 'bg-red-100 text-red-800'
-                                                        }`}
-                                                        title={(student.attendance_status || student.status) === 'PNS' ? 'Probable No-Show: No attendance at all' : ''}
-                                                    >
-                                                        {(student.attendance_status || student.status) === 'PNS' ? 'Probable No-Show' : (student.attendance_status || student.status)}
-                                                </span>
-                                            )}
+                                                {(() => {
+                                                    // Prioritize manually set status, then use calculated attendance_status
+                                                    const displayStatus = (student.status && ['Normal', 'SLIP', 'PNS'].includes(student.status)) 
+                                                        ? student.status 
+                                                        : (student.attendance_status || 'Normal');
+                                                    return (
+                                                        <span 
+                                                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                                                displayStatus === 'Normal'
+                                                                    ? 'bg-green-100 text-green-800'
+                                                                    : displayStatus === 'SLIP'
+                                                                    ? 'bg-yellow-100 text-yellow-800'
+                                                                    : 'bg-red-100 text-red-800'
+                                                            }`}
+                                                            title={displayStatus === 'PNS' ? 'Probable No-Show: No attendance at all' : ''}
+                                                        >
+                                                            {displayStatus === 'PNS' ? 'Probable No-Show' : displayStatus}
+                                                        </span>
+                                                    );
+                                                })()}
                                         </td>
                                                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
                                                     <span className="font-medium">{student.absence_count || 0}</span>
@@ -3108,6 +3428,24 @@ export default function SystemAdmin({
                                                 <button
                                                     onClick={() => {
                                                         setSelectedStudent(student);
+                                                        
+                                                        // Get the actual saved values from the student object
+                                                        // Use the status field if it's Normal/SLIP/PNS, otherwise calculate from absence_count
+                                                        const absCount = parseInt(student.absence_count) || 0;
+                                                        let attendanceStatus = 'Normal';
+                                                        
+                                                        // Check if status is manually set (Normal, SLIP, PNS)
+                                                        if (student.status && ['Normal', 'SLIP', 'PNS'].includes(student.status)) {
+                                                            attendanceStatus = student.status;
+                                                        } else {
+                                                            // Calculate from absence_count if status is not manually set
+                                                            if (absCount >= 8) {
+                                                                attendanceStatus = 'PNS';
+                                                            } else if (absCount >= 4) {
+                                                                attendanceStatus = 'SLIP';
+                                                            }
+                                                        }
+                                                        
                                                         setEditStudentForm({
                                                             first_name: student.first_name || '',
                                                             last_name: student.last_name || '',
@@ -3116,9 +3454,11 @@ export default function SystemAdmin({
                                                             guardian_name: student.guardian_name || '',
                                                             guardian_contact: student.guardian_contact || '',
                                                             year_level: student.year_level || '',
-                                                            status: student.status || 'Normal',
-                                                            absence_count: student.absence_count ?? 0,
+                                                            status: student.tracking_status || student.last_tracking?.status || 'pending',
+                                                            absence_count: absCount, // Use the actual saved value
+                                                            attendance_status: attendanceStatus, // Use saved status or calculated
                                                         });
+                                                        setStudentFormErrors({});
                                                         setShowStudentModal(true);
                                                     }}
                                                             className="p-2 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-md transition-colors duration-150"
@@ -3171,6 +3511,58 @@ export default function SystemAdmin({
                                 </div>
                             </div>
                         </div>
+                        
+                        {/* Pagination Controls */}
+                        {studentsTotalPagesCalc > 1 && (
+                            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+                                <div className="text-xs text-gray-600">
+                                    Showing {studentsStartIndexCalc + 1} to {Math.min(studentsEndIndexCalc, filteredStudents.length)} of {filteredStudents.length} results
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => setStudentsCurrentPage(prev => Math.max(1, prev - 1))}
+                                        disabled={studentsCurrentPage === 1}
+                                        className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Previous
+                                    </button>
+                                    <div className="flex items-center gap-1">
+                                        {Array.from({ length: Math.min(5, studentsTotalPagesCalc) }, (_, i) => {
+                                            let pageNum;
+                                            if (studentsTotalPagesCalc <= 5) {
+                                                pageNum = i + 1;
+                                            } else if (studentsCurrentPage <= 3) {
+                                                pageNum = i + 1;
+                                            } else if (studentsCurrentPage >= studentsTotalPagesCalc - 2) {
+                                                pageNum = studentsTotalPagesCalc - 4 + i;
+                                            } else {
+                                                pageNum = studentsCurrentPage - 2 + i;
+                                            }
+                                            return (
+                                                <button
+                                                    key={pageNum}
+                                                    onClick={() => setStudentsCurrentPage(pageNum)}
+                                                    className={`px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                                                        studentsCurrentPage === pageNum
+                                                            ? 'bg-blue-600 text-white'
+                                                            : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                                                    }`}
+                                                >
+                                                    {pageNum}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    <button
+                                        onClick={() => setStudentsCurrentPage(prev => Math.min(studentsTotalPagesCalc, prev + 1))}
+                                        disabled={studentsCurrentPage === studentsTotalPagesCalc}
+                                        className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -3615,7 +4007,8 @@ export default function SystemAdmin({
             )}
 
         </div>
-    );
+        );
+    };
 
     const renderDashboard = () => {
         return (
@@ -3821,214 +4214,94 @@ export default function SystemAdmin({
                     </div>
                 </div>
 
-                {/* Attendance Status Breakdown */}
+
+                {/* Recent User Activities - Progress Bars */}
                 <div className="card">
                     <div className="mb-6">
-                        <h3 className="text-lg font-medium text-gray-900">Attendance Status Breakdown</h3>
+                        <h3 className="text-lg font-medium text-gray-900">User Activity Progress</h3>
+                        <p className="text-sm text-gray-500 mt-1">Track user activity levels and progress</p>
                     </div>
                     
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        {/* Present Status */}
-                        <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-6 border border-green-200">
-                            <div className="flex items-center">
-                                <div className="flex-shrink-0">
-                                    <div className="h-10 w-10 bg-green-500 rounded-lg flex items-center justify-center">
-                                        <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                        </svg>
-                                    </div>
-                                </div>
-                                <div className="ml-4">
-                                    <p className="text-sm font-medium text-green-600">Present</p>
-                                    <p className="text-2xl font-bold text-green-900">
-                                        {systemStats?.totalAttendanceRecords > 0 
-                                            ? Math.round((systemStats?.totalAttendanceRecords * (systemStats?.averageAttendanceRate || 0)) / 100)
-                                            : 0
-                                        }
-                                    </p>
-                                    <p className="text-xs text-green-700">
-                                        {systemStats?.averageAttendanceRate?.toFixed(1) || 0}% of total
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
+                    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                        {recentUserActivities && recentUserActivities.length > 0 ? (() => {
+                            // Group activities by user
+                            const userActivityMap = {};
+                            recentUserActivities.forEach((activity) => {
+                                const userKey = activity.user_name || activity.user_email || 'System';
+                                if (!userActivityMap[userKey]) {
+                                    userActivityMap[userKey] = {
+                                        name: userKey,
+                                        activities: [],
+                                        totalActivities: 0,
+                                        successCount: 0,
+                                        failedCount: 0,
+                                        warningCount: 0,
+                                    };
+                                }
+                                userActivityMap[userKey].activities.push(activity);
+                                userActivityMap[userKey].totalActivities++;
+                                if (activity.status === 'success') userActivityMap[userKey].successCount++;
+                                else if (activity.status === 'failed') userActivityMap[userKey].failedCount++;
+                                else if (activity.status === 'warning') userActivityMap[userKey].warningCount++;
+                            });
 
-                        {/* Absent Status */}
-                        <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-xl p-6 border border-red-200">
-                            <div className="flex items-center">
-                                <div className="flex-shrink-0">
-                                    <div className="h-10 w-10 bg-red-500 rounded-lg flex items-center justify-center">
-                                        <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
-                                    </div>
-                                </div>
-                                <div className="ml-4">
-                                    <p className="text-sm font-medium text-red-600">Absent</p>
-                                    <p className="text-2xl font-bold text-red-900">
-                                        {systemStats?.totalAttendanceRecords > 0 
-                                            ? Math.round((systemStats?.totalAttendanceRecords * (100 - (systemStats?.averageAttendanceRate || 0))) / 100)
-                                            : 0
-                                        }
-                                    </p>
-                                    <p className="text-xs text-red-700">
-                                        {((100 - (systemStats?.averageAttendanceRate || 0))).toFixed(1)}% of total
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
+                            // Convert to array and calculate progress
+                            const userProgress = Object.values(userActivityMap).map((user) => {
+                                const maxActivities = Math.max(...Object.values(userActivityMap).map(u => u.totalActivities), 1);
+                                const progress = (user.totalActivities / maxActivities) * 100;
+                                const successRate = user.totalActivities > 0 ? (user.successCount / user.totalActivities) * 100 : 0;
+                                
+                                return {
+                                    ...user,
+                                    progress: Math.min(progress, 100),
+                                    successRate: successRate,
+                                };
+                            }).sort((a, b) => b.totalActivities - a.totalActivities).slice(0, 10);
 
-                        {/* Late Status */}
-                        <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-xl p-6 border border-yellow-200">
-                            <div className="flex items-center">
-                                <div className="flex-shrink-0">
-                                    <div className="h-10 w-10 bg-yellow-500 rounded-lg flex items-center justify-center">
-                                        <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                    </div>
+                            return (
+                                <div className="divide-y divide-gray-200">
+                                    {userProgress.map((user, index) => (
+                                        <div key={index} className="p-4 hover:bg-gray-50 transition-colors">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-semibold text-sm">
+                                                        {user.name.charAt(0).toUpperCase()}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm font-medium text-gray-900">{user.name}</p>
+                                                        <p className="text-xs text-gray-500">
+                                                            {user.totalActivities} activit{user.totalActivities !== 1 ? 'ies' : 'y'} • 
+                                                            {user.successCount > 0 && <span className="text-green-600 ml-1">{user.successCount} success</span>}
+                                                            {user.failedCount > 0 && <span className="text-red-600 ml-1">{user.failedCount} failed</span>}
+                                                            {user.warningCount > 0 && <span className="text-yellow-600 ml-1">{user.warningCount} warning</span>}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-sm font-semibold text-gray-900">{Math.round(user.progress)}%</p>
+                                                    <p className="text-xs text-gray-500">Activity Level</p>
+                                                </div>
+                                            </div>
+                                            <div className="mt-3">
+                                                <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                                                    <div 
+                                                        className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-blue-500 to-purple-600"
+                                                        style={{ width: `${user.progress}%` }}
+                                                    ></div>
+                                                </div>
+                                                <div className="flex items-center justify-between mt-1">
+                                                    <span className="text-xs text-gray-500">Success Rate: {Math.round(user.successRate)}%</span>
+                                                    <span className="text-xs text-gray-500">{user.totalActivities} total activities</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
-                                <div className="ml-4">
-                                    <p className="text-sm font-medium text-yellow-600">Late</p>
-                                    <p className="text-2xl font-bold text-yellow-900">
-                                        {systemStats?.totalAttendanceRecords > 0 
-                                            ? Math.round(systemStats?.totalAttendanceRecords * 0.05)
-                                            : 0
-                                        }
-                                    </p>
-                                    <p className="text-xs text-yellow-700">~5% estimated</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Excused Status */}
-                        <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-6 border border-blue-200">
-                            <div className="flex items-center">
-                                <div className="flex-shrink-0">
-                                    <div className="h-10 w-10 bg-blue-500 rounded-lg flex items-center justify-center">
-                                        <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                    </div>
-                                </div>
-                                <div className="ml-4">
-                                    <p className="text-sm font-medium text-blue-600">Excused</p>
-                                    <p className="text-2xl font-bold text-blue-900">
-                                        {systemStats?.totalAttendanceRecords > 0 
-                                            ? Math.round(systemStats?.totalAttendanceRecords * 0.03)
-                                            : 0
-                                        }
-                                    </p>
-                                    <p className="text-xs text-blue-700">~3% estimated</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Alerts & Notifications */}
-                <div className="card">
-                    <div className="mb-6">
-                        <h3 className="text-lg font-medium text-gray-900">Alerts & Notifications</h3>
-                        <p className="text-sm text-gray-600">Live system alerts and notifications</p>
-                    </div>
-                    
-                    <div className="space-y-4">
-                        {/* Warning Alerts - High Absence Rate */}
-                        {systemStats?.averageAttendanceRate < 85 && systemStats?.averageAttendanceRate >= 70 && (
-                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                                <div className="flex items-start">
-                                    <div className="flex-shrink-0">
-                                        <svg className="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                        </svg>
-                                    </div>
-                                    <div className="ml-3">
-                                        <h4 className="text-sm font-medium text-yellow-800">Warning</h4>
-                                        <p className="text-sm text-yellow-700 mt-1">
-                                            Attendance rate is {systemStats?.averageAttendanceRate?.toFixed(1) || 0}% - monitor closely
-                                        </p>
-                                        <p className="text-xs text-yellow-600 mt-1">Live data</p>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Active Interventions Alert */}
-                        {systemStats?.activeInterventions > 0 && (
-                            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                                <div className="flex items-start">
-                                    <div className="flex-shrink-0">
-                                        <svg className="h-5 w-5 text-orange-400" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                                        </svg>
-                                    </div>
-                                    <div className="ml-3">
-                                        <h4 className="text-sm font-medium text-orange-800">Active Interventions</h4>
-                                        <p className="text-sm text-orange-700 mt-1">
-                                            {systemStats?.activeInterventions} intervention{systemStats?.activeInterventions !== 1 ? 's' : ''} currently in progress
-                                        </p>
-                                        <p className="text-xs text-orange-600 mt-1">Live data</p>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Today's Attendance Info */}
-                        {systemStats?.todayAttendance > 0 && (
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                <div className="flex items-start">
-                                    <div className="flex-shrink-0">
-                                        <svg className="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                                        </svg>
-                                    </div>
-                                    <div className="ml-3">
-                                        <h4 className="text-sm font-medium text-blue-800">Today's Activity</h4>
-                                        <p className="text-sm text-blue-700 mt-1">
-                                            {systemStats?.todayAttendance} attendance record{systemStats?.todayAttendance !== 1 ? 's' : ''} recorded today
-                                        </p>
-                                        <p className="text-xs text-blue-600 mt-1">Live data</p>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* System Health Info */}
-                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                            <div className="flex items-start">
-                                <div className="flex-shrink-0">
-                                    <svg className="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                    </svg>
-                                </div>
-                                <div className="ml-3">
-                                    <h4 className="text-sm font-medium text-green-800">System Status</h4>
-                                    <p className="text-sm text-green-700 mt-1">
-                                        System operational - {systemStats?.totalStudents || 0} students, {systemStats?.totalTeachers || 0} teachers, {systemStats?.totalDepartments || 0} departments
-                                    </p>
-                                    <p className="text-xs text-green-600 mt-1">Live data</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* No Data Alert */}
-                        {(!systemStats?.totalAttendanceRecords || systemStats?.totalAttendanceRecords === 0) && (
-                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                                <div className="flex items-start">
-                                    <div className="flex-shrink-0">
-                                        <svg className="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                                        </svg>
-                                    </div>
-                                    <div className="ml-3">
-                                        <h4 className="text-sm font-medium text-gray-800">No Attendance Data</h4>
-                                        <p className="text-sm text-gray-700 mt-1">
-                                            No attendance records found. Start recording attendance to see analytics.
-                                        </p>
-                                        <p className="text-xs text-gray-600 mt-1">Live data</p>
-                                    </div>
-                                </div>
+                            );
+                        })() : (
+                            <div className="p-8 text-center text-gray-500">
+                                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                                <p className="text-sm">No recent user activities found</p>
                             </div>
                         )}
                     </div>
@@ -4732,68 +5005,66 @@ export default function SystemAdmin({
                                     onSubmit={(e) => {
                                         e.preventDefault();
         setIsSavingStudent(true);
-        // Ensure absence_count is an integer
+        // Ensure absence_count is an integer and calculate attendance_status
+        const absCount = parseInt(editStudentForm.absence_count) || 0;
+        let attendanceStatus = 'Normal';
+        if (absCount >= 8) {
+            attendanceStatus = 'PNS';
+        } else if (absCount >= 4) {
+            attendanceStatus = 'SLIP';
+        }
+        
+        // Prepare form data - send attendance_status as 'status' for backend
         const formData = {
-            ...editStudentForm,
-            absence_count: parseInt(editStudentForm.absence_count) || 0,
+            first_name: editStudentForm.first_name,
+            last_name: editStudentForm.last_name,
+            email: editStudentForm.email,
+            phone: editStudentForm.phone,
+            guardian_name: editStudentForm.guardian_name,
+            guardian_contact: editStudentForm.guardian_contact,
+            year_level: editStudentForm.year_level,
+            status: attendanceStatus, // Send attendance_status as 'status' to backend
+            absence_count: absCount,
+            tracking_status: editStudentForm.status, // Send tracking status separately
         };
         router.patch(route('super.students.update', selectedStudent.id), formData, {
             onSuccess: (page) => {
                 setIsSavingStudent(false);
+                setStudentFormErrors({});
                 setShowStudentModal(false);
                 
-                // Update local students state immediately with new values
-                setLocalStudents(prevStudents => 
-                    prevStudents.map(student => {
-                        if (student.id === selectedStudent.id) {
-                            const updatedStudent = {
-                                ...student,
-                                first_name: formData.first_name !== undefined ? formData.first_name : student.first_name,
-                                last_name: formData.last_name !== undefined ? formData.last_name : student.last_name,
-                                email: formData.email !== undefined ? formData.email : student.email,
-                                phone: formData.phone !== undefined ? formData.phone : student.phone,
-                                guardian_name: formData.guardian_name !== undefined ? formData.guardian_name : student.guardian_name,
-                                guardian_contact: formData.guardian_contact !== undefined ? formData.guardian_contact : student.guardian_contact,
-                                year_level: formData.year_level !== undefined ? formData.year_level : student.year_level,
-                                status: formData.status !== undefined ? formData.status : student.status,
-                                absence_count: formData.absence_count !== undefined ? parseInt(formData.absence_count) : student.absence_count,
-                            };
-                            
-                            // Calculate attendance_status based on absence_count (simplified logic)
-                            // This matches the backend calculation: >=8 = PNS, >=4 = SLIP, else Normal
-                            const absCount = updatedStudent.absence_count || 0;
-                            if (absCount >= 8) {
-                                updatedStudent.attendance_status = 'PNS';
-                            } else if (absCount >= 4) {
-                                updatedStudent.attendance_status = 'SLIP';
-                            } else {
-                                updatedStudent.attendance_status = 'Normal';
-                            }
-                            
-                            // If status was explicitly set, use that instead
-                            if (formData.status) {
-                                updatedStudent.attendance_status = formData.status;
-                            }
-                            
-                            return updatedStudent;
-                        }
-                        return student;
-                    })
-                );
-                
-                // Reload from server to get properly computed attributes and ensure data consistency
-                setTimeout(() => {
-                    router.reload({ 
-                        only: ['students'],
-                        preserveScroll: true,
-                        preserveState: false
-                    });
-                }, 100);
+                // Reload students data to get updated status, priority, and absence_count from server
+                router.reload({ 
+                    only: ['students'],
+                    preserveScroll: true,
+                });
             },
             onError: (errors) => {
                 setIsSavingStudent(false);
                 console.error('Error updating student:', errors);
-                alert('Failed to update student. Please check the form and try again.');
+                
+                // Handle validation errors
+                if (errors && typeof errors === 'object') {
+                    // Set field-level errors
+                    const fieldErrors = {};
+                    Object.keys(errors).forEach(key => {
+                        if (Array.isArray(errors[key]) && errors[key].length > 0) {
+                            fieldErrors[key] = errors[key][0];
+                        } else if (typeof errors[key] === 'string') {
+                            fieldErrors[key] = errors[key];
+                        }
+                    });
+                    setStudentFormErrors(fieldErrors);
+                    
+                    // Show alert with first error message
+                    const firstError = Object.values(fieldErrors)[0] || 'Please check the form and try again.';
+                    alert(`Failed to update student: ${firstError}`);
+                } else {
+                    // Generic error message
+                    const errorMessage = errors?.message || errors?.error || 'Please check the form and try again.';
+                    alert(`Failed to update student: ${errorMessage}`);
+                    setStudentFormErrors({});
+                }
             },
             onFinish: () => setIsSavingStudent(false),
         });
@@ -4806,18 +5077,34 @@ export default function SystemAdmin({
                                             <input
                                                 type="text"
                                                 value={editStudentForm.first_name}
-                                                onChange={(e) => setEditStudentForm({ ...editStudentForm, first_name: e.target.value })}
-                                                className="w-full border rounded-lg px-3 py-2"
+                                                onChange={(e) => {
+                                                    setEditStudentForm({ ...editStudentForm, first_name: e.target.value });
+                                                    if (studentFormErrors.first_name) {
+                                                        setStudentFormErrors({ ...studentFormErrors, first_name: null });
+                                                    }
+                                                }}
+                                                className={`w-full border rounded-lg px-3 py-2 ${studentFormErrors.first_name ? 'border-red-500' : ''}`}
                                             />
+                                            {studentFormErrors.first_name && (
+                                                <p className="mt-1 text-sm text-red-600">{studentFormErrors.first_name}</p>
+                                            )}
                                         </div>
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
                                             <input
                                                 type="text"
                                                 value={editStudentForm.last_name}
-                                                onChange={(e) => setEditStudentForm({ ...editStudentForm, last_name: e.target.value })}
-                                                className="w-full border rounded-lg px-3 py-2"
+                                                onChange={(e) => {
+                                                    setEditStudentForm({ ...editStudentForm, last_name: e.target.value });
+                                                    if (studentFormErrors.last_name) {
+                                                        setStudentFormErrors({ ...studentFormErrors, last_name: null });
+                                                    }
+                                                }}
+                                                className={`w-full border rounded-lg px-3 py-2 ${studentFormErrors.last_name ? 'border-red-500' : ''}`}
                                             />
+                                            {studentFormErrors.last_name && (
+                                                <p className="mt-1 text-sm text-red-600">{studentFormErrors.last_name}</p>
+                                            )}
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -4826,9 +5113,17 @@ export default function SystemAdmin({
                                             <input
                                                 type="email"
                                                 value={editStudentForm.email}
-                                                onChange={(e) => setEditStudentForm({ ...editStudentForm, email: e.target.value })}
-                                                className="w-full border rounded-lg px-3 py-2"
+                                                onChange={(e) => {
+                                                    setEditStudentForm({ ...editStudentForm, email: e.target.value });
+                                                    if (studentFormErrors.email) {
+                                                        setStudentFormErrors({ ...studentFormErrors, email: null });
+                                                    }
+                                                }}
+                                                className={`w-full border rounded-lg px-3 py-2 ${studentFormErrors.email ? 'border-red-500' : ''}`}
                                             />
+                                            {studentFormErrors.email && (
+                                                <p className="mt-1 text-sm text-red-600">{studentFormErrors.email}</p>
+                                            )}
                                         </div>
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
@@ -4841,10 +5136,16 @@ export default function SystemAdmin({
                                                 onChange={(e) => {
                                                     const sanitized = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
                                                     setEditStudentForm({ ...editStudentForm, phone: sanitized });
+                                                    if (studentFormErrors.phone) {
+                                                        setStudentFormErrors({ ...studentFormErrors, phone: null });
+                                                    }
                                                 }}
-                                                className="w-full border rounded-lg px-3 py-2"
+                                                className={`w-full border rounded-lg px-3 py-2 ${studentFormErrors.phone ? 'border-red-500' : ''}`}
                                                 placeholder="11-digit phone"
                                             />
+                                            {studentFormErrors.phone && (
+                                                <p className="mt-1 text-sm text-red-600">{studentFormErrors.phone}</p>
+                                            )}
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -4853,9 +5154,17 @@ export default function SystemAdmin({
                                             <input
                                                 type="text"
                                                 value={editStudentForm.guardian_name}
-                                                onChange={(e) => setEditStudentForm({ ...editStudentForm, guardian_name: e.target.value })}
-                                                className="w-full border rounded-lg px-3 py-2"
+                                                onChange={(e) => {
+                                                    setEditStudentForm({ ...editStudentForm, guardian_name: e.target.value });
+                                                    if (studentFormErrors.guardian_name) {
+                                                        setStudentFormErrors({ ...studentFormErrors, guardian_name: null });
+                                                    }
+                                                }}
+                                                className={`w-full border rounded-lg px-3 py-2 ${studentFormErrors.guardian_name ? 'border-red-500' : ''}`}
                                             />
+                                            {studentFormErrors.guardian_name && (
+                                                <p className="mt-1 text-sm text-red-600">{studentFormErrors.guardian_name}</p>
+                                            )}
                                         </div>
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-1">Guardian Contact</label>
@@ -4868,10 +5177,16 @@ export default function SystemAdmin({
                                                 onChange={(e) => {
                                                     const sanitized = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
                                                     setEditStudentForm({ ...editStudentForm, guardian_contact: sanitized });
+                                                    if (studentFormErrors.guardian_contact) {
+                                                        setStudentFormErrors({ ...studentFormErrors, guardian_contact: null });
+                                                    }
                                                 }}
-                                                className="w-full border rounded-lg px-3 py-2"
+                                                className={`w-full border rounded-lg px-3 py-2 ${studentFormErrors.guardian_contact ? 'border-red-500' : ''}`}
                                                 placeholder="11-digit phone"
                                             />
+                                            {studentFormErrors.guardian_contact && (
+                                                <p className="mt-1 text-sm text-red-600">{studentFormErrors.guardian_contact}</p>
+                                            )}
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -4880,21 +5195,59 @@ export default function SystemAdmin({
                                             <input
                                                 type="text"
                                                 value={editStudentForm.year_level}
-                                                onChange={(e) => setEditStudentForm({ ...editStudentForm, year_level: e.target.value })}
-                                                className="w-full border rounded-lg px-3 py-2"
+                                                onChange={(e) => {
+                                                    setEditStudentForm({ ...editStudentForm, year_level: e.target.value });
+                                                    if (studentFormErrors.year_level) {
+                                                        setStudentFormErrors({ ...studentFormErrors, year_level: null });
+                                                    }
+                                                }}
+                                                className={`w-full border rounded-lg px-3 py-2 ${studentFormErrors.year_level ? 'border-red-500' : ''}`}
                                             />
+                                            {studentFormErrors.year_level && (
+                                                <p className="mt-1 text-sm text-red-600">{studentFormErrors.year_level}</p>
+                                            )}
                                         </div>
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Tracking Status</label>
                                             <select
                                                 value={editStudentForm.status}
-                                                onChange={(e) => setEditStudentForm({ ...editStudentForm, status: e.target.value })}
-                                                className="w-full border rounded-lg px-3 py-2"
+                                                onChange={(e) => {
+                                                    setEditStudentForm({ ...editStudentForm, status: e.target.value });
+                                                    if (studentFormErrors.status) {
+                                                        setStudentFormErrors({ ...studentFormErrors, status: null });
+                                                    }
+                                                }}
+                                                className={`w-full border rounded-lg px-3 py-2 ${studentFormErrors.status ? 'border-red-500' : ''}`}
                                             >
-                                                {studentStatusOptions.map((status) => (
-                                                    <option key={status} value={status}>{status}</option>
-                                                ))}
+                                                {studentStatusOptions.map((status) => {
+                                                    const value = status.toLowerCase().replace(' ', '_');
+                                                    return <option key={status} value={value}>{status}</option>;
+                                                })}
                                             </select>
+                                            {studentFormErrors.status && (
+                                                <p className="mt-1 text-sm text-red-600">{studentFormErrors.status}</p>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Attendance Status</label>
+                                            <div className={`w-full border rounded-lg px-3 py-2 bg-gray-50 ${
+                                                editStudentForm.attendance_status === 'Normal'
+                                                    ? 'border-green-200 bg-green-50'
+                                                    : editStudentForm.attendance_status === 'SLIP'
+                                                    ? 'border-yellow-200 bg-yellow-50'
+                                                    : 'border-red-200 bg-red-50'
+                                            }`}>
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                                    editStudentForm.attendance_status === 'Normal'
+                                                        ? 'bg-green-100 text-green-800'
+                                                        : editStudentForm.attendance_status === 'SLIP'
+                                                        ? 'bg-yellow-100 text-yellow-800'
+                                                        : 'bg-red-100 text-red-800'
+                                                }`}>
+                                                    {editStudentForm.attendance_status}
+                                                </span>
+                                                <p className="text-xs text-gray-500 mt-1">Auto-calculated from absences</p>
+                                            </div>
                                         </div>
                                     </div>
                                     <div>
@@ -4907,15 +5260,51 @@ export default function SystemAdmin({
                                             value={editStudentForm.absence_count}
                                             onChange={(e) => {
                                                 const value = e.target.value.replace(/[^0-9]/g, '');
-                                                setEditStudentForm({ ...editStudentForm, absence_count: value === '' ? 0 : Number(value) });
+                                                const absCount = value === '' ? 0 : Number(value);
+                                                
+                                                // Automatically calculate attendance_status based on absence_count
+                                                let attendanceStatus = 'Normal';
+                                                if (absCount >= 8) {
+                                                    attendanceStatus = 'PNS';
+                                                } else if (absCount >= 4) {
+                                                    attendanceStatus = 'SLIP';
+                                                }
+                                                
+                                                setEditStudentForm({ 
+                                                    ...editStudentForm, 
+                                                    absence_count: absCount,
+                                                    attendance_status: attendanceStatus
+                                                });
+                                                if (studentFormErrors.absence_count) {
+                                                    setStudentFormErrors({ ...studentFormErrors, absence_count: null });
+                                                }
                                             }}
-                                            className="w-full border rounded-lg px-3 py-2"
+                                            className={`w-full border rounded-lg px-3 py-2 ${studentFormErrors.absence_count ? 'border-red-500' : ''}`}
                                         />
+                                        {studentFormErrors.absence_count && (
+                                            <p className="mt-1 text-sm text-red-600">{studentFormErrors.absence_count}</p>
+                                        )}
                                     </div>
                                     <div className="flex justify-end space-x-3">
                                         <button
                                             type="button"
                                             onClick={() => {
+                                                // Get the actual saved values from the student object
+                                                const absCount = parseInt(selectedStudent.absence_count) || 0;
+                                                let attendanceStatus = 'Normal';
+                                                
+                                                // Check if status is manually set (Normal, SLIP, PNS)
+                                                if (selectedStudent.status && ['Normal', 'SLIP', 'PNS'].includes(selectedStudent.status)) {
+                                                    attendanceStatus = selectedStudent.status;
+                                                } else {
+                                                    // Calculate from absence_count if status is not manually set
+                                                    if (absCount >= 8) {
+                                                        attendanceStatus = 'PNS';
+                                                    } else if (absCount >= 4) {
+                                                        attendanceStatus = 'SLIP';
+                                                    }
+                                                }
+                                                
                                                 setEditStudentForm({
                                                     first_name: selectedStudent.first_name || '',
                                                     last_name: selectedStudent.last_name || '',
@@ -4924,9 +5313,11 @@ export default function SystemAdmin({
                                                     guardian_name: selectedStudent.guardian_name || '',
                                                     guardian_contact: selectedStudent.guardian_contact || '',
                                                     year_level: selectedStudent.year_level || '',
-                                                    status: selectedStudent.status || 'Normal',
-                                                    absence_count: selectedStudent.absence_count ?? 0,
+                                                    status: selectedStudent.tracking_status || selectedStudent.last_tracking?.status || 'pending',
+                                                    absence_count: absCount, // Use the actual saved value
+                                                    attendance_status: attendanceStatus, // Use saved status or calculated
                                                 });
+                                                setStudentFormErrors({});
                                                 setShowStudentModal(false);
                                             }}
                                             className="px-4 py-2 rounded-lg border"
@@ -4948,8 +5339,8 @@ export default function SystemAdmin({
                 </div>
             )}
 
-            {/* Export Students Modal */}
-            {showExportModal && (
+            {/* Export Students Modal - Removed, using print instead */}
+            {false && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
                     <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full relative">
                         <div className="p-8">

@@ -27,7 +27,7 @@ Route::get('/', function () {
     ]);
 });
 
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth', \App\Http\Middleware\RequirePasswordChange::class])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
@@ -49,7 +49,7 @@ Route::middleware('auth')->group(function () {
 
     // Admin (PedroHub) routes - Only for Admin and Super Admin roles (explicitly exclude CSDL)
     // CSDL users are blocked at the controller level
-    Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
+    Route::middleware(['auth', \App\Http\Middleware\RequirePasswordChange::class])->prefix('admin')->name('admin.')->group(function () {
         Route::get('/dashboard', [AdminPageController::class, 'index'])->name('dashboard');
         Route::get('/admin-page', [AdminPageController::class, 'index'])->name('admin-page');
         Route::get('/admin-page/live-data', [AdminPageController::class, 'getLiveData'])->name('admin-page.live-data');
@@ -141,7 +141,7 @@ Route::middleware('auth')->group(function () {
     });
 
     // CSDL routes - Only for CSDL role
-    Route::middleware(['role:CSDL'])->prefix('csdl')->name('csdl.')->group(function () {
+    Route::middleware(['auth', 'role:CSDL', \App\Http\Middleware\RequirePasswordChange::class])->prefix('csdl')->name('csdl.')->group(function () {
         Route::get('/', [CSDLDashboardController::class, 'index'])->name('dashboard');
         Route::get('/csdl-page', [CSDLPageController::class, 'index'])->name('csdl-page');
         Route::post('/csdl-page/track-student', [CSDLPageController::class, 'trackStudent'])->name('csdl-page.track-student');
@@ -170,14 +170,14 @@ Route::middleware('auth')->group(function () {
     });
 
     // Redirect CSDL away from admin routes (only if they don't have admin roles)
-    Route::middleware(['auth', 'role:CSDL'])->group(function () {
+    Route::middleware(['auth', 'role:CSDL', \App\Http\Middleware\RequirePasswordChange::class])->group(function () {
         Route::get('/admin', function () {
             return redirect()->route('csdl.dashboard');
         });
     });
 
     // Super Admin management
-    Route::middleware(['role:Super Admin'])->prefix('super')->name('super.')->group(function () {
+    Route::middleware(['auth', 'role:Super Admin', \App\Http\Middleware\RequirePasswordChange::class])->prefix('super')->name('super.')->group(function () {
         Route::get('/', [SystemAdminController::class, 'index'])->name('dashboard');
         
         // Super Admin tabs
@@ -226,6 +226,7 @@ Route::middleware('auth')->group(function () {
         // Student Tracking routes
         Route::post('/management/track-student', [SystemAdminController::class, 'trackStudent'])->name('management.track-student');
         // These specific routes must come before the {id} routes to avoid route conflicts
+        Route::get('/management/tracking', [SystemAdminController::class, 'getTrackingRecords'])->name('management.get-tracking');
         Route::get('/management/tracking/archived', [SystemAdminController::class, 'getArchivedTracking'])->name('management.archived-tracking');
         Route::get('/management/tracking/deleted', [SystemAdminController::class, 'getDeletedTracking'])->name('management.deleted-tracking');
         Route::get('/management/tracking/export', [SystemAdminController::class, 'exportTracking'])->name('management.export-tracking');
@@ -265,9 +266,11 @@ Route::middleware('auth')->group(function () {
         Route::delete('/sections/{id}', [SystemAdminController::class, 'destroySection'])->name('sections.destroy');
         
         Route::get('/users', [UserController::class, 'index'])->name('users');
+        Route::get('/users/deactivated', [UserController::class, 'getDeactivated'])->name('users.deactivated');
         Route::post('/users', [UserController::class, 'store'])->name('users.store');
         Route::patch('/users/{user}', [UserController::class, 'update'])->name('users.update');
         Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+        Route::post('/users/{id}/restore', [UserController::class, 'restore'])->name('users.restore');
         
         // Departments and Programs
         Route::get('/departments', [DepartmentController::class, 'index'])->name('departments');
@@ -290,9 +293,9 @@ Route::middleware('auth')->group(function () {
 				Route::get('/system-admin/logs', [SystemAdminController::class, 'getSystemLogs'])->name('system-admin.logs');
 				
 				// Super Admin Attendance Features
-				Route::get('/attendance/department-rates', [SystemAdminController::class, 'departmentAttendanceRates'])->name('super.attendance.department-rates');
-				Route::get('/attendance/faculty-compliance', [SystemAdminController::class, 'facultyCompliance'])->name('super.attendance.faculty-compliance');
-				Route::post('/attendance/generate-report', [SystemAdminController::class, 'generateReport'])->name('super.attendance.generate-report');
+				Route::get('/attendance/department-rates', [SystemAdminController::class, 'departmentAttendanceRates'])->name('attendance.department-rates');
+				Route::get('/attendance/faculty-compliance', [SystemAdminController::class, 'facultyCompliance'])->name('attendance.faculty-compliance');
+				Route::post('/attendance/generate-report', [SystemAdminController::class, 'generateReport'])->name('attendance.generate-report');
         
     });
 });

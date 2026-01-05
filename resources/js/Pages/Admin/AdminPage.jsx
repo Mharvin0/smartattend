@@ -51,52 +51,6 @@ export default function AdminPage() {
         return () => clearInterval(interval);
     }, [fetchLiveData]);
 
-    useEffect(() => {
-        // Load department rates
-        fetch(route('admin.attendance.department-rates'))
-            .then(res => res.json())
-            .then(data => {
-                const container = document.getElementById('department-rates-container');
-                if (container && data.departments) {
-                    container.innerHTML = data.departments.map(dept => `
-                        <div class="border border-gray-200 rounded-lg p-6">
-                            <div class="flex items-center justify-between mb-4">
-                            <div>
-                                    <h4 class="text-lg font-medium text-gray-900">${dept.name}</h4>
-                                    <p class="text-sm text-gray-500">${dept.code || ''}</p>
-                            </div>
-                                <div class="text-right">
-                                    <p class="text-2xl font-bold ${dept.attendance_rate >= 90 ? 'text-green-600' : dept.attendance_rate >= 80 ? 'text-yellow-600' : 'text-red-600'}">
-                                        ${dept.attendance_rate}%
-                                    </p>
-                                    <p class="text-sm text-gray-500">${dept.total_records} records</p>
-                        </div>
-                            </div>
-                            <div class="grid grid-cols-4 gap-4">
-                                <div class="text-center">
-                                    <p class="text-sm text-gray-500">Present</p>
-                                    <p class="text-lg font-semibold text-green-600">${dept.present || 0}</p>
-                                </div>
-                                <div class="text-center">
-                                    <p class="text-sm text-gray-500">Late</p>
-                                    <p class="text-lg font-semibold text-yellow-600">${dept.late || 0}</p>
-                            </div>
-                                <div class="text-center">
-                                    <p class="text-sm text-gray-500">Absent</p>
-                                    <p class="text-lg font-semibold text-red-600">${dept.absent || 0}</p>
-                        </div>
-                                <div class="text-center">
-                                    <p class="text-sm text-gray-500">Excused</p>
-                                    <p class="text-lg font-semibold text-blue-600">${dept.excused || 0}</p>
-                    </div>
-                </div>
-                        </div>
-                    `).join('');
-                }
-            })
-            .catch(err => console.error('Failed to load department rates:', err));
-
-    }, []);
 
 
     // Render Dashboard Tab
@@ -201,13 +155,6 @@ export default function AdminPage() {
                             </div>
                             </div>
 
-                        {/* Department Rates */}
-                        <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 border border-white/20">
-                            <h3 className="text-xl font-bold text-gray-900 mb-6">Department Attendance Rates</h3>
-                            <div id="department-rates-container" className="space-y-4">
-                                <p className="text-gray-500 text-center py-8">Loading department rates...</p>
-                            </div>
-                            </div>
                             </div>
     );
 

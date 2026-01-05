@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import SecondaryButton from '@/Components/SecondaryButton';
+import { Download } from 'lucide-react';
 
 export default function Students({ students = [], departments = [], programs = [], sections = [], statuses = [], priorities = [], stats = {}, filters = {} }) {
     const [searchTerm, setSearchTerm] = useState(filters.search || '');
@@ -13,12 +14,10 @@ export default function Students({ students = [], departments = [], programs = [
     const [showStudentModal, setShowStudentModal] = useState(false);
     const [showAddStudentModal, setShowAddStudentModal] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
-    const [showExportModal, setShowExportModal] = useState(false);
     const [showFilters, setShowFilters] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [importFile, setImportFile] = useState(null);
     const [importType, setImportType] = useState('csv');
-    const [exportFormat, setExportFormat] = useState('csv');
     const [studentForm, setStudentForm] = useState({
         first_name: '',
         last_name: '',
@@ -132,64 +131,83 @@ export default function Students({ students = [], departments = [], programs = [
         });
     };
 
-    const handleExportStudents = async (e) => {
-        e.preventDefault();
-        
-        setIsSubmitting(true);
-        const formData = new FormData();
-        formData.append('format', exportFormat);
-        
-        // Add filters if they are set
-        if (selectedDepartment) formData.append('department_id', selectedDepartment);
-        if (selectedProgram) formData.append('program_id', selectedProgram);
-        if (selectedYearLevel) formData.append('year_level', selectedYearLevel);
-        if (selectedStatus) formData.append('status', selectedStatus);
-        
-        try {
-            const response = await fetch(route('admin.students.export'), {
-                method: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-                },
-                body: formData
-            });
-
-            if (response.ok) {
-                const contentType = response.headers.get('Content-Type');
-                if (contentType && contentType.includes('application/json')) {
-                    // Handle JSON error response
-                    const errorData = await response.json();
-                    throw new Error(errorData.message || 'Export failed');
+    const handleExportStudents = () => {
+        // Add print styles to the page
+        const style = document.createElement('style');
+        style.textContent = `
+            @media print {
+                @page {
+                    margin: 1cm 1.5cm;
+                    size: A4 landscape;
                 }
-                
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                const contentDisposition = response.headers.get('Content-Disposition');
-                const filename = contentDisposition 
-                    ? contentDisposition.split('filename=')[1].replace(/"/g, '').split(';')[0]
-                    : `students_${new Date().toISOString().split('T')[0]}.${exportFormat}`;
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
-                setShowExportModal(false);
-            } else {
-                // Try to get error message from response
-                const contentType = response.headers.get('Content-Type');
-                if (contentType && contentType.includes('application/json')) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.message || `Export failed with status ${response.status}`);
+                body * {
+                    visibility: hidden;
                 }
-                throw new Error(`Export failed with status ${response.status}`);
+                .print-section, .print-section * {
+                    visibility: visible;
+                }
+                .print-section {
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    width: 100%;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                }
+                .print-section .p-6 {
+                    width: 100%;
+                    max-width: 100%;
+                    margin: 0 auto;
+                    padding: 0;
+                }
+                .print-section table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 16px;
+                    margin: 0 auto;
+                    table-layout: fixed;
+                }
+                .print-section th,
+                .print-section td {
+                    padding: 10px 12px;
+                    border: 1px solid #000;
+                    text-align: left;
+                    word-wrap: break-word;
+                    line-height: 1.5;
+                    font-size: 16px;
+                }
+                .print-section th {
+                    background-color: #f3f4f6 !important;
+                    font-weight: bold;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                    font-size: 16px;
+                    padding: 12px;
+                    text-align: center;
+                }
+                .print-section thead {
+                    display: table-header-group;
+                }
+                .print-section tbody tr {
+                    page-break-inside: avoid;
+                    page-break-after: auto;
+                }
+                .no-print {
+                    display: none !important;
+                }
             }
-        } catch (error) {
-            alert('Failed to export students. Please try again.');
-        } finally {
-            setIsSubmitting(false);
-        }
+        `;
+        document.head.appendChild(style);
+        
+        // Trigger print
+        window.print();
+        
+        // Remove the style after printing
+        setTimeout(() => {
+            document.head.removeChild(style);
+        }, 1000);
     };
 
 
@@ -230,13 +248,11 @@ export default function Students({ students = [], departments = [], programs = [
                                     Import Students
                                 </button>
                                 <button
-                                    onClick={() => setShowExportModal(true)}
+                                    onClick={() => handleExportStudents()}
                                     className="bg-gradient-to-r from-purple-500 to-purple-600 text-white px-6 py-3 rounded-xl hover:from-purple-600 hover:to-purple-700 transition-all duration-300 font-medium flex items-center"
                                 >
-                                    <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                    Export Students
+                                    <Download className="h-4 w-4 mr-2" />
+                                    Export
                                 </button>
                                 <span className="inline-flex items-center px-4 py-2 rounded-full text-sm bg-blue-100 text-blue-800 font-medium">
                                     <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -363,7 +379,7 @@ export default function Students({ students = [], departments = [], programs = [
                         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex-shrink-0">
                             <h3 className="text-lg font-semibold text-gray-900">Student List</h3>
                         </div>
-                        <div className="overflow-x-auto overflow-y-auto flex-1 table-scroll" style={{ maxHeight: 'calc(100vh - 400px)' }}>
+                        <div className="overflow-x-auto overflow-y-auto flex-1 table-scroll print-section" style={{ maxHeight: 'calc(100vh - 400px)' }}>
                             <div className="inline-block min-w-full align-middle">
                                 <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
                                     <table className="min-w-full divide-y divide-gray-300">
@@ -388,6 +404,9 @@ export default function Students({ students = [], departments = [], programs = [
                                                     Program
                                                 </th>
                                                 <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">
+                                                    Department
+                                                </th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">
                                                     Year Level
                                                 </th>
                                                 <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">
@@ -404,7 +423,7 @@ export default function Students({ students = [], departments = [], programs = [
                                         <tbody className="divide-y divide-gray-200 bg-white">
                                     {filteredStudents.length === 0 ? (
                                         <tr>
-                                            <td colSpan="10" className="px-6 py-12 text-center text-sm text-gray-500">
+                                            <td colSpan="11" className="px-6 py-12 text-center text-sm text-gray-500">
                                                 <div className="flex flex-col items-center">
                                                     <svg className="h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
@@ -439,6 +458,9 @@ export default function Students({ students = [], departments = [], programs = [
                                                         {student.section?.program?.name || (typeof student.program === 'string' ? student.program : 'N/A')}
                                                     </div>
                                                 </td>
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {student.department?.name || student.section?.program?.department?.name || 'N/A'}
+                                                </td>
                                                 <td className="px-4 py-4 whitespace-nowrap">
                                                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                                         {student.year_level}
@@ -461,7 +483,20 @@ export default function Students({ students = [], departments = [], programs = [
                                                     )}
                                                 </td>
                                                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
-                                                    <span className="font-medium">{student.absence_count || 0}</span>
+                                                    <span className="font-medium">
+                                                        {(() => {
+                                                            // For PNS students, if absence_count is 0 or null, show at least 8
+                                                            if ((student.attendance_status === 'PNS' || student.status === 'PNS') && (!student.absence_count || student.absence_count === 0)) {
+                                                                return 8;
+                                                            }
+                                                            // For SLIP students, if absence_count is 0 or null, show at least 4
+                                                            if ((student.attendance_status === 'SLIP' || student.status === 'SLIP') && (!student.absence_count || student.absence_count === 0)) {
+                                                                return 4;
+                                                            }
+                                                            // Otherwise, show the actual absence_count or 0
+                                                            return student.absence_count || 0;
+                                                        })()}
+                                                    </span>
                                                 </td>
                                                 <td className="px-4 py-4 whitespace-nowrap text-sm font-medium sticky right-0 bg-white hover:bg-gray-50">
                                                     <div className="flex items-center space-x-1">
@@ -609,7 +644,20 @@ export default function Students({ students = [], departments = [], programs = [
                                                 {selectedStudent.attendance_status || 'Normal'}
                                             </span>
                                         </p>
-                                        <p><span className="font-medium">Absence Count:</span> {selectedStudent.absence_count || 0}</p>
+                                        <p><span className="font-medium">Absence Count:</span> {
+                                            (() => {
+                                                // For PNS students, if absence_count is 0 or null, show at least 8
+                                                if ((selectedStudent.attendance_status === 'PNS' || selectedStudent.status === 'PNS') && (!selectedStudent.absence_count || selectedStudent.absence_count === 0)) {
+                                                    return 8;
+                                                }
+                                                // For SLIP students, if absence_count is 0 or null, show at least 4
+                                                if ((selectedStudent.attendance_status === 'SLIP' || selectedStudent.status === 'SLIP') && (!selectedStudent.absence_count || selectedStudent.absence_count === 0)) {
+                                                    return 4;
+                                                }
+                                                // Otherwise, show the actual absence_count or 0
+                                                return selectedStudent.absence_count || 0;
+                                            })()
+                                        }</p>
                                     </div>
                                 </div>
                             </div>
@@ -878,8 +926,8 @@ export default function Students({ students = [], departments = [], programs = [
                 </div>
             )}
 
-            {/* Export Students Modal */}
-            {showExportModal && (
+            {/* Export Students Modal - Removed, using print instead */}
+            {false && (
                 <div 
                     className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4"
                     onClick={(e) => {

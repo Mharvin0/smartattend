@@ -31,12 +31,7 @@ export default function CSDLDashboard({ stats = {}, recentTracking = [], student
                 </div>
 
                 {/* Stats Cards */}
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
-                    <StatsCard
-                        icon={<AlertCircle className="h-6 w-6 text-yellow-600" />}
-                        title="Need Calls"
-                        value={stats.students_needing_calls || 0}
-                    />
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                     <StatsCard
                         icon={<AlertCircle className="h-6 w-6 text-red-600" />}
                         title="Need Visits"
@@ -51,11 +46,6 @@ export default function CSDLDashboard({ stats = {}, recentTracking = [], student
                         icon={<Users className="h-6 w-6 text-green-600" />}
                         title="This Week"
                         value={stats.total_tracked_this_week || 0}
-                    />
-                    <StatsCard
-                        icon={<Phone className="h-6 w-6 text-blue-600" />}
-                        title="Calls Today"
-                        value={stats.calls_today || 0}
                     />
                     <StatsCard
                         icon={<Home className="h-6 w-6 text-green-600" />}

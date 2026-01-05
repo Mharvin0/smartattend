@@ -18,13 +18,13 @@ class StudentSeeder extends Seeder
      */
     public function run(): void
     {
-        $this->command->info('Clearing students, sections, subjects, schedules, and related attendance data...');
+        $this->command->info('Clearing all existing students...');
         $this->clearAcademicTables();
 
         $departments = Department::with('programs')->get();
         
         if ($departments->isEmpty()) {
-            $this->command->error('No departments or programs found. Please run DepartmentProgramSeeder first.');
+            $this->command->error('No departments found. Please run DepartmentProgramSeeder first.');
             return;
         }
 
@@ -38,85 +38,86 @@ class StudentSeeder extends Seeder
             'Adonis', 'Maria', 'Juan', 'Ana', 'Carlos', 'Liza', 'James', 'Sarah',
             'Michael', 'Jennifer', 'David', 'Michelle', 'John', 'Patricia', 'Robert',
             'Linda', 'Mark', 'Barbara', 'Paul', 'Elizabeth', 'Steven', 'Helen',
-            'Andrew', 'Sandra', 'Kenneth', 'Donna', 'Joshua', 'Carol', 'Kevin', 'Ruth'
+            'Andrew', 'Sandra', 'Kenneth', 'Donna', 'Joshua', 'Carol', 'Kevin', 'Ruth',
+            'Daniel', 'Nancy', 'Matthew', 'Lisa', 'Anthony', 'Betty', 'Christopher', 'Margaret',
+            'Joseph', 'Sandra', 'William', 'Ashley', 'Richard', 'Kimberly', 'Thomas', 'Emily',
+            'Charles', 'Donna', 'Christopher', 'Michelle', 'Daniel', 'Dorothy', 'Matthew', 'Carol'
         ];
         
         $lastNames = [
             'Alcantara', 'Santos', 'Reyes', 'Cruz', 'Garcia', 'Lopez', 'Martinez',
             'Gonzalez', 'Rodriguez', 'Wilson', 'Anderson', 'Thomas', 'Taylor', 'Moore',
             'Jackson', 'Martin', 'Lee', 'Thompson', 'White', 'Harris', 'Sanchez',
-            'Clark', 'Ramirez', 'Lewis', 'Robinson', 'Walker', 'Young', 'King', 'Scott'
+            'Clark', 'Ramirez', 'Lewis', 'Robinson', 'Walker', 'Young', 'King', 'Scott',
+            'Green', 'Adams', 'Baker', 'Nelson', 'Carter', 'Mitchell', 'Perez', 'Roberts',
+            'Turner', 'Phillips', 'Campbell', 'Parker', 'Evans', 'Edwards', 'Collins', 'Stewart',
+            'Morris', 'Rogers', 'Reed', 'Cook', 'Morgan', 'Bell', 'Murphy', 'Bailey'
         ];
 
-        $maxStudents = 30;
+        $studentsPerDepartment = 10;
         
         foreach ($departments as $department) {
-            if ($studentsCreated >= $maxStudents) {
-                break;
+            // Get the first program for this department, or create a default one if none exists
+            $program = $department->programs()->first();
+            
+            if (!$program) {
+                $this->command->warn("No programs found for department: {$department->name}. Skipping...");
+                continue;
             }
             
-            $programs = $department->programs()->take(2)->get();
+            // Create a section for this department/program
+            $sectionName = $program->code . '-1-01';
             
-            foreach ($programs as $program) {
-                if ($studentsCreated >= $maxStudents) {
-                    break;
-                }
-                
-                foreach ($yearLevels as $yearLevel) {
-                    if ($studentsCreated >= $maxStudents) {
-                        break;
-                    }
-                    
-                    $sectionName = $program->code . substr($yearLevel, 0, 1) . '-' . sprintf('%02d', rand(1, 10));
-                    
-                    $section = Section::firstOrCreate([
-                        'name' => $sectionName,
-                        'year_level' => $yearLevel,
-                        'program_id' => $program->id,
-                        'department_id' => $department->id
-                    ], [
-                        'semester' => '1st Semester',
-                        'academic_year' => '2024-2025',
-                    ]);
-                    
-                    if ($section->wasRecentlyCreated) {
-                        $sectionsCreated++;
-                    }
+            $section = Section::firstOrCreate([
+                'name' => $sectionName,
+                'year_level' => '1st Year',
+                'program_id' => $program->id,
+                'department_id' => $department->id
+            ], [
+                'semester' => '1st Semester',
+                'academic_year' => '2024-2025',
+            ]);
+            
+            if ($section->wasRecentlyCreated) {
+                $sectionsCreated++;
+            }
 
-                    $remainingSlots = $maxStudents - $studentsCreated;
-                    $numStudents = min(rand(3, 5), $remainingSlots);
-                    
-                    for ($i = 1; $i <= $numStudents; $i++) {
-                        if ($studentsCreated >= $maxStudents) {
-                            break;
-                        }
-                        
-                        $firstName = $firstNames[array_rand($firstNames)];
-                        $lastName = $lastNames[array_rand($lastNames)];
-                        $studentNumber = sprintf('%02d-%04d-%05d', rand(1, 99), rand(1000, 9999), rand(10000, 99999));
-                        
-                        Student::create([
-                            'first_name' => $firstName,
-                            'last_name' => $lastName,
-                            'student_number' => $studentNumber,
-                            'section_id' => $section->id,
-                            'department_id' => $department->id,
-                            'program_id' => $program->id,
-                            'year_level' => $yearLevel,
-                            'gender' => $genders[array_rand($genders)],
-                            'guardian_name' => $firstName . ' ' . $lastName . ' (Parent)',
-                            'guardian_contact' => '09' . sprintf('%09d', rand(100000000, 999999999)),
-                            'birth_date' => Carbon::now()->subYears(rand(18, 25))->subDays(rand(0, 365))->format('Y-m-d'),
-                            'status' => 'active',
-                        ]);
-                        
-                        $studentsCreated++;
-                    }
-                }
+            // Create exactly 10 students for this department
+            for ($i = 1; $i <= $studentsPerDepartment; $i++) {
+                $firstName = $firstNames[($studentsCreated % count($firstNames))];
+                $lastName = $lastNames[($studentsCreated % count($lastNames))];
+                
+                // Generate unique student number
+                $studentNumber = sprintf('%02d-%04d-%05d', 
+                    $department->id, 
+                    $program->id, 
+                    str_pad($i, 5, '0', STR_PAD_LEFT)
+                );
+                
+                // Generate unique email
+                $email = strtolower($firstName . '.' . $lastName . '.' . $i . '@student.local');
+                
+                Student::create([
+                    'first_name' => $firstName,
+                    'last_name' => $lastName,
+                    'student_number' => $studentNumber,
+                    'email' => $email,
+                    'section_id' => $section->id,
+                    'department_id' => $department->id,
+                    'program_id' => $program->id,
+                    'year_level' => '1st Year',
+                    'gender' => $genders[$i % 2],
+                    'guardian_name' => $firstName . ' ' . $lastName . ' (Parent)',
+                    'guardian_contact' => '09' . sprintf('%09d', rand(100000000, 999999999)),
+                    'birth_date' => Carbon::now()->subYears(rand(18, 25))->subDays(rand(0, 365))->format('Y-m-d'),
+                    'status' => 'Active',
+                ]);
+                
+                $studentsCreated++;
             }
         }
 
-        $this->command->info("Created {$sectionsCreated} sections and {$studentsCreated} students across multiple departments and programs.");
+        $this->command->info("Created {$sectionsCreated} sections and {$studentsCreated} students ({$studentsPerDepartment} per department).");
     }
 
     private function clearAcademicTables(): void

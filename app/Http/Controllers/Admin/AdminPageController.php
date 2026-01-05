@@ -59,7 +59,8 @@ class AdminPageController extends Controller
         $sections = Section::with(['program.department'])->orderBy('name')->get();
         
         // Get all students with their sections and programs
-        $students = Student::with(['section.program.department'])->get()->map(function ($student) {
+        $user = auth()->user();
+        $students = Student::forUser($user)->with(['section.program.department'])->get()->map(function ($student) {
             return [
                 'id' => $student->id,
                 'first_name' => $student->first_name,
@@ -280,8 +281,19 @@ class AdminPageController extends Controller
 
     private function getAttendanceBySection()
     {
-        return Section::with(['program.department'])
-            ->get()
+        $user = auth()->user();
+        $departmentIds = $user->getAssignedDepartmentIds();
+        
+        $sectionsQuery = Section::with(['program.department']);
+        
+        // Filter sections by user's departments if not Super Admin
+        if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
+            $sectionsQuery->whereHas('program', function($q) use ($departmentIds) {
+                $q->whereIn('department_id', $departmentIds);
+            });
+        }
+        
+        return $sectionsQuery->get()
             ->map(function ($section) {
                 $today = Carbon::today();
                 
@@ -355,7 +367,8 @@ class AdminPageController extends Controller
 
     private function getTopAbsentStudents()
     {
-        return Student::with(['section.program.department'])
+        $user = auth()->user();
+        return Student::forUser($user)->with(['section.program.department'])
             ->get()
             ->map(function ($student) {
                 $absentCount = AttendanceRecord::where('student_id', $student->id)
@@ -402,8 +415,9 @@ class AdminPageController extends Controller
             $operation = $validated['operation'];
             $studentIds = $validated['student_ids'];
             
-            // Load students with their relationships
-            $students = Student::with(['section.program.department'])
+            // Load students with their relationships - filtered by user's departments
+            $user = auth()->user();
+            $students = Student::forUser($user)->with(['section.program.department'])
                 ->whereIn('id', $studentIds)
                 ->get();
 
@@ -684,8 +698,10 @@ class AdminPageController extends Controller
                 'year_level' => ['nullable', 'string'],
             ]);
 
+            $user = auth()->user();
+            
             // Build query with filters
-            $query = Student::with(['section.program.department']);
+            $query = Student::forUser($user)->with(['section.program.department']);
 
             // If exporting a single student, filter by student_id
             if ($validated['student_id']) {
@@ -712,7 +728,7 @@ class AdminPageController extends Controller
                     $query->where('year_level', $validated['year_level']);
                 }
             }
-
+            
             $students = $query->get();
 
             if ($validated['format'] === 'csv') {

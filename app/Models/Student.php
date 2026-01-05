@@ -148,6 +148,36 @@ class Student extends Model
         });
     }
 
+    /**
+     * Scope to filter students by user's assigned departments.
+     * If user has no departments assigned, show all (for Super Admin).
+     */
+    public function scopeForUser($query, $user)
+    {
+        // Super Admin can see all students
+        if ($user->hasRole('Super Admin')) {
+            return $query;
+        }
+
+        $departmentIds = $user->getAssignedDepartmentIds();
+        
+        // If user has no departments assigned, return empty result
+        if (empty($departmentIds)) {
+            return $query->whereRaw('1 = 0'); // Return no results
+        }
+
+        // Filter by department through section.program.department or direct department_id (if exists)
+        return $query->where(function($q) use ($departmentIds) {
+            $q->where(function($subQ) use ($departmentIds) {
+                // Check direct department_id if column exists
+                $subQ->whereIn('department_id', $departmentIds);
+            })
+            ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
+                $progQ->whereIn('department_id', $departmentIds);
+            });
+        });
+    }
+
     // Priority calculation methods
     public function calculateAbsenceCount()
     {
@@ -281,6 +311,11 @@ class Student extends Model
 
     public function getAttendanceStatusAttribute()
     {
+        // If status is manually set (Normal, SLIP, PNS), use it
+        // Otherwise, calculate from absence_count and attendance records
+        if (in_array($this->status, ['Normal', 'SLIP', 'PNS'])) {
+            return $this->status;
+        }
         return $this->calculateAttendanceStatus();
     }
 

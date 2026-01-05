@@ -40,7 +40,7 @@ class DatabaseSeeder extends Seeder
 
 		$superAdminRole->givePermissionTo(Permission::all());
 		$adminRole->givePermissionTo(['view reports','export reports','capture attendance','import attendance','manage interventions']);
-		$csdlUserRole->givePermissionTo(['view reports','track student calls','track home visits']);
+		$csdlUserRole->givePermissionTo(['view reports','track home visits']);
 
 		$super = User::firstOrCreate(
 			['email' => 'superadmin@smartattend.local'],

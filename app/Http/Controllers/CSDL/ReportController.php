@@ -66,9 +66,21 @@ class ReportController extends Controller
         $startOfMonth = $today->copy()->startOfMonth();
         $endOfMonth = $today->copy()->endOfMonth();
 
+        $user = auth()->user();
+        $departmentIds = $user->getAssignedDepartmentIds();
+        
         // Base query based on tab - filter out records without valid students
         $query = StudentTracking::with(['student.section.program.department', 'trackedBy'])
-            ->whereHas('student');
+            ->whereHas('student', function($q) use ($user, $departmentIds) {
+                if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
+                    $q->where(function($subQ) use ($departmentIds) {
+                        $subQ->whereIn('department_id', $departmentIds)
+                             ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
+                                 $progQ->whereIn('department_id', $departmentIds);
+                             });
+                    });
+                }
+            });
         
         if ($tab === 'archived') {
             $query->where('archived', true);

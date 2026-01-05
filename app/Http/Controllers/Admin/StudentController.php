@@ -44,8 +44,12 @@ class StudentController extends Controller
 
     public function index(Request $request)
     {
+        $user = auth()->user();
+        
         // Get all students with their sections and priority information - matching System Admin structure
-        $studentsQuery = Student::with(['section.program.department', 'weeklySummaries', 'schedules.subject', 'attendanceRecords'])
+        $studentsQuery = Student::forUser($user)
+            ->select('students.*')
+            ->with(['section.program.department', 'department', 'weeklySummaries', 'schedules.subject', 'attendanceRecords'])
             ->orderBy('last_name')
             ->orderBy('first_name');
 
@@ -83,11 +87,10 @@ class StudentController extends Controller
         }
 
         $students = $studentsQuery->get()->map(function ($student) {
-            // Update priority for this student
-            $student->updatePriority();
-            // Refresh the model to get the updated absence_count
+            // Refresh the model to get the latest saved values
             $student->refresh();
             // attendance_status is now automatically available via the accessor and $appends
+            // Don't call updatePriority() to preserve manually set absence_count values
             return $student;
         });
 
@@ -120,8 +123,8 @@ class StudentController extends Controller
         ];
 
         // Ensure students have attendance_status calculated
+        // Don't call updatePriority() to preserve manually set absence_count values
         $students = $students->map(function ($student) {
-            $student->updatePriority();
             $student->refresh();
             return $student;
         });
@@ -140,8 +143,7 @@ class StudentController extends Controller
 
     public function show(Student $student)
     {
-        // Update priority for this student
-        $student->updatePriority();
+        // Don't call updatePriority() to preserve manually set absence_count values
         $student->refresh();
         
         $studentData = [
@@ -189,18 +191,40 @@ class StudentController extends Controller
 				'absence_count' => 'nullable|integer|min:0',
 			]);
 
-			// Only update fields that are provided
+			// Update status (attendance status: Normal, SLIP, PNS)
 			if (isset($validated['status'])) {
 				$student->status = $validated['status'];
 			}
+			
+			// Update absence_count if provided (manual edit)
+			// IMPORTANT: When manually setting absence_count, we should NOT recalculate it from attendance records
 			if (isset($validated['absence_count'])) {
 				$student->absence_count = (int)$validated['absence_count'];
+				
+				// Calculate priority based on the manually set absence_count
+				$absenceCount = (int)$validated['absence_count'];
+				if ($absenceCount < 4) {
+					$student->priority = 'Safe';
+				} elseif ($absenceCount >= 4 && $absenceCount < 8) {
+					$student->priority = 'Call Needed';
+				} else {
+					$student->priority = 'PNS';
+				}
+			} elseif (isset($validated['status'])) {
+				// If only status changed (and absence_count wasn't changed), 
+				// recalculate priority from current absence_count without recalculating absence_count
+				$absenceCount = $student->absence_count ?? 0;
+				if ($absenceCount < 4) {
+					$student->priority = 'Safe';
+				} elseif ($absenceCount >= 4 && $absenceCount < 8) {
+					$student->priority = 'Call Needed';
+				} else {
+					$student->priority = 'PNS';
+				}
 			}
 			
-			// Recalculate priority if status or absence_count changed
-			if (isset($validated['status']) || isset($validated['absence_count'])) {
-				$student->calculatePriority();
-			}
+			// Refresh to ensure latest data is available
+			$student->refresh();
 			
 			if (!$student->save()) {
 				throw new \Exception('Failed to save student to database');

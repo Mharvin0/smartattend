@@ -86,6 +86,7 @@ class SystemAdminController extends Controller
                 'users' => $users,
                 'systemStats' => $systemStats,
                 'activityLogs' => $activityLogs,
+                'recentUserActivities' => $this->getRecentUserActivities(),
                 'integrations' => $this->getIntegrationStatus(),
                 'systemTools' => $this->getSystemToolsData(),
                 'auditLogs' => AuditLog::with('user')->orderBy('created_at', 'desc')->limit(50)->get(),
@@ -102,6 +103,7 @@ class SystemAdminController extends Controller
                 'users' => [],
                 'systemStats' => $this->getDefaultSystemStats(),
                 'activityLogs' => [],
+                'recentUserActivities' => [],
                 'integrations' => $this->getIntegrationStatus(),
                 'systemTools' => $this->getSystemToolsData(),
                 'auditLogs' => [],
@@ -143,6 +145,7 @@ class SystemAdminController extends Controller
             'users' => \App\Models\User::with('roles')->get(),
             'systemStats' => $this->getSystemStats(),
             'activityLogs' => $this->getRecentActivityLogs(),
+            'recentUserActivities' => $this->getRecentUserActivities(),
             'integrations' => $this->getIntegrationStatus(),
             'systemTools' => $this->getSystemToolsData(),
             'auditLogs' => AuditLog::with('user')->orderBy('created_at', 'desc')->limit(50)->get(),
@@ -150,42 +153,53 @@ class SystemAdminController extends Controller
             'departments' => \App\Models\Department::orderBy('name')->get(),
             'programs' => \App\Models\Program::with('department')->orderBy('name')->get(),
             'sections' => \App\Models\Section::with(['program.department'])->orderBy('name')->get(),
-            'students' => \App\Models\Student::with(['section.program.department'])->orderBy('first_name')->get(),
+            'students' => \App\Models\Student::with(['section.program.department', 'department'])->orderBy('first_name')->get(),
         ]);
     }
 
     public function management(Request $request)
     {
         // Get students that need calls or home visits
-        // Include students with priority 'Call Needed' or 'PNS', OR students with active scheduled tracking records
-        $studentsWithScheduledTracking = \App\Models\StudentTracking::where('status', 'scheduled')
+        // Include students with priority 'Call Needed' or 'PNS', OR students with active pending or to_follow tracking records
+        $studentsWithActiveTracking = \App\Models\StudentTracking::whereIn('status', ['pending', 'to_follow'])
             ->where('archived', false)
             ->pluck('student_id')
             ->unique()
             ->values()
             ->toArray();
         
-        $studentsNeedingCalls = \App\Models\Student::where(function($query) use ($studentsWithScheduledTracking) {
-                $query->whereIn('priority', ['Call Needed', 'PNS']);
-                if (!empty($studentsWithScheduledTracking)) {
-                    $query->orWhereIn('id', $studentsWithScheduledTracking);
-                }
-            })
+        $user = auth()->user();
+        $studentsNeedingCalls = \App\Models\Student::forUser($user)
             ->with(['section.program.department', 'department', 'program', 'studentTracking' => function($query) {
                 $query->where('archived', false)
                     ->orderBy('date', 'desc')
                     ->orderBy('created_at', 'desc')
                     ->limit(1);
             }])
-            ->orderBy('priority', 'desc')
-            ->orderBy('absence_count', 'desc')
             ->get()
-            ->map(function ($student) use ($studentsWithScheduledTracking) {
-                // Only update priority if student doesn't have active scheduled tracking
-                // This preserves manually set priorities for students sent to CSDL
-                if (!in_array($student->id, $studentsWithScheduledTracking)) {
-                    $student->updatePriority();
-                }
+            ->map(function ($student) {
+                // Refresh the model to get the latest saved values from database
+                // DO NOT call updatePriority() here as it recalculates absence_count from attendance records
+                // which would overwrite manually edited values
+                $student->refresh();
+                
+                // Calculate attendance status (this is a computed value, doesn't modify the model)
+                $attendanceStatus = $student->calculateAttendanceStatus();
+                
+                return $student;
+            })
+            ->filter(function ($student) use ($studentsWithActiveTracking) {
+                // Filter students that need attention:
+                // 1. Priority is 'Call Needed' or 'PNS'
+                // 2. Attendance status is 'SLIP' or 'PNS'
+                // 3. Has active tracking records
+                $priorityMatch = in_array($student->priority, ['Call Needed', 'PNS']);
+                $attendanceStatusMatch = in_array($student->calculateAttendanceStatus(), ['SLIP', 'PNS']);
+                $hasActiveTracking = in_array($student->id, $studentsWithActiveTracking);
+                
+                return $priorityMatch || $attendanceStatusMatch || $hasActiveTracking;
+            })
+            ->map(function ($student) {
                 $latestTracking = $student->studentTracking->first();
                 return [
                     'id' => $student->id,
@@ -197,13 +211,36 @@ class SystemAdminController extends Controller
                     'program' => $student->program?->name ?? $student->section?->program?->name ?? 'N/A',
                     'priority' => $student->priority ?? 'Safe',
                     'absence_count' => $student->absence_count ?? 0,
+                    'attendance_status' => $student->calculateAttendanceStatus(),
                     'tracking_status' => $latestTracking?->status ?? 'No Status',
+                    'last_tracking' => $latestTracking ? [
+                        'id' => $latestTracking->id,
+                        'type' => $latestTracking->type,
+                        'date' => $latestTracking->date->format('Y-m-d'),
+                        'status' => $latestTracking->status,
+                    ] : null,
                 ];
-            });
+            })
+            ->sortByDesc(function ($student) {
+                // Sort by priority first (PNS > Call Needed > Safe), then by absence count
+                $priorityOrder = ['PNS' => 3, 'Call Needed' => 2, 'Safe' => 1];
+                return ($priorityOrder[$student['priority']] ?? 0) * 1000 + $student['absence_count'];
+            })
+            ->values();
 
-        // Get recent tracking records - Super Admin can see all records (excluding archived and soft-deleted)
+        // Get recent tracking records - Filter by user's departments (Super Admin sees all)
+        $departmentIds = $user->getAssignedDepartmentIds();
         $recentTracking = \App\Models\StudentTracking::with(['student.section.program.department', 'trackedBy'])
-            ->whereHas('student')
+            ->whereHas('student', function($q) use ($user, $departmentIds) {
+                if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
+                    $q->where(function($subQ) use ($departmentIds) {
+                        $subQ->whereIn('department_id', $departmentIds)
+                             ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
+                                 $progQ->whereIn('department_id', $departmentIds);
+                             });
+                    });
+                }
+            })
             ->where('archived', false)
             ->orderBy('date', 'desc')
             ->orderBy('created_at', 'desc')
@@ -255,6 +292,7 @@ class SystemAdminController extends Controller
             'users' => \App\Models\User::with('roles')->get(),
             'systemStats' => $this->getSystemStats(),
             'activityLogs' => $this->getRecentActivityLogs(),
+            'recentUserActivities' => $this->getRecentUserActivities(),
             'integrations' => $this->getIntegrationStatus(),
             'systemTools' => $this->getSystemToolsData(),
             'auditLogs' => AuditLog::with('user')->orderBy('created_at', 'desc')->limit(50)->get(),
@@ -276,7 +314,7 @@ class SystemAdminController extends Controller
             'date' => 'required|date',
             'time' => 'nullable|date_format:H:i',
             'notes' => 'nullable|string',
-            'status' => 'required|in:completed,scheduled,cancelled,no_answer',
+            'status' => 'required|in:pending,to_follow,processing',
             'outcome' => 'nullable|string',
             'follow_up_required' => 'nullable|string',
             'follow_up_date' => 'nullable|date|after:today',
@@ -307,7 +345,7 @@ class SystemAdminController extends Controller
             'date' => 'required|date',
             'time' => 'nullable|date_format:H:i',
             'notes' => 'nullable|string',
-            'status' => 'required|in:completed,scheduled,cancelled,no_answer',
+            'status' => 'required|in:pending,to_follow,processing',
             'outcome' => 'nullable|string',
             'follow_up_required' => 'nullable|string',
             'follow_up_date' => 'nullable|date',
@@ -398,12 +436,50 @@ class SystemAdminController extends Controller
         return redirect()->back()->with('success', 'Tracking record unarchived successfully');
     }
 
-    public function getArchivedTracking()
+    public function getArchivedTracking(Request $request)
     {
-        $archivedTracking = \App\Models\StudentTracking::with(['student.section.program.department', 'trackedBy'])
-            ->where('archived', true)
-            ->orderBy('archived_at', 'desc')
+        $query = \App\Models\StudentTracking::with(['student.section.program.department', 'trackedBy'])
+            ->where('archived', true);
+
+        // Apply filters
+        if ($request->has('type') && $request->type) {
+            $query->where('type', $request->type);
+        }
+        if ($request->has('status') && $request->status) {
+            $query->where('status', $request->status);
+        }
+        if ($request->has('department_id') && $request->department_id) {
+            $query->whereHas('student.section.program', function($q) use ($request) {
+                $q->where('department_id', $request->department_id);
+            });
+        }
+        if ($request->has('date_from') && $request->date_from) {
+            $query->whereDate('date', '>=', $request->date_from);
+        }
+        if ($request->has('date_to') && $request->date_to) {
+            $query->whereDate('date', '<=', $request->date_to);
+        }
+        if ($request->has('search') && $request->search) {
+            $search = $request->search;
+            $query->whereHas('student', function($q) use ($search) {
+                $q->where('first_name', 'like', "%{$search}%")
+                  ->orWhere('last_name', 'like', "%{$search}%")
+                  ->orWhere('student_number', 'like', "%{$search}%");
+            });
+        }
+
+        // Get total count before pagination
+        $total = $query->count();
+        
+        // Pagination
+        $perPage = $request->get('per_page', 10);
+        $page = $request->get('page', 1);
+        $offset = ($page - 1) * $perPage;
+
+        $archivedTracking = $query->orderBy('archived_at', 'desc')
             ->orderBy('date', 'desc')
+            ->skip($offset)
+            ->take($perPage)
             ->get()
             ->map(function ($tracking) {
                 return [
@@ -434,6 +510,104 @@ class SystemAdminController extends Controller
         return response()->json([
             'success' => true,
             'tracking' => $archivedTracking,
+            'total' => $total,
+            'per_page' => $perPage,
+            'current_page' => $page,
+            'last_page' => ceil($total / $perPage),
+        ]);
+    }
+
+    public function getTrackingRecords(Request $request)
+    {
+        $user = auth()->user();
+        $departmentIds = $user->getAssignedDepartmentIds();
+        
+        $query = \App\Models\StudentTracking::with(['student.section.program.department', 'trackedBy'])
+            ->whereHas('student', function($q) use ($user, $departmentIds) {
+                if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
+                    $q->where(function($subQ) use ($departmentIds) {
+                        $subQ->whereIn('department_id', $departmentIds)
+                             ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
+                                 $progQ->whereIn('department_id', $departmentIds);
+                             });
+                    });
+                }
+            })
+            ->where('archived', false);
+
+        // Apply filters
+        if ($request->has('type') && $request->type) {
+            $query->where('type', $request->type);
+        }
+        if ($request->has('status') && $request->status) {
+            $query->where('status', $request->status);
+        }
+        if ($request->has('department_id') && $request->department_id) {
+            $query->whereHas('student.section.program', function($q) use ($request) {
+                $q->where('department_id', $request->department_id);
+            });
+        }
+        if ($request->has('date_from') && $request->date_from) {
+            $query->whereDate('date', '>=', $request->date_from);
+        }
+        if ($request->has('date_to') && $request->date_to) {
+            $query->whereDate('date', '<=', $request->date_to);
+        }
+        if ($request->has('search') && $request->search) {
+            $search = $request->search;
+            $query->whereHas('student', function($q) use ($search) {
+                $q->where('first_name', 'like', "%{$search}%")
+                  ->orWhere('last_name', 'like', "%{$search}%")
+                  ->orWhere('student_number', 'like', "%{$search}%");
+            });
+        }
+
+        // Get total count before pagination
+        $total = $query->count();
+        
+        // Pagination
+        $perPage = $request->get('per_page', 10);
+        $page = $request->get('page', 1);
+        $offset = ($page - 1) * $perPage;
+
+        $tracking = $query->orderBy('date', 'desc')
+            ->orderBy('created_at', 'desc')
+            ->skip($offset)
+            ->take($perPage)
+            ->get()
+            ->map(function ($tracking) {
+                return [
+                    'id' => $tracking->id,
+                    'type' => $tracking->type,
+                    'date' => $tracking->date->format('Y-m-d'),
+                    'time' => $tracking->time ? \Carbon\Carbon::parse($tracking->time)->format('H:i') : null,
+                    'status' => $tracking->status,
+                    'outcome' => $tracking->outcome,
+                    'follow_up_required' => $tracking->follow_up_required,
+                    'follow_up_date' => $tracking->follow_up_date ? $tracking->follow_up_date->format('Y-m-d') : null,
+                    'student' => [
+                        'id' => $tracking->student?->id ?? null,
+                        'name' => ($tracking->student?->first_name ?? '') . ' ' . ($tracking->student?->last_name ?? ''),
+                        'section' => $tracking->student?->section?->name ?? 'N/A',
+                        'department' => $tracking->student?->section?->program?->department?->name ?? 'N/A',
+                        'program' => $tracking->student?->section?->program?->name ?? 'N/A',
+                    ],
+                    'tracked_by' => $tracking->trackedBy?->name ?? 'Unknown',
+                    'tracked_by_id' => $tracking->tracked_by,
+                    'notes' => $tracking->notes,
+                    'archived' => $tracking->archived,
+                    'can_edit' => true,
+                ];
+            })
+            ->filter(fn($tracking) => $tracking['student']['id'] !== null);
+
+        return response()->json([
+            'success' => true,
+            'tracking' => $tracking,
+            'total' => $total,
+            'per_page' => $perPage,
+            'current_page' => $page,
+            'last_page' => ceil($total / $perPage),
         ]);
     }
 
@@ -502,6 +676,7 @@ class SystemAdminController extends Controller
             'users' => \App\Models\User::with('roles')->get(),
             'systemStats' => $this->getSystemStats(),
             'activityLogs' => $this->getRecentActivityLogs(),
+            'recentUserActivities' => $this->getRecentUserActivities(),
             'integrations' => $this->getIntegrationStatus(),
             'systemTools' => $this->getSystemToolsData(),
             'auditLogs' => AuditLog::with('user')->orderBy('created_at', 'desc')->limit(50)->get(),
@@ -531,24 +706,19 @@ class SystemAdminController extends Controller
     public function settings()
     {
         // Get students with their sections and programs
-        $students = \App\Models\Student::with(['section.program.department', 'weeklySummaries'])
+        // Explicitly select all fields including absence_count and priority to ensure they're included
+        $students = \App\Models\Student::with(['section.program.department', 'department', 'weeklySummaries'])
+            ->select('students.*') // Explicitly select all student fields
             ->orderBy('last_name')
             ->orderBy('first_name')
-            ->get()
-            ->map(function ($student) {
-                // First update priority (which also updates absence_count)
-                $student->updatePriority();
-                // Refresh the model to get the updated absence_count
-                $student->refresh();
-                // attendance_status is now automatically available via the accessor and $appends
-                return $student;
-            });
+            ->get();
 
         return Inertia::render('Super/SystemAdmin', [
             'activeTab' => 'settings',
             'users' => \App\Models\User::with('roles')->get(),
             'systemStats' => $this->getSystemStats(),
             'activityLogs' => $this->getRecentActivityLogs(),
+            'recentUserActivities' => $this->getRecentUserActivities(),
             'integrations' => $this->getIntegrationStatus(),
             'systemTools' => $this->getSystemToolsData(),
             'auditLogs' => AuditLog::with('user')->orderBy('created_at', 'desc')->limit(50)->get(),
@@ -587,6 +757,7 @@ class SystemAdminController extends Controller
             'users' => \App\Models\User::with('roles')->get(),
             'systemStats' => $this->getSystemStats(),
             'activityLogs' => $this->getRecentActivityLogs(),
+            'recentUserActivities' => $this->getRecentUserActivities(),
             'integrations' => $this->getIntegrationStatus(),
             'systemTools' => $this->getSystemToolsData(),
             'auditLogs' => AuditLog::with('user')->orderBy('created_at', 'desc')->limit(50)->get(),
@@ -680,6 +851,7 @@ class SystemAdminController extends Controller
                 'password' => \Hash::make($request->password),
                 'department_id' => $request->department_id,
                 'program_id' => $request->program_id,
+                'password_changed_at' => null, // Force password change on first login
             ]);
 
             // Assign CSDL role
@@ -1053,6 +1225,7 @@ class SystemAdminController extends Controller
             'users' => \App\Models\User::with('roles')->get(),
             'systemStats' => $this->getSystemStats(),
             'activityLogs' => $this->getRecentActivityLogs(),
+            'recentUserActivities' => $this->getRecentUserActivities(),
             'integrations' => $this->getIntegrationStatus(),
             'systemTools' => $this->getSystemToolsData(),
             'auditLogs' => AuditLog::with('user')->orderBy('created_at', 'desc')->limit(50)->get(),
@@ -1213,6 +1386,42 @@ class SystemAdminController extends Controller
 
         $overallHealth = ($dbHealth + $storageHealth) / 2;
         return round($overallHealth);
+    }
+
+    private function getRecentUserActivities()
+    {
+        try {
+            // Get recent user activities from AuditLog
+            $recentActivities = AuditLog::whereNotNull('user_email')
+                ->whereIn('event_category', [
+                    AuditLog::CATEGORY_AUTHENTICATION,
+                    AuditLog::CATEGORY_USER_MANAGEMENT,
+                    AuditLog::CATEGORY_DATA_MANAGEMENT,
+                    AuditLog::CATEGORY_ATTENDANCE,
+                ])
+                ->orderBy('created_at', 'desc')
+                ->limit(20)
+                ->get()
+                ->map(function ($log) {
+                    return [
+                        'id' => $log->id,
+                        'event_type' => $log->event_type,
+                        'event_category' => $log->event_category,
+                        'description' => $log->description,
+                        'user_name' => $log->user_name,
+                        'user_email' => $log->user_email,
+                        'status' => $log->status,
+                        'severity' => $log->severity,
+                        'timestamp' => $log->created_at->format('Y-m-d H:i:s'),
+                        'time_ago' => $log->created_at->diffForHumans(),
+                        'ip_address' => $log->ip_address,
+                    ];
+                });
+
+            return $recentActivities->toArray();
+        } catch (\Exception $e) {
+            return [];
+        }
     }
 
     private function getRecentActivityLogs()
@@ -2479,8 +2688,9 @@ class SystemAdminController extends Controller
                 'guardian_name' => 'nullable|string|max:255',
                 'guardian_contact' => 'nullable|string|max:11|regex:/^[0-9]*$/',
                 'year_level' => 'nullable|string',
-                'status' => 'nullable|string|in:Normal,SLIP,PNS',
+                'status' => 'nullable|string|in:Normal,SLIP,PNS', // Attendance status
                 'absence_count' => 'nullable|integer|min:0',
+                'tracking_status' => 'nullable|string|in:pending,processing,to_follow',
             ]);
 
             // Only update fields that are provided
@@ -2505,22 +2715,71 @@ class SystemAdminController extends Controller
             if (isset($validated['year_level'])) {
                 $student->year_level = !empty($validated['year_level']) ? $validated['year_level'] : null;
             }
+            // Update status (attendance status: Normal, SLIP, PNS)
             if (isset($validated['status'])) {
                 $student->status = $validated['status'];
             }
+            
+            // Update absence_count if provided (manual edit)
+            // IMPORTANT: When manually setting absence_count, we should NOT recalculate it from attendance records
             if (isset($validated['absence_count'])) {
                 $student->absence_count = (int)$validated['absence_count'];
+                
+                // Calculate priority based on the manually set absence_count
+                $absenceCount = (int)$validated['absence_count'];
+                if ($absenceCount < 4) {
+                    $student->priority = 'Safe';
+                } elseif ($absenceCount >= 4 && $absenceCount < 8) {
+                    $student->priority = 'Call Needed';
+                } else {
+                    $student->priority = 'PNS';
+                }
+            } elseif (isset($validated['status'])) {
+                // If only status changed (and absence_count wasn't changed), 
+                // recalculate priority from current absence_count without recalculating absence_count
+                $absenceCount = $student->absence_count ?? 0;
+                if ($absenceCount < 4) {
+                    $student->priority = 'Safe';
+                } elseif ($absenceCount >= 4 && $absenceCount < 8) {
+                    $student->priority = 'Call Needed';
+                } else {
+                    $student->priority = 'PNS';
+                }
             }
             
-            // Recalculate priority if status or absence_count changed
-            if (isset($validated['status']) || isset($validated['absence_count'])) {
-                $student->calculatePriority();
-            }
-            
+            // Save the student with all updates
             if (!$student->save()) {
                 throw new \Exception('Failed to save student to database');
             }
+            
+            // Refresh the model to ensure we have the latest data from database
+            $student->refresh();
+            
+            // Update tracking status if provided
+            if (isset($validated['tracking_status'])) {
+                $lastTracking = $student->studentTracking()
+                    ->whereNull('archived_at')
+                    ->whereNull('deleted_at')
+                    ->latest()
+                    ->first();
+                
+                if ($lastTracking) {
+                    $lastTracking->status = $validated['tracking_status'];
+                    $lastTracking->save();
+                } else {
+                    // Create a new tracking record if none exists
+                    \App\Models\StudentTracking::create([
+                        'student_id' => $student->id,
+                        'tracked_by' => auth()->id(),
+                        'type' => 'call',
+                        'date' => now()->toDateString(),
+                        'status' => $validated['tracking_status'],
+                        'notes' => 'Status updated from student edit form',
+                    ]);
+                }
+            }
 
+            // Return success response - stay on current page
             return back()->with('success', 'Student updated successfully.');
         } catch (\Illuminate\Validation\ValidationException $e) {
             return back()->withErrors($e->errors())->withInput();
