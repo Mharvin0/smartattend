@@ -2506,42 +2506,65 @@ class SystemAdminController extends Controller
 
     private function getWeeklyStatusProgress()
     {
-        $today = \Carbon\CarbonImmutable::today();
-        // Use Monday as start of week to match WeeklySummary generation
-        $weeks = collect(range(0, 7))->map(fn($i) => $today->startOfWeek(\Carbon\CarbonImmutable::MONDAY)->subWeeks($i))->reverse()->values();
-        
-        $weeklyStatusData = [];
-        
-        foreach ($weeks as $weekStart) {
-            $weekEnd = $weekStart->endOfWeek(\Carbon\CarbonImmutable::SUNDAY);
-            $rangeStart = $weekStart->toDateString();
-            $rangeEnd = $weekEnd->toDateString();
+        try {
+            $today = \Carbon\CarbonImmutable::today();
+            // Use Monday as start of week to match WeeklySummary generation
+            $weeks = collect(range(0, 7))->map(fn($i) => $today->startOfWeek(\Carbon\CarbonImmutable::MONDAY)->subWeeks($i))->reverse()->values();
             
-            // Get all weekly summaries for this week (where week_start matches this week)
-            $summaries = \App\Models\WeeklySummary::where('week_start', $rangeStart)
+            // Get students who have attendance records using a more efficient query
+            $studentsWithRecords = \App\Models\Student::whereHas('attendanceRecords')
+                ->select('id', 'status', 'absence_count')
                 ->get();
             
-            // Calculate status for each student based on their weekly summary
+            // Calculate status for all students
             $normalCount = 0;
             $pnsCount = 0;
             $slipCount = 0;
-            $totalStudents = 0;
+            $totalStudents = $studentsWithRecords->count();
             
-            foreach ($summaries as $summary) {
-                $total = (int)$summary->present_count + (int)$summary->late_count + (int)$summary->absent_count;
+            foreach ($studentsWithRecords as $student) {
+                // Calculate or get absence_count
+                $absenceCount = (int)($student->absence_count ?? 0);
                 
-                // Only count students with attendance records
-                if ($total > 0) {
-                    $totalStudents++;
+                // If absence_count is 0 or null, calculate it
+                if ($absenceCount === 0) {
+                    $absenceCount = \App\Models\AttendanceRecord::where('student_id', $student->id)
+                        ->where('status', 'absent')
+                        ->count();
                     
-                    // Determine status based on the same logic used in management
-                    if (($summary->present_count + $summary->late_count) === 0 && $summary->absent_count > 0) {
-                        $pnsCount++;
-                    } elseif ($total > 0 && $summary->absent_count > ($total / 2)) {
-                        $slipCount++;
-                    } else {
-                        $normalCount++;
+                    // Update the student record if we found absences
+                    if ($absenceCount > 0 && $student->absence_count != $absenceCount) {
+                        $student->absence_count = $absenceCount;
+                        $student->save();
                     }
+                }
+                
+                // Determine status
+                $status = $student->status ?? null;
+                
+                // If status is not explicitly set (Normal, SLIP, PNS), calculate from absence_count
+                if (!in_array($status, ['Normal', 'SLIP', 'PNS'])) {
+                    if ($absenceCount >= 8) {
+                        $status = 'PNS';
+                    } elseif ($absenceCount >= 4) {
+                        $status = 'SLIP';
+                    } else {
+                        $status = 'Normal';
+                    }
+                }
+                
+                // Ensure status is set
+                if (!$status) {
+                    $status = 'Normal';
+                }
+                
+                // Count by status
+                if ($status === 'PNS') {
+                    $pnsCount++;
+                } elseif ($status === 'SLIP') {
+                    $slipCount++;
+                } else {
+                    $normalCount++;
                 }
             }
             
@@ -2550,22 +2573,62 @@ class SystemAdminController extends Controller
             $pnsPercentage = $totalStudents > 0 ? round(($pnsCount / $totalStudents) * 100, 1) : 0;
             $slipPercentage = $totalStudents > 0 ? round(($slipCount / $totalStudents) * 100, 1) : 0;
             
-            $weeklyStatusData[] = [
-                'week_start' => $rangeStart,
-                'week_end' => $rangeEnd,
-                'date_label' => $weekStart->format('M d') . ' - ' . $weekEnd->format('M d, Y'),
-                'week_label' => $weekStart->format('M d'),
-                'normal_percentage' => $normalPercentage,
-                'pns_percentage' => $pnsPercentage,
-                'slip_percentage' => $slipPercentage,
-                'normal_count' => $normalCount,
-                'pns_count' => $pnsCount,
-                'slip_count' => $slipCount,
+            // Return the same data for all weeks (showing current status distribution)
+            $weeklyStatusData = [];
+            foreach ($weeks as $weekStart) {
+                $weekEnd = $weekStart->endOfWeek(\Carbon\CarbonImmutable::SUNDAY);
+                $rangeStart = $weekStart->toDateString();
+                $rangeEnd = $weekEnd->toDateString();
+                
+                $weeklyStatusData[] = [
+                    'week_start' => $rangeStart,
+                    'week_end' => $rangeEnd,
+                    'date_label' => $weekStart->format('M d') . ' - ' . $weekEnd->format('M d, Y'),
+                    'week_label' => $weekStart->format('M d'),
+                    'normal_percentage' => $normalPercentage,
+                    'pns_percentage' => $pnsPercentage,
+                    'slip_percentage' => $slipPercentage,
+                    'normal_count' => $normalCount,
+                    'pns_count' => $pnsCount,
+                    'slip_count' => $slipCount,
+                    'total_students' => $totalStudents,
+                ];
+            }
+            
+            // Log for debugging
+            \Log::info('Weekly Status Progress calculated', [
                 'total_students' => $totalStudents,
-            ];
+                'normal_count' => $normalCount,
+                'slip_count' => $slipCount,
+                'pns_count' => $pnsCount,
+            ]);
+            
+            return $weeklyStatusData;
+        } catch (\Exception $e) {
+            \Log::error('Error in getWeeklyStatusProgress: ' . $e->getMessage());
+            \Log::error($e->getTraceAsString());
+            
+            // Return empty data structure on error
+            $today = \Carbon\CarbonImmutable::today();
+            $weeks = collect(range(0, 7))->map(fn($i) => $today->startOfWeek(\Carbon\CarbonImmutable::MONDAY)->subWeeks($i))->reverse()->values();
+            
+            return $weeks->map(function($weekStart) {
+                $weekEnd = $weekStart->endOfWeek(\Carbon\CarbonImmutable::SUNDAY);
+                return [
+                    'week_start' => $weekStart->toDateString(),
+                    'week_end' => $weekEnd->toDateString(),
+                    'date_label' => $weekStart->format('M d') . ' - ' . $weekEnd->format('M d, Y'),
+                    'week_label' => $weekStart->format('M d'),
+                    'normal_percentage' => 0,
+                    'pns_percentage' => 0,
+                    'slip_percentage' => 0,
+                    'normal_count' => 0,
+                    'pns_count' => 0,
+                    'slip_count' => 0,
+                    'total_students' => 0,
+                ];
+            })->toArray();
         }
-        
-        return $weeklyStatusData;
     }
 
     // Student Management Methods

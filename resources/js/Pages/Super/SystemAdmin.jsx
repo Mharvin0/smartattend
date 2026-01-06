@@ -2403,96 +2403,70 @@ export default function SystemAdmin({
                         <h4 className="text-lg font-semibold text-gray-900 mb-4">Weekly Student Status Distribution</h4>
                         <div className="bg-gray-50 rounded-2xl p-6">
                             {liveWeeklyStatusProgress && liveWeeklyStatusProgress.length > 0 ? (
-                                <div className="relative h-96">
-                                    {/* Progress Graph - Stacked Percentage Bars */}
-                                    <div className="flex items-end justify-between h-full gap-2">
-                                        {liveWeeklyStatusProgress.map((week, weekIndex) => {
-                                            const maxHeight = 280; // Max height in pixels for 100%
-                                            return (
-                                                <div key={weekIndex} className="flex flex-col items-center flex-1 h-full">
-                                                    <div className="text-xs text-gray-600 mb-2 text-center font-medium">
-                                                        {week.week_label}
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                    {liveWeeklyStatusProgress.map((week, weekIndex) => (
+                                        <div key={weekIndex} className="bg-white rounded-xl shadow-md p-5 border border-gray-200 hover:shadow-lg transition-shadow">
+                                            <div className="mb-3">
+                                                <div className="text-sm font-semibold text-gray-900 mb-1">{week.week_label}</div>
+                                                <div className="text-xs text-gray-500">{week.date_label}</div>
+                                            </div>
+                                            
+                                            <div className="space-y-3">
+                                                {/* Normal Status */}
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center space-x-2">
+                                                        <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                                                        <span className="text-sm text-gray-700">Normal</span>
                                                     </div>
-                                                    <div className="text-xs text-gray-500 mb-1 text-center max-w-full">
-                                                        {week.date_label}
-                                                    </div>
-                                                    <div className="w-full relative" style={{ height: `${maxHeight}px` }}>
-                                                        {/* Stacked bar showing percentages */}
-                                                        <div className="absolute bottom-0 w-full flex flex-col-reverse rounded overflow-hidden shadow-sm">
-                                                            {/* Normal Status Bar (Green) */}
-                                                            <div 
-                                                                className="bg-green-500 transition-all duration-500 ease-out relative group border-t border-green-600"
-                                                                style={{ height: `${(week.normal_percentage / 100) * maxHeight}px` }}
-                                                                title={`Normal: ${week.normal_percentage}% (${week.normal_count} students)`}
-                                                            >
-                                                                {week.normal_percentage >= 10 && (
-                                                                    <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white">
-                                                                        {week.normal_percentage.toFixed(1)}%
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                            {/* SLIP Status Bar (Yellow) */}
-                                                            <div 
-                                                                className="bg-yellow-500 transition-all duration-500 ease-out relative group border-t border-yellow-600"
-                                                                style={{ height: `${(week.slip_percentage / 100) * maxHeight}px` }}
-                                                                title={`SLIP: ${week.slip_percentage}% (${week.slip_count} students)`}
-                                                            >
-                                                                {week.slip_percentage >= 10 && (
-                                                                    <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-gray-800">
-                                                                        {week.slip_percentage.toFixed(1)}%
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                            {/* PNS Status Bar (Red) */}
-                                                            <div 
-                                                                className="bg-red-500 transition-all duration-500 ease-out relative group border-t border-red-600"
-                                                                style={{ height: `${(week.pns_percentage / 100) * maxHeight}px` }}
-                                                                title={`Probable No-Show: ${week.pns_percentage}% (${week.pns_count} students)`}
-                                                            >
-                                                                {week.pns_percentage >= 10 && (
-                                                                    <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white">
-                                                                        {week.pns_percentage.toFixed(1)}%
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="text-xs text-gray-500 mt-2 text-center">
-                                                        <div className="font-medium">{week.total_students} students</div>
-                                                        <div className="text-gray-400 mt-0.5">
-                                                            N:{week.normal_count} S:{week.slip_count} P:{week.pns_count}
-                                                        </div>
+                                                    <div className="text-right">
+                                                        <div className="text-sm font-semibold text-gray-900">{week.normal_count}</div>
+                                                        <div className="text-xs text-gray-500">{week.normal_percentage}%</div>
                                                     </div>
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
+                                                
+                                                {/* SLIP Status */}
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center space-x-2">
+                                                        <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                                                        <span className="text-sm text-gray-700">SLIP</span>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="text-sm font-semibold text-gray-900">{week.slip_count}</div>
+                                                        <div className="text-xs text-gray-500">{week.slip_percentage}%</div>
+                                                    </div>
+                                                </div>
+                                                
+                                                {/* PNS Status */}
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center space-x-2">
+                                                        <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                                                        <span className="text-sm text-gray-700">PNS</span>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="text-sm font-semibold text-gray-900">{week.pns_count}</div>
+                                                        <div className="text-xs text-gray-500">{week.pns_percentage}%</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="mt-4 pt-3 border-t border-gray-200">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs text-gray-600">Total Students</span>
+                                                    <span className="text-sm font-bold text-gray-900">{week.total_students}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
                             ) : (
-                                <div className="relative h-96 flex items-center justify-center">
+                                <div className="py-12 flex items-center justify-center">
                                     <div className="text-center">
                                         <p className="text-gray-500 text-lg mb-2">No weekly status data available</p>
-                                        <p className="text-gray-400 text-sm">Weekly summaries need to be generated to display this graph</p>
+                                        <p className="text-gray-400 text-sm">Weekly summaries need to be generated to display this data</p>
                                     </div>
                                 </div>
                             )}
-                            {/* Legend */}
-                            {liveWeeklyStatusProgress && liveWeeklyStatusProgress.length > 0 && (
-                                <div className="mt-6 flex items-center justify-center space-x-6">
-                                    <div className="flex items-center space-x-2">
-                                        <div className="w-4 h-4 bg-green-500 rounded"></div>
-                                        <span className="text-sm text-gray-700">Normal</span>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                        <div className="w-4 h-4 bg-yellow-500 rounded"></div>
-                                        <span className="text-sm text-gray-700">SLIP</span>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                        <div className="w-4 h-4 bg-red-500 rounded"></div>
-                                        <span className="text-sm text-gray-700" title="Probable No-Show">Probable No-Show</span>
-                                    </div>
-                                </div>
-                            )}
+                        </div>
                     </div>
 
                     {/* Department Attendance Rates */}
@@ -2546,7 +2520,6 @@ export default function SystemAdmin({
                         </div>
                     </div>
                 </div>
-            </div>
         </div>
     );
 
@@ -4120,93 +4093,66 @@ export default function SystemAdmin({
                         <div className="bg-gray-50 rounded-lg p-6">
                             <h4 className="text-md font-medium text-gray-900 mb-4">Weekly Student Status Distribution</h4>
                             {liveWeeklyStatusProgress && liveWeeklyStatusProgress.length > 0 ? (
-                                <div className="relative h-96">
-                                    {/* Progress Graph - Stacked Percentage Bars */}
-                                    <div className="flex items-end justify-between h-full gap-2">
-                                        {liveWeeklyStatusProgress.map((week, weekIndex) => {
-                                            const maxHeight = 280; // Max height in pixels for 100%
-                                            return (
-                                                <div key={weekIndex} className="flex flex-col items-center flex-1 h-full">
-                                                    <div className="text-xs text-gray-600 mb-2 text-center font-medium">
-                                                        {week.week_label}
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                    {liveWeeklyStatusProgress.map((week, weekIndex) => (
+                                        <div key={weekIndex} className="bg-white rounded-xl shadow-md p-5 border border-gray-200 hover:shadow-lg transition-shadow">
+                                            <div className="mb-3">
+                                                <div className="text-sm font-semibold text-gray-900 mb-1">{week.week_label}</div>
+                                                <div className="text-xs text-gray-500">{week.date_label}</div>
+                                            </div>
+                                            
+                                            <div className="space-y-3">
+                                                {/* Normal Status */}
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center space-x-2">
+                                                        <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                                                        <span className="text-sm text-gray-700">Normal</span>
                                                     </div>
-                                                    <div className="text-xs text-gray-500 mb-1 text-center max-w-full">
-                                                        {week.date_label}
-                                                    </div>
-                                                    <div className="w-full relative" style={{ height: `${maxHeight}px` }}>
-                                                        {/* Stacked bar showing percentages */}
-                                                        <div className="absolute bottom-0 w-full flex flex-col-reverse rounded overflow-hidden shadow-sm">
-                                                            {/* Normal Status Bar (Green) */}
-                                                            <div 
-                                                                className="bg-green-500 transition-all duration-500 ease-out relative group border-t border-green-600"
-                                                                style={{ height: `${(week.normal_percentage / 100) * maxHeight}px` }}
-                                                                title={`Normal: ${week.normal_percentage}% (${week.normal_count} students)`}
-                                                            >
-                                                                {week.normal_percentage >= 10 && (
-                                                                    <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white">
-                                                                        {week.normal_percentage.toFixed(1)}%
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                            {/* SLIP Status Bar (Yellow) */}
-                                                            <div 
-                                                                className="bg-yellow-500 transition-all duration-500 ease-out relative group border-t border-yellow-600"
-                                                                style={{ height: `${(week.slip_percentage / 100) * maxHeight}px` }}
-                                                                title={`SLIP: ${week.slip_percentage}% (${week.slip_count} students)`}
-                                                            >
-                                                                {week.slip_percentage >= 10 && (
-                                                                    <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-gray-800">
-                                                                        {week.slip_percentage.toFixed(1)}%
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                            {/* PNS Status Bar (Red) */}
-                                                            <div 
-                                                                className="bg-red-500 transition-all duration-500 ease-out relative group border-t border-red-600"
-                                                                style={{ height: `${(week.pns_percentage / 100) * maxHeight}px` }}
-                                                                title={`Probable No-Show: ${week.pns_percentage}% (${week.pns_count} students)`}
-                                                            >
-                                                                {week.pns_percentage >= 10 && (
-                                                                    <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white">
-                                                                        {week.pns_percentage.toFixed(1)}%
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="text-xs text-gray-500 mt-2 text-center">
-                                                        <div className="font-medium">{week.total_students} students</div>
-                                                        <div className="text-gray-400 mt-0.5">
-                                                            N:{week.normal_count} S:{week.slip_count} P:{week.pns_count}
-                                                        </div>
+                                                    <div className="text-right">
+                                                        <div className="text-sm font-semibold text-gray-900">{week.normal_count}</div>
+                                                        <div className="text-xs text-gray-500">{week.normal_percentage}%</div>
                                                     </div>
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
+                                                
+                                                {/* SLIP Status */}
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center space-x-2">
+                                                        <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                                                        <span className="text-sm text-gray-700">SLIP</span>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="text-sm font-semibold text-gray-900">{week.slip_count}</div>
+                                                        <div className="text-xs text-gray-500">{week.slip_percentage}%</div>
+                                                    </div>
+                                                </div>
+                                                
+                                                {/* PNS Status */}
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center space-x-2">
+                                                        <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                                                        <span className="text-sm text-gray-700">PNS</span>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="text-sm font-semibold text-gray-900">{week.pns_count}</div>
+                                                        <div className="text-xs text-gray-500">{week.pns_percentage}%</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="mt-4 pt-3 border-t border-gray-200">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs text-gray-600">Total Students</span>
+                                                    <span className="text-sm font-bold text-gray-900">{week.total_students}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
                             ) : (
-                                <div className="relative h-96 flex items-center justify-center">
+                                <div className="py-12 flex items-center justify-center">
                                     <div className="text-center">
                                         <p className="text-gray-500 text-lg mb-2">No weekly status data available</p>
-                                        <p className="text-gray-400 text-sm">Weekly summaries need to be generated to display this graph</p>
-                                    </div>
-                                </div>
-                            )}
-                            {/* Legend */}
-                            {liveWeeklyStatusProgress && liveWeeklyStatusProgress.length > 0 && (
-                                <div className="mt-6 flex items-center justify-center space-x-6">
-                                    <div className="flex items-center space-x-2">
-                                        <div className="w-4 h-4 bg-green-500 rounded"></div>
-                                        <span className="text-sm text-gray-700">Normal</span>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                        <div className="w-4 h-4 bg-yellow-500 rounded"></div>
-                                        <span className="text-sm text-gray-700">SLIP</span>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                        <div className="w-4 h-4 bg-red-500 rounded"></div>
-                                        <span className="text-sm text-gray-700" title="Probable No-Show">Probable No-Show</span>
+                                        <p className="text-gray-400 text-sm">Weekly summaries need to be generated to display this data</p>
                                     </div>
                                 </div>
                             )}
