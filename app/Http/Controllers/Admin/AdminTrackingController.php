@@ -318,7 +318,7 @@ class AdminTrackingController extends Controller
             'status' => 'required|in:completed,cancelled,no_answer', // Admin can only set these statuses for calls
             'outcome' => 'nullable|string',
             'follow_up_required' => 'nullable|string',
-            'follow_up_date' => 'nullable|date',
+            'follow_up_date' => 'nullable|date|after:today', // Only future dates allowed
         ]);
 
         $tracking->update([

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import DataTable from '@/Components/DataTable';
@@ -46,6 +46,8 @@ export default function SystemAdmin({
     const [departmentRates, setDepartmentRates] = useState([]);
     // Local state for students to allow immediate updates
     const [localStudents, setLocalStudents] = useState(students);
+    // Live attendance stats for real-time updates
+    const [liveAttendanceStats, setLiveAttendanceStats] = useState(attendanceStats);
     // Ref to track previous students hash to prevent unnecessary updates
     const prevStudentsHashRef = useRef(null);
     
@@ -61,17 +63,67 @@ export default function SystemAdmin({
         return () => clearInterval(interval);
     }, []);
 
-    useEffect(() => {
-        // Load department attendance rates
-        fetch(route('super.attendance.department-rates'))
-            .then(res => res.json())
-            .then(data => {
+    const loadDepartmentRates = async () => {
+        try {
+            const response = await fetch(route('super.attendance.department-rates'), {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                },
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
                 if (data.departments) {
                     setDepartmentRates(data.departments);
                 }
-            })
-            .catch(err => console.error('Failed to load department rates:', err));
+            }
+        } catch (error) {
+            console.error('Failed to load department rates:', error);
+        }
+    };
+
+    useEffect(() => {
+        // Load department attendance rates on mount
+        loadDepartmentRates();
     }, []);
+
+    // Fetch live attendance data when attendance tab is active
+    const fetchAttendanceLiveData = useCallback(async () => {
+        if (activeTab !== 'attendance') return;
+        
+        try {
+            const response = await fetch(route('super.attendance.live-data'), {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                },
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.attendanceStats) {
+                    setLiveAttendanceStats(data.attendanceStats);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to fetch attendance live data:', error);
+        }
+    }, [activeTab]);
+
+    // Poll for attendance data every 30 seconds when attendance tab is active
+    useEffect(() => {
+        if (activeTab === 'attendance') {
+            // Fetch immediately
+            fetchAttendanceLiveData();
+            
+            // Then poll every 30 seconds
+            const interval = setInterval(fetchAttendanceLiveData, 30000);
+            return () => clearInterval(interval);
+        }
+    }, [activeTab, fetchAttendanceLiveData]);
 
     const refreshDashboardData = async () => {
         try {
@@ -91,6 +143,9 @@ export default function SystemAdmin({
                 }
                 setLastRefresh(new Date());
             }
+            
+            // Also refresh department rates
+            loadDepartmentRates();
         } catch (error) {
             console.error('Error refreshing dashboard data:', error);
         }
@@ -212,7 +267,7 @@ export default function SystemAdmin({
     const [showSendToCSDLModal, setShowSendToCSDLModal] = useState(false);
     const [selectedStudentForCSDL, setSelectedStudentForCSDL] = useState(null);
     const [csdlForm, setCsdlForm] = useState({
-        type: 'call',
+        type: 'home_visit',
         notes: ''
     });
 
@@ -1372,8 +1427,17 @@ export default function SystemAdmin({
         style.textContent = `
             @media print {
                 @page {
-                    margin: 1cm 1.5cm;
+                    margin: 0.3cm;
                     size: A4 landscape;
+                }
+                @page:blank {
+                    display: none;
+                }
+                * {
+                    overflow: visible !important;
+                }
+                body {
+                    overflow: visible !important;
                 }
                 body * {
                     visibility: hidden;
@@ -1382,59 +1446,79 @@ export default function SystemAdmin({
                     visibility: visible;
                 }
                 .print-section {
-                    position: absolute;
-                    left: 0;
-                    top: 0;
+                    position: relative;
                     width: 100%;
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
+                    display: block;
                 }
-                .print-section .space-y-4 > div {
-                    display: none;
+                .print-section * {
+                    overflow: visible !important;
                 }
-                .print-section .p-6 {
+                .print-section .px-6,
+                .print-section .py-4,
+                .print-section .border-b,
+                .print-section button,
+                .print-section .flex.items-center.gap-2,
+                .print-section .space-y-4 > div:not(.p-6),
+                .print-section .border-t,
+                .print-section .bg-gray-50,
+                .print-section .text-xs.text-gray-600,
+                .print-section .flex.items-center.justify-between,
+                .no-print {
+                    display: none !important;
+                }
+                .print-section .p-6,
+                .print-section .overflow-x-auto {
                     width: 100%;
                     max-width: 100%;
-                    margin: 0 auto;
-                    padding: 0;
+                    margin: 0;
+                    padding: 15px;
                 }
                 .print-section table {
                     width: 100%;
                     border-collapse: collapse;
                     font-size: 16px;
-                    margin: 0 auto;
-                    table-layout: fixed;
+                    margin: 0;
+                    table-layout: auto;
                 }
                 .print-section th,
                 .print-section td {
-                    padding: 10px 12px;
+                    padding: 12px 14px;
                     border: 1px solid #000;
                     text-align: left;
                     word-wrap: break-word;
                     vertical-align: top;
-                    line-height: 1.5;
+                    line-height: 1.6;
                     font-size: 16px;
+                    page-break-inside: avoid;
                 }
                 .print-section th {
                     background-color: #f3f4f6 !important;
                     font-weight: bold;
                     -webkit-print-color-adjust: exact;
                     print-color-adjust: exact;
-                    font-size: 16px;
-                    padding: 12px;
+                    font-size: 17px;
+                    padding: 14px;
                     text-align: center;
                 }
                 .print-section thead {
                     display: table-header-group;
                 }
+                .print-section thead tr {
+                    page-break-after: avoid;
+                    page-break-inside: avoid;
+                }
+                .print-section tbody {
+                    page-break-inside: avoid;
+                }
                 .print-section tbody tr {
                     page-break-inside: avoid;
                     page-break-after: auto;
                 }
-                .no-print {
-                    display: none !important;
+                .print-section tbody td {
+                    page-break-inside: avoid;
+                }
+                .print-section tbody tr:last-child {
+                    page-break-after: auto;
                 }
             }
         `;
@@ -1453,15 +1537,15 @@ export default function SystemAdmin({
             table.innerHTML = `
                 <thead>
                     <tr>
-                        <th style="width: 12%;">Student Name</th>
-                        <th style="width: 10%;">Student Number</th>
-                        <th style="width: 10%;">Section</th>
-                        <th style="width: 6%;">Type</th>
-                        <th style="width: 8%;">Date</th>
-                        <th style="width: 7%;">Time</th>
-                        <th style="width: 8%;">Status</th>
-                        <th style="width: 10%;">Tracked By</th>
-                        <th style="width: 29%;">Notes</th>
+                        <th>Student Name</th>
+                        <th>Student Number</th>
+                        <th>Section</th>
+                        <th>Type</th>
+                        <th>Date</th>
+                        <th>Time</th>
+                        <th>Status</th>
+                        <th>Tracked By</th>
+                        <th>Notes</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1879,7 +1963,7 @@ export default function SystemAdmin({
                                                     <p className="text-xs text-gray-400 mt-0.5">Deleted: {tracking.deleted_at}</p>
                                                 )}
                                             </div>
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 no-print">
                                                 <button
                                                     onClick={() => {
                                                         fetch(route('super.management.view-tracking', tracking.id), {
@@ -1901,7 +1985,7 @@ export default function SystemAdmin({
                                                             alert('Failed to load tracking details');
                                                         });
                                                     }}
-                                                    className="text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
+                                                    className="text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors no-print"
                                                     title="View Details"
                                                 >
                                                     View
@@ -2137,7 +2221,12 @@ export default function SystemAdmin({
                                                 type="date"
                                                 value={trackingForm.follow_up_date}
                                                 onChange={(e) => setTrackingForm({ ...trackingForm, follow_up_date: e.target.value })}
-                                                min={new Date().toISOString().split('T')[0]}
+                                                min={(() => {
+                                                    // Only allow future dates (tomorrow and onwards)
+                                                    const tomorrow = new Date();
+                                                    tomorrow.setDate(tomorrow.getDate() + 1);
+                                                    return tomorrow.toISOString().split('T')[0];
+                                                })()}
                                                 className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                             />
                                         </div>
@@ -2157,24 +2246,45 @@ export default function SystemAdmin({
                                 </div>
                                 </div>
                                 </div>
-                                <div className="flex justify-end gap-3 pt-6 mt-6 border-t border-gray-200">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setShowTrackingModal(false);
-                                            setSelectedStudentForTracking(null);
-                                            setEditingTracking(null);
-                                        }}
-                                        className="px-6 py-2.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors font-medium"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="px-6 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
-                                    >
-                                        {editingTracking ? 'Update Tracking' : 'Save Tracking'}
-                                    </button>
+                                <div className="flex justify-between items-center pt-6 mt-6 border-t border-gray-200">
+                                    {/* Send to CSDL Button - Only show when not editing */}
+                                    {!editingTracking && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                // Close tracking modal and open CSDL modal
+                                                setShowTrackingModal(false);
+                                                setSelectedStudentForCSDL(selectedStudentForTracking);
+                                                setShowSendToCSDLModal(true);
+                                            }}
+                                            className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
+                                        >
+                                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                            </svg>
+                                            Send to CSDL
+                                        </button>
+                                    )}
+                                    {editingTracking && <div></div>}
+                                    <div className="flex gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setShowTrackingModal(false);
+                                                setSelectedStudentForTracking(null);
+                                                setEditingTracking(null);
+                                            }}
+                                            className="px-6 py-2.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors font-medium"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            className="px-6 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
+                                        >
+                                            {editingTracking ? 'Update Tracking' : 'Save Tracking'}
+                                        </button>
+                                    </div>
                                 </div>
                             </form>
                         </div>
@@ -2365,26 +2475,18 @@ export default function SystemAdmin({
             </div>
 
                 {/* Attendance Statistics */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                     <div className="bg-green-50 rounded-2xl p-6 border-l-4 border-green-500">
-                        <h3 className="text-sm font-medium text-green-600 mb-2">Present Today</h3>
-                        <p className="text-3xl font-bold text-green-900">{attendanceStats?.present_count || 0}</p>
-                        <p className="text-xs text-green-700 mt-1">{attendanceStats?.present_percentage || 0}% of total</p>
-                    </div>
-                    <div className="bg-red-50 rounded-2xl p-6 border-l-4 border-red-500">
-                        <h3 className="text-sm font-medium text-red-600 mb-2">Absent Today</h3>
-                        <p className="text-3xl font-bold text-red-900">{attendanceStats?.absent_count || 0}</p>
-                        <p className="text-xs text-red-700 mt-1">{attendanceStats?.absent_percentage || 0}% of total</p>
+                        <h3 className="text-sm font-medium text-green-600 mb-2">Normal</h3>
+                        <p className="text-3xl font-bold text-green-900">{liveAttendanceStats?.present_count || 0}</p>
                     </div>
                     <div className="bg-yellow-50 rounded-2xl p-6 border-l-4 border-yellow-500">
-                        <h3 className="text-sm font-medium text-yellow-600 mb-2">Late Today</h3>
-                        <p className="text-3xl font-bold text-yellow-900">{attendanceStats?.late_count || 0}</p>
-                        <p className="text-xs text-yellow-700 mt-1">{attendanceStats?.late_percentage || 0}% of total</p>
+                        <h3 className="text-sm font-medium text-yellow-600 mb-2">SLIP</h3>
+                        <p className="text-3xl font-bold text-yellow-900">{liveAttendanceStats?.late_count || 0}</p>
                     </div>
-                    <div className="bg-blue-50 rounded-2xl p-6 border-l-4 border-blue-500">
-                        <h3 className="text-sm font-medium text-blue-600 mb-2">Total Records</h3>
-                        <p className="text-3xl font-bold text-blue-900">{attendanceStats?.total_count || 0}</p>
-                        <p className="text-xs text-blue-700 mt-1">Today's records</p>
+                    <div className="bg-red-50 rounded-2xl p-6 border-l-4 border-red-500">
+                        <h3 className="text-sm font-medium text-red-600 mb-2">PNS</h3>
+                        <p className="text-3xl font-bold text-red-900">{liveAttendanceStats?.absent_count || 0}</p>
                     </div>
                 </div>
 
@@ -2406,12 +2508,55 @@ export default function SystemAdmin({
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                     {liveWeeklyStatusProgress.map((week, weekIndex) => (
                                         <div key={weekIndex} className="bg-white rounded-xl shadow-md p-5 border border-gray-200 hover:shadow-lg transition-shadow">
-                                            <div className="mb-3">
+                                            <div className="mb-4">
                                                 <div className="text-sm font-semibold text-gray-900 mb-1">{week.week_label}</div>
                                                 <div className="text-xs text-gray-500">{week.date_label}</div>
                                             </div>
                                             
-                                            <div className="space-y-3">
+                                            {/* Combined Progress Bar */}
+                                            <div className="mb-4">
+                                                <div className="w-full h-8 bg-gray-200 rounded-lg overflow-hidden flex">
+                                                    {/* Normal Status Bar */}
+                                                    {week.normal_percentage > 0 && (
+                                                        <div 
+                                                            className="bg-green-500 h-full flex items-center justify-center transition-all duration-500"
+                                                            style={{ width: `${week.normal_percentage}%` }}
+                                                            title={`Normal: ${week.normal_percentage}%`}
+                                                        >
+                                                            {week.normal_percentage >= 5 && (
+                                                                <span className="text-xs font-semibold text-white">{week.normal_percentage.toFixed(1)}%</span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {/* SLIP Status Bar */}
+                                                    {week.slip_percentage > 0 && (
+                                                        <div 
+                                                            className="bg-yellow-500 h-full flex items-center justify-center transition-all duration-500"
+                                                            style={{ width: `${week.slip_percentage}%` }}
+                                                            title={`SLIP: ${week.slip_percentage}%`}
+                                                        >
+                                                            {week.slip_percentage >= 5 && (
+                                                                <span className="text-xs font-semibold text-white">{week.slip_percentage.toFixed(1)}%</span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {/* PNS Status Bar */}
+                                                    {week.pns_percentage > 0 && (
+                                                        <div 
+                                                            className="bg-red-500 h-full flex items-center justify-center transition-all duration-500"
+                                                            style={{ width: `${week.pns_percentage}%` }}
+                                                            title={`PNS: ${week.pns_percentage}%`}
+                                                        >
+                                                            {week.pns_percentage >= 5 && (
+                                                                <span className="text-xs font-semibold text-white">{week.pns_percentage.toFixed(1)}%</span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            
+                                            {/* Status Breakdown */}
+                                            <div className="space-y-2">
                                                 {/* Normal Status */}
                                                 <div className="flex items-center justify-between">
                                                     <div className="flex items-center space-x-2">
@@ -2420,7 +2565,7 @@ export default function SystemAdmin({
                                                     </div>
                                                     <div className="text-right">
                                                         <div className="text-sm font-semibold text-gray-900">{week.normal_count}</div>
-                                                        <div className="text-xs text-gray-500">{week.normal_percentage}%</div>
+                                                        <div className="text-xs text-gray-500">{week.normal_percentage.toFixed(1)}%</div>
                                                     </div>
                                                 </div>
                                                 
@@ -2432,7 +2577,7 @@ export default function SystemAdmin({
                                                     </div>
                                                     <div className="text-right">
                                                         <div className="text-sm font-semibold text-gray-900">{week.slip_count}</div>
-                                                        <div className="text-xs text-gray-500">{week.slip_percentage}%</div>
+                                                        <div className="text-xs text-gray-500">{week.slip_percentage.toFixed(1)}%</div>
                                                     </div>
                                                 </div>
                                                 
@@ -2444,7 +2589,7 @@ export default function SystemAdmin({
                                                     </div>
                                                     <div className="text-right">
                                                         <div className="text-sm font-semibold text-gray-900">{week.pns_count}</div>
-                                                        <div className="text-xs text-gray-500">{week.pns_percentage}%</div>
+                                                        <div className="text-xs text-gray-500">{week.pns_percentage.toFixed(1)}%</div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -2471,45 +2616,188 @@ export default function SystemAdmin({
 
                     {/* Department Attendance Rates */}
                     <div className="mb-8">
-                        <h4 className="text-lg font-semibold text-gray-900 mb-4">Department Attendance Rates</h4>
-                        <div className="space-y-4">
+                        <h4 className="text-lg font-semibold text-gray-900 mb-4">Department Student Status Distribution</h4>
+                        <div className="space-y-6">
                             {departmentRates.length > 0 ? (
                                 departmentRates.map((dept) => (
-                                    <div key={dept.id} className="border border-gray-200 rounded-lg p-6 bg-white">
+                                    <div key={dept.id} className="border border-gray-200 rounded-xl p-6 bg-white shadow-sm hover:shadow-md transition-shadow">
+                                        {/* Department Header */}
                                         <div className="flex items-center justify-between mb-4">
                                             <div>
-                                                <h4 className="text-lg font-medium text-gray-900">{dept.name}</h4>
-                                                <p className="text-sm text-gray-500">{dept.code || ''}</p>
+                                                <h4 className="text-xl font-semibold text-gray-900">{dept.name}</h4>
+                                                {dept.code && <p className="text-sm text-gray-500">{dept.code}</p>}
                                             </div>
                                             <div className="text-right">
-                                                <p className={`text-2xl font-bold ${
-                                                    dept.attendance_rate >= 90 ? 'text-green-600' : 
-                                                    dept.attendance_rate >= 80 ? 'text-yellow-600' : 
-                                                    'text-red-600'
-                                                }`}>
-                                                    {dept.attendance_rate}%
-                                                </p>
-                                                <p className="text-sm text-gray-500">{dept.total_records} records</p>
+                                                <p className="text-sm text-gray-500">Total Students</p>
+                                                <p className="text-2xl font-bold text-gray-900">{dept.total_students || 0}</p>
                                             </div>
                                         </div>
-                                        <div className="grid grid-cols-4 gap-4">
-                                            <div className="text-center">
-                                                <p className="text-sm text-gray-500">Present</p>
-                                                <p className="text-lg font-semibold text-green-600">{dept.present || 0}</p>
+                                        
+                                        {/* Department Status Progress Bar */}
+                                        <div className="mb-4">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-sm font-medium text-gray-700">Department Status Distribution</span>
                                             </div>
-                                            <div className="text-center">
-                                                <p className="text-sm text-gray-500">Late</p>
-                                                <p className="text-lg font-semibold text-yellow-600">{dept.late || 0}</p>
+                                            <div className="w-full h-10 bg-gray-200 rounded-lg overflow-hidden flex">
+                                                {/* Normal Status Bar */}
+                                                {dept.normal_percentage > 0 && (
+                                                    <div 
+                                                        className="bg-green-500 h-full flex items-center justify-center transition-all duration-500"
+                                                        style={{ width: `${dept.normal_percentage}%` }}
+                                                        title={`Normal: ${dept.normal_percentage}%`}
+                                                    >
+                                                        {dept.normal_percentage >= 5 && (
+                                                            <span className="text-xs font-semibold text-white px-1">{dept.normal_percentage.toFixed(1)}%</span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                {/* SLIP Status Bar */}
+                                                {dept.slip_percentage > 0 && (
+                                                    <div 
+                                                        className="bg-yellow-500 h-full flex items-center justify-center transition-all duration-500"
+                                                        style={{ width: `${dept.slip_percentage}%` }}
+                                                        title={`SLIP: ${dept.slip_percentage}%`}
+                                                    >
+                                                        {dept.slip_percentage >= 5 && (
+                                                            <span className="text-xs font-semibold text-white px-1">{dept.slip_percentage.toFixed(1)}%</span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                {/* PNS Status Bar */}
+                                                {dept.pns_percentage > 0 && (
+                                                    <div 
+                                                        className="bg-red-500 h-full flex items-center justify-center transition-all duration-500"
+                                                        style={{ width: `${dept.pns_percentage}%` }}
+                                                        title={`PNS: ${dept.pns_percentage}%`}
+                                                    >
+                                                        {dept.pns_percentage >= 5 && (
+                                                            <span className="text-xs font-semibold text-white px-1">{dept.pns_percentage.toFixed(1)}%</span>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
-                                            <div className="text-center">
-                                                <p className="text-sm text-gray-500">Absent</p>
-                                                <p className="text-lg font-semibold text-red-600">{dept.absent || 0}</p>
-                                            </div>
-                                            <div className="text-center">
-                                                <p className="text-sm text-gray-500">Excused</p>
-                                                <p className="text-lg font-semibold text-blue-600">{dept.excused || 0}</p>
+                                            
+                                            {/* Status Breakdown */}
+                                            <div className="grid grid-cols-3 gap-4 mt-3">
+                                                <div className="text-center">
+                                                    <div className="flex items-center justify-center gap-2 mb-1">
+                                                        <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                                                        <span className="text-sm font-medium text-gray-700">Normal</span>
+                                                    </div>
+                                                    <p className="text-lg font-semibold text-gray-900">{dept.normal_count || 0}</p>
+                                                    <p className="text-xs text-gray-500">{dept.normal_percentage?.toFixed(1) || 0}%</p>
+                                                </div>
+                                                <div className="text-center">
+                                                    <div className="flex items-center justify-center gap-2 mb-1">
+                                                        <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                                                        <span className="text-sm font-medium text-gray-700">SLIP</span>
+                                                    </div>
+                                                    <p className="text-lg font-semibold text-gray-900">{dept.slip_count || 0}</p>
+                                                    <p className="text-xs text-gray-500">{dept.slip_percentage?.toFixed(1) || 0}%</p>
+                                                </div>
+                                                <div className="text-center">
+                                                    <div className="flex items-center justify-center gap-2 mb-1">
+                                                        <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                                                        <span className="text-sm font-medium text-gray-700">PNS</span>
+                                                    </div>
+                                                    <p className="text-lg font-semibold text-gray-900">{dept.pns_count || 0}</p>
+                                                    <p className="text-xs text-gray-500">{dept.pns_percentage?.toFixed(1) || 0}%</p>
+                                                </div>
                                             </div>
                                         </div>
+                                        
+                                        {/* Programs within Department */}
+                                        {dept.programs && dept.programs.length > 0 && (
+                                            <div className="mt-6 pt-6 border-t border-gray-200">
+                                                <h5 className="text-md font-semibold text-gray-900 mb-4">Programs ({dept.programs.length})</h5>
+                                                <div className="space-y-4">
+                                                    {dept.programs.map((program) => (
+                                                        <div key={program.id} className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                                                            <div className="flex items-center justify-between mb-3">
+                                                                <div>
+                                                                    <h6 className="text-sm font-semibold text-gray-900">{program.name}</h6>
+                                                                    {program.code && <p className="text-xs text-gray-500">{program.code}</p>}
+                                                                </div>
+                                                                <div className="text-right">
+                                                                    <p className="text-xs text-gray-500">Students</p>
+                                                                    <p className="text-sm font-bold text-gray-900">{program.total_students || 0}</p>
+                                                                </div>
+                                                            </div>
+                                                            
+                                                            {/* Program Status Progress Bar */}
+                                                            <div className="mb-3">
+                                                                <div className="w-full h-8 bg-gray-200 rounded-lg overflow-hidden flex">
+                                                                    {/* Normal Status Bar */}
+                                                                    {program.normal_percentage > 0 && (
+                                                                        <div 
+                                                                            className="bg-green-500 h-full flex items-center justify-center transition-all duration-500"
+                                                                            style={{ width: `${program.normal_percentage}%` }}
+                                                                            title={`Normal: ${program.normal_percentage}%`}
+                                                                        >
+                                                                            {program.normal_percentage >= 5 && (
+                                                                                <span className="text-xs font-semibold text-white px-1">{program.normal_percentage.toFixed(1)}%</span>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                    {/* SLIP Status Bar */}
+                                                                    {program.slip_percentage > 0 && (
+                                                                        <div 
+                                                                            className="bg-yellow-500 h-full flex items-center justify-center transition-all duration-500"
+                                                                            style={{ width: `${program.slip_percentage}%` }}
+                                                                            title={`SLIP: ${program.slip_percentage}%`}
+                                                                        >
+                                                                            {program.slip_percentage >= 5 && (
+                                                                                <span className="text-xs font-semibold text-white px-1">{program.slip_percentage.toFixed(1)}%</span>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                    {/* PNS Status Bar */}
+                                                                    {program.pns_percentage > 0 && (
+                                                                        <div 
+                                                                            className="bg-red-500 h-full flex items-center justify-center transition-all duration-500"
+                                                                            style={{ width: `${program.pns_percentage}%` }}
+                                                                            title={`PNS: ${program.pns_percentage}%`}
+                                                                        >
+                                                                            {program.pns_percentage >= 5 && (
+                                                                                <span className="text-xs font-semibold text-white px-1">{program.pns_percentage.toFixed(1)}%</span>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            
+                                                            {/* Program Status Breakdown */}
+                                                            <div className="grid grid-cols-3 gap-2">
+                                                                <div className="text-center">
+                                                                    <div className="flex items-center justify-center gap-1 mb-1">
+                                                                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                                                        <span className="text-xs text-gray-600">Normal</span>
+                                                                    </div>
+                                                                    <p className="text-sm font-semibold text-gray-900">{program.normal_count || 0}</p>
+                                                                    <p className="text-xs text-gray-500">{program.normal_percentage?.toFixed(1) || 0}%</p>
+                                                                </div>
+                                                                <div className="text-center">
+                                                                    <div className="flex items-center justify-center gap-1 mb-1">
+                                                                        <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                                                                        <span className="text-xs text-gray-600">SLIP</span>
+                                                                    </div>
+                                                                    <p className="text-sm font-semibold text-gray-900">{program.slip_count || 0}</p>
+                                                                    <p className="text-xs text-gray-500">{program.slip_percentage?.toFixed(1) || 0}%</p>
+                                                                </div>
+                                                                <div className="text-center">
+                                                                    <div className="flex items-center justify-center gap-1 mb-1">
+                                                                        <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                                                                        <span className="text-xs text-gray-600">PNS</span>
+                                                                    </div>
+                                                                    <p className="text-sm font-semibold text-gray-900">{program.pns_count || 0}</p>
+                                                                    <p className="text-xs text-gray-500">{program.pns_percentage?.toFixed(1) || 0}%</p>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 ))
                             ) : (
@@ -2918,8 +3206,17 @@ export default function SystemAdmin({
         style.textContent = `
             @media print {
                 @page {
-                    margin: 1cm 1.5cm;
+                    margin: 0.3cm;
                     size: A4 landscape;
+                }
+                @page:blank {
+                    display: none;
+                }
+                * {
+                    overflow: visible !important;
+                }
+                body {
+                    overflow: visible !important;
                 }
                 body * {
                     visibility: hidden;
@@ -2928,55 +3225,81 @@ export default function SystemAdmin({
                     visibility: visible;
                 }
                 .print-section {
-                    position: absolute;
-                    left: 0;
-                    top: 0;
+                    position: relative;
                     width: 100%;
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
+                    display: block;
                 }
-                .print-section .p-6 {
+                .print-section * {
+                    overflow: visible !important;
+                }
+                .print-section button,
+                .print-section .no-print,
+                .print-section .sticky,
+                .print-section .flex.items-center.space-x-1,
+                .print-section .border-t,
+                .print-section .bg-gray-50,
+                .print-section .text-xs.text-gray-600,
+                .print-section .flex.items-center.justify-between,
+                .print-section .px-6.py-4,
+                .print-section .border-b {
+                    display: none !important;
+                }
+                .print-section .p-6,
+                .print-section .overflow-x-auto {
                     width: 100%;
                     max-width: 100%;
-                    margin: 0 auto;
-                    padding: 0;
+                    margin: 0;
+                    padding: 15px;
                 }
                 .print-section table {
                     width: 100%;
                     border-collapse: collapse;
-                    font-size: 12px;
-                    margin: 0 auto;
-                    table-layout: fixed;
+                    font-size: 16px;
+                    margin: 0;
+                    table-layout: auto;
                 }
                 .print-section th,
                 .print-section td {
-                    padding: 8px 10px;
+                    padding: 12px 14px;
                     border: 1px solid #000;
                     text-align: left;
                     word-wrap: break-word;
-                    line-height: 1.4;
-                    font-size: 12px;
+                    vertical-align: top;
+                    line-height: 1.6;
+                    font-size: 16px;
+                    page-break-inside: avoid;
                 }
                 .print-section th {
                     background-color: #f3f4f6 !important;
                     font-weight: bold;
                     -webkit-print-color-adjust: exact;
                     print-color-adjust: exact;
-                    font-size: 12px;
-                    padding: 10px;
+                    font-size: 17px;
+                    padding: 14px;
                     text-align: center;
                 }
                 .print-section thead {
                     display: table-header-group;
                 }
+                .print-section thead tr {
+                    page-break-after: avoid;
+                    page-break-inside: avoid;
+                }
+                .print-section tbody {
+                    page-break-inside: avoid;
+                }
                 .print-section tbody tr {
                     page-break-inside: avoid;
                     page-break-after: auto;
                 }
-                .no-print {
-                    display: none !important;
+                .print-section tbody td {
+                    page-break-inside: avoid;
+                }
+                .print-section tbody tr:last-child {
+                    page-break-after: auto;
+                }
+                .print-section tbody td:last-child {
+                    display: none;
                 }
             }
         `;
@@ -3330,7 +3653,7 @@ export default function SystemAdmin({
                                                 <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Year Level</th>
                                                 <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Status</th>
                                                 <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap">Absences</th>
-                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap sticky right-0 bg-gray-50">Actions</th>
+                                                <th scope="col" className="px-4 py-3.5 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider whitespace-nowrap sticky right-0 bg-gray-50 no-print">Actions</th>
                                 </tr>
                             </thead>
                                         <tbody className="divide-y divide-gray-200 bg-white">
@@ -3396,7 +3719,7 @@ export default function SystemAdmin({
                                                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
                                                     <span className="font-medium">{student.absence_count || 0}</span>
                                         </td>
-                                                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium sticky right-0 bg-white hover:bg-gray-50">
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium sticky right-0 bg-white hover:bg-gray-50 no-print">
                                                     <div className="flex items-center space-x-1">
                                                 <button
                                                     onClick={() => {
@@ -3434,7 +3757,7 @@ export default function SystemAdmin({
                                                         setStudentFormErrors({});
                                                         setShowStudentModal(true);
                                                     }}
-                                                            className="p-2 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-md transition-colors duration-150"
+                                                            className="p-2 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-md transition-colors duration-150 no-print"
                                                             title="View Details"
                                                 >
                                                             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3442,18 +3765,6 @@ export default function SystemAdmin({
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                                                     </svg>
                                                         </button>
-                                                        <button
-                                                            onClick={() => {
-                                                                setSelectedStudentForCSDL(student);
-                                                                setShowSendToCSDLModal(true);
-                                                            }}
-                                                            className="p-2 text-green-600 hover:text-green-900 hover:bg-green-50 rounded-md transition-colors duration-150"
-                                                            title="Send to CSDL"
-                                                        >
-                                                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                                                            </svg>
-                                                </button>
                                                 <button
                                                     onClick={() => {
                                                         if (confirm(`Are you sure you want to delete ${student.first_name} ${student.last_name}?`)) {
@@ -3467,7 +3778,7 @@ export default function SystemAdmin({
                                                             });
                                                         }
                                                     }}
-                                                            className="p-2 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-md transition-colors duration-150"
+                                                            className="p-2 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-md transition-colors duration-150 no-print"
                                                             title="Delete Student"
                                                 >
                                                             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4096,12 +4407,55 @@ export default function SystemAdmin({
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                     {liveWeeklyStatusProgress.map((week, weekIndex) => (
                                         <div key={weekIndex} className="bg-white rounded-xl shadow-md p-5 border border-gray-200 hover:shadow-lg transition-shadow">
-                                            <div className="mb-3">
+                                            <div className="mb-4">
                                                 <div className="text-sm font-semibold text-gray-900 mb-1">{week.week_label}</div>
                                                 <div className="text-xs text-gray-500">{week.date_label}</div>
                                             </div>
                                             
-                                            <div className="space-y-3">
+                                            {/* Combined Progress Bar */}
+                                            <div className="mb-4">
+                                                <div className="w-full h-8 bg-gray-200 rounded-lg overflow-hidden flex">
+                                                    {/* Normal Status Bar */}
+                                                    {week.normal_percentage > 0 && (
+                                                        <div 
+                                                            className="bg-green-500 h-full flex items-center justify-center transition-all duration-500"
+                                                            style={{ width: `${week.normal_percentage}%` }}
+                                                            title={`Normal: ${week.normal_percentage}%`}
+                                                        >
+                                                            {week.normal_percentage >= 5 && (
+                                                                <span className="text-xs font-semibold text-white">{week.normal_percentage.toFixed(1)}%</span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {/* SLIP Status Bar */}
+                                                    {week.slip_percentage > 0 && (
+                                                        <div 
+                                                            className="bg-yellow-500 h-full flex items-center justify-center transition-all duration-500"
+                                                            style={{ width: `${week.slip_percentage}%` }}
+                                                            title={`SLIP: ${week.slip_percentage}%`}
+                                                        >
+                                                            {week.slip_percentage >= 5 && (
+                                                                <span className="text-xs font-semibold text-white">{week.slip_percentage.toFixed(1)}%</span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {/* PNS Status Bar */}
+                                                    {week.pns_percentage > 0 && (
+                                                        <div 
+                                                            className="bg-red-500 h-full flex items-center justify-center transition-all duration-500"
+                                                            style={{ width: `${week.pns_percentage}%` }}
+                                                            title={`PNS: ${week.pns_percentage}%`}
+                                                        >
+                                                            {week.pns_percentage >= 5 && (
+                                                                <span className="text-xs font-semibold text-white">{week.pns_percentage.toFixed(1)}%</span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            
+                                            {/* Status Breakdown */}
+                                            <div className="space-y-2">
                                                 {/* Normal Status */}
                                                 <div className="flex items-center justify-between">
                                                     <div className="flex items-center space-x-2">
@@ -4110,7 +4464,7 @@ export default function SystemAdmin({
                                                     </div>
                                                     <div className="text-right">
                                                         <div className="text-sm font-semibold text-gray-900">{week.normal_count}</div>
-                                                        <div className="text-xs text-gray-500">{week.normal_percentage}%</div>
+                                                        <div className="text-xs text-gray-500">{week.normal_percentage.toFixed(1)}%</div>
                                                     </div>
                                                 </div>
                                                 
@@ -4122,7 +4476,7 @@ export default function SystemAdmin({
                                                     </div>
                                                     <div className="text-right">
                                                         <div className="text-sm font-semibold text-gray-900">{week.slip_count}</div>
-                                                        <div className="text-xs text-gray-500">{week.slip_percentage}%</div>
+                                                        <div className="text-xs text-gray-500">{week.slip_percentage.toFixed(1)}%</div>
                                                     </div>
                                                 </div>
                                                 
@@ -4134,7 +4488,7 @@ export default function SystemAdmin({
                                                     </div>
                                                     <div className="text-right">
                                                         <div className="text-sm font-semibold text-gray-900">{week.pns_count}</div>
-                                                        <div className="text-xs text-gray-500">{week.pns_percentage}%</div>
+                                                        <div className="text-xs text-gray-500">{week.pns_percentage.toFixed(1)}%</div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -4161,93 +4515,97 @@ export default function SystemAdmin({
                 </div>
 
 
-                {/* Recent User Activities - Progress Bars */}
+                {/* Recent User Activities - Detailed List */}
                 <div className="card">
                     <div className="mb-6">
-                        <h3 className="text-lg font-medium text-gray-900">User Activity Progress</h3>
-                        <p className="text-sm text-gray-500 mt-1">Track user activity levels and progress</p>
+                        <h3 className="text-lg font-medium text-gray-900">Recent User Activities</h3>
+                        <p className="text-sm text-gray-500 mt-1">All activities from CSDL users and Admins</p>
                     </div>
                     
                     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                        {recentUserActivities && recentUserActivities.length > 0 ? (() => {
-                            // Group activities by user
-                            const userActivityMap = {};
-                            recentUserActivities.forEach((activity) => {
-                                const userKey = activity.user_name || activity.user_email || 'System';
-                                if (!userActivityMap[userKey]) {
-                                    userActivityMap[userKey] = {
-                                        name: userKey,
-                                        activities: [],
-                                        totalActivities: 0,
-                                        successCount: 0,
-                                        failedCount: 0,
-                                        warningCount: 0,
+                        {recentUserActivities && recentUserActivities.length > 0 ? (
+                            <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-auto">
+                                {recentUserActivities.map((activity, index) => {
+                                    const getRoleColor = (role) => {
+                                        if (role === 'CSDL') return 'bg-green-100 text-green-800';
+                                        if (role === 'Admin') return 'bg-blue-100 text-blue-800';
+                                        if (role === 'Super Admin') return 'bg-purple-100 text-purple-800';
+                                        return 'bg-gray-100 text-gray-800';
                                     };
-                                }
-                                userActivityMap[userKey].activities.push(activity);
-                                userActivityMap[userKey].totalActivities++;
-                                if (activity.status === 'success') userActivityMap[userKey].successCount++;
-                                else if (activity.status === 'failed') userActivityMap[userKey].failedCount++;
-                                else if (activity.status === 'warning') userActivityMap[userKey].warningCount++;
-                            });
 
-                            // Convert to array and calculate progress
-                            const userProgress = Object.values(userActivityMap).map((user) => {
-                                const maxActivities = Math.max(...Object.values(userActivityMap).map(u => u.totalActivities), 1);
-                                const progress = (user.totalActivities / maxActivities) * 100;
-                                const successRate = user.totalActivities > 0 ? (user.successCount / user.totalActivities) * 100 : 0;
-                                
-                                return {
-                                    ...user,
-                                    progress: Math.min(progress, 100),
-                                    successRate: successRate,
-                                };
-                            }).sort((a, b) => b.totalActivities - a.totalActivities).slice(0, 10);
+                                    const getStatusIcon = (status) => {
+                                        if (status === 'success') return '✓';
+                                        if (status === 'failed') return '✗';
+                                        if (status === 'warning') return '⚠';
+                                        return '•';
+                                    };
 
-                            return (
-                                <div className="divide-y divide-gray-200">
-                                    {userProgress.map((user, index) => (
-                                        <div key={index} className="p-4 hover:bg-gray-50 transition-colors">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <div className="flex items-center gap-3">
+                                    const getStatusColor = (status) => {
+                                        if (status === 'success') return 'text-green-600';
+                                        if (status === 'failed') return 'text-red-600';
+                                        if (status === 'warning') return 'text-yellow-600';
+                                        return 'text-gray-600';
+                                    };
+
+                                    return (
+                                        <div key={activity.id || index} className="p-4 hover:bg-gray-50 transition-colors">
+                                            <div className="flex items-start gap-4">
+                                                <div className="flex-shrink-0">
                                                     <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-semibold text-sm">
-                                                        {user.name.charAt(0).toUpperCase()}
+                                                        {(activity.user_name || activity.user_email || 'U').charAt(0).toUpperCase()}
                                                     </div>
-                                                    <div>
-                                                        <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                                                        <p className="text-xs text-gray-500">
-                                                            {user.totalActivities} activit{user.totalActivities !== 1 ? 'ies' : 'y'} • 
-                                                            {user.successCount > 0 && <span className="text-green-600 ml-1">{user.successCount} success</span>}
-                                                            {user.failedCount > 0 && <span className="text-red-600 ml-1">{user.failedCount} failed</span>}
-                                                            {user.warningCount > 0 && <span className="text-yellow-600 ml-1">{user.warningCount} warning</span>}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <p className="text-sm font-medium text-gray-900">
+                                                            {activity.user_name || activity.user_email || 'Unknown User'}
                                                         </p>
+                                                        {activity.user_role && (
+                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getRoleColor(activity.user_role)}`}>
+                                                                {activity.user_role}
+                                                            </span>
+                                                        )}
+                                                        <span className={`text-sm ${getStatusColor(activity.status)}`}>
+                                                            {getStatusIcon(activity.status)}
+                                                        </span>
                                                     </div>
-                                                </div>
-                                                <div className="text-right">
-                                                    <p className="text-sm font-semibold text-gray-900">{Math.round(user.progress)}%</p>
-                                                    <p className="text-xs text-gray-500">Activity Level</p>
-                                                </div>
-                                            </div>
-                                            <div className="mt-3">
-                                                <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                                                    <div 
-                                                        className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-blue-500 to-purple-600"
-                                                        style={{ width: `${user.progress}%` }}
-                                                    ></div>
-                                                </div>
-                                                <div className="flex items-center justify-between mt-1">
-                                                    <span className="text-xs text-gray-500">Success Rate: {Math.round(user.successRate)}%</span>
-                                                    <span className="text-xs text-gray-500">{user.totalActivities} total activities</span>
+                                                    <p className="text-sm text-gray-700 mb-2">
+                                                        {activity.description || 'No description available'}
+                                                    </p>
+                                                    <div className="flex items-center gap-4 text-xs text-gray-500">
+                                                        {activity.date && (
+                                                            <span className="flex items-center gap-1">
+                                                                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                                </svg>
+                                                                {activity.date}
+                                                            </span>
+                                                        )}
+                                                        {activity.time && (
+                                                            <span className="flex items-center gap-1">
+                                                                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                </svg>
+                                                                {activity.time}
+                                                            </span>
+                                                        )}
+                                                        {activity.time_ago && (
+                                                            <span className="text-gray-400">
+                                                                {activity.time_ago}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
-                                    ))}
-                                </div>
-                            );
-                        })() : (
+                                    );
+                                })}
+                            </div>
+                        ) : (
                             <div className="p-8 text-center text-gray-500">
                                 <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
                                 <p className="text-sm">No recent user activities found</p>
+                                <p className="text-xs text-gray-400 mt-1">Activities from CSDL users and Admins will appear here</p>
                             </div>
                         )}
                     </div>
@@ -4698,7 +5056,7 @@ export default function SystemAdmin({
                         if (e.target === e.currentTarget) {
                             setShowSendToCSDLModal(false);
                             setSelectedStudentForCSDL(null);
-                            setCsdlForm({ type: 'call', notes: '' });
+                            setCsdlForm({ type: 'home_visit', notes: '' });
                         }
                     }}
                 >
@@ -4710,7 +5068,7 @@ export default function SystemAdmin({
                                     onClick={() => {
                                         setShowSendToCSDLModal(false);
                                         setSelectedStudentForCSDL(null);
-                                        setCsdlForm({ type: 'call', notes: '' });
+                                        setCsdlForm({ type: 'home_visit', notes: '' });
                                     }}
                                     className="text-gray-400 hover:text-gray-600"
                                 >
@@ -4721,16 +5079,23 @@ export default function SystemAdmin({
                             </div>
                             <div className="mb-4">
                                 <p className="text-sm text-gray-600 mb-2">
-                                    Student: <span className="font-semibold">{selectedStudentForCSDL.first_name} {selectedStudentForCSDL.last_name}</span>
+                                    Student: <span className="font-semibold">
+                                        {selectedStudentForCSDL.first_name && selectedStudentForCSDL.last_name 
+                                            ? `${selectedStudentForCSDL.first_name} ${selectedStudentForCSDL.last_name}`
+                                            : selectedStudentForCSDL.name || 'Unknown'}
+                                    </span>
                                 </p>
                             </div>
                             <form onSubmit={(e) => {
                                 e.preventDefault();
-                                router.post(route('super.students.send-to-csdl', selectedStudentForCSDL.id), csdlForm, {
+                                router.post(route('super.students.send-to-csdl', selectedStudentForCSDL.id), {
+                                    type: 'home_visit',
+                                    notes: csdlForm.notes
+                                }, {
                                     onSuccess: () => {
                                         setShowSendToCSDLModal(false);
                                         setSelectedStudentForCSDL(null);
-                                        setCsdlForm({ type: 'call', notes: '' });
+                                        setCsdlForm({ type: 'home_visit', notes: '' });
                                         router.reload();
                                     },
                                     onError: () => {
@@ -4739,25 +5104,13 @@ export default function SystemAdmin({
                                 });
                             }}>
                                 <div className="mb-4">
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">Type *</label>
-                                    <select
-                                        required
-                                        value={csdlForm.type}
-                                        onChange={(e) => setCsdlForm({...csdlForm, type: e.target.value})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    >
-                                        <option value="call">Call</option>
-                                        <option value="home_visit">Home Visit</option>
-                                    </select>
-                                </div>
-                                <div className="mb-4">
                                     <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
                                     <textarea
                                         value={csdlForm.notes}
                                         onChange={(e) => setCsdlForm({...csdlForm, notes: e.target.value})}
-                                        rows={3}
+                                        rows={4}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                        placeholder="Optional notes for CSDL..."
+                                        placeholder="Optional notes for CSDL regarding this home visit..."
                                     />
                                 </div>
                                 <div className="flex justify-end space-x-3">
@@ -4766,7 +5119,7 @@ export default function SystemAdmin({
                                         onClick={() => {
                                             setShowSendToCSDLModal(false);
                                             setSelectedStudentForCSDL(null);
-                                            setCsdlForm({ type: 'call', notes: '' });
+                                            setCsdlForm({ type: 'home_visit', notes: '' });
                                         }}
                                         className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
                                     >

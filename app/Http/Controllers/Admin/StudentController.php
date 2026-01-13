@@ -301,7 +301,7 @@ class StudentController extends Controller
             'tracked_by' => $csdlUserId,
             'type' => $validated['type'],
             'date' => now()->toDateString(),
-            'status' => 'scheduled',
+            'status' => 'pending',
             'notes' => $validated['notes'] ?? "Assigned by " . auth()->user()->name,
         ]);
 

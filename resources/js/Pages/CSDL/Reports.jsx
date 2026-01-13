@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { BarChart3, TrendingUp, Phone, Home, Calendar, Download, Filter, Eye, Trash2, Archive, ArchiveRestore } from 'lucide-react';
+import { BarChart3, TrendingUp, Phone, Home, Calendar, Download, Filter, Eye, Archive, ArchiveRestore } from 'lucide-react';
 
 export default function Reports({ stats = {}, recentTracking = [], filters = {}, tab = 'active', filterOptions = {} }) {
     const [typeFilter, setTypeFilter] = useState(filters.type || '');
@@ -125,28 +125,9 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
         });
     };
 
-    const handleDelete = (id) => {
-        if (confirm('Are you sure you want to delete this record? This action cannot be undone.')) {
-            router.delete(route('csdl.reports.destroy', id), {
-                preserveScroll: true,
-                onSuccess: () => {
-                    router.reload({ only: ['recentTracking'] });
-                },
-            });
-        }
-    };
-
-    const handleRestore = (id) => {
-        router.post(route('csdl.reports.restore', id), {}, {
-            preserveScroll: true,
-            onSuccess: () => {
-                router.reload({ only: ['recentTracking'] });
-            },
-        });
-    };
 
     const handleExportReport = () => {
-        // Only export if on active tab, not archived or deleted
+        // Only export if on active tab, not archived
         if (activeTab !== 'active') {
             alert('Only active tracking records can be exported. Please switch to the Active tab.');
             return;
@@ -336,16 +317,6 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
                                 }`}
                             >
                                 Archived
-                            </button>
-                            <button
-                                onClick={() => switchTab('deleted')}
-                                className={`px-6 py-4 text-sm font-medium border-b-2 ${
-                                    activeTab === 'deleted'
-                                        ? 'border-blue-500 text-blue-600'
-                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                            >
-                                Deleted
                             </button>
                         </nav>
                     </div>
@@ -550,37 +521,19 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
                                                         <Eye className="h-4 w-4" />
                                                     </button>
                                                     {activeTab === 'active' && (
-                                                        <>
-                                                            <button
-                                                                onClick={() => handleArchive(tracking.id)}
-                                                                className="text-yellow-600 hover:text-yellow-900"
-                                                                title="Archive"
-                                                            >
-                                                                <Archive className="h-4 w-4" />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleDelete(tracking.id)}
-                                                                className="text-red-600 hover:text-red-900"
-                                                                title="Delete"
-                                                            >
-                                                                <Trash2 className="h-4 w-4" />
-                                                            </button>
-                                                        </>
+                                                        <button
+                                                            onClick={() => handleArchive(tracking.id)}
+                                                            className="text-yellow-600 hover:text-yellow-900"
+                                                            title="Archive"
+                                                        >
+                                                            <Archive className="h-4 w-4" />
+                                                        </button>
                                                     )}
                                                     {activeTab === 'archived' && (
                                                         <button
                                                             onClick={() => handleUnarchive(tracking.id)}
                                                             className="text-green-600 hover:text-green-900"
                                                             title="Unarchive"
-                                                        >
-                                                            <ArchiveRestore className="h-4 w-4" />
-                                                        </button>
-                                                    )}
-                                                    {activeTab === 'deleted' && (
-                                                        <button
-                                                            onClick={() => handleRestore(tracking.id)}
-                                                            className="text-green-600 hover:text-green-900"
-                                                            title="Restore"
                                                         >
                                                             <ArchiveRestore className="h-4 w-4" />
                                                         </button>

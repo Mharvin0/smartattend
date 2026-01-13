@@ -143,6 +143,7 @@ Route::middleware(['auth', \App\Http\Middleware\RequirePasswordChange::class])->
     // CSDL routes - Only for CSDL role
     Route::middleware(['auth', 'role:CSDL', \App\Http\Middleware\RequirePasswordChange::class])->prefix('csdl')->name('csdl.')->group(function () {
         Route::get('/', [CSDLDashboardController::class, 'index'])->name('dashboard');
+        Route::get('/dashboard/live-data', [CSDLDashboardController::class, 'getLiveData'])->name('dashboard.live-data');
         Route::get('/csdl-page', [CSDLPageController::class, 'index'])->name('csdl-page');
         Route::post('/csdl-page/track-student', [CSDLPageController::class, 'trackStudent'])->name('csdl-page.track-student');
         Route::get('/csdl-page/tracking/archived', [CSDLPageController::class, 'getArchivedTracking'])->name('csdl-page.archived-tracking');
@@ -187,6 +188,7 @@ Route::middleware(['auth', \App\Http\Middleware\RequirePasswordChange::class])->
             return redirect()->route('super.management');
         });
         Route::get('/attendance', [SystemAdminController::class, 'attendance'])->name('attendance');
+        Route::get('/attendance/live-data', [SystemAdminController::class, 'getAttendanceLiveData'])->name('attendance.live-data');
         Route::get('/sections', [SystemAdminController::class, 'sections'])->name('sections');
         Route::post('/sections', [SystemAdminController::class, 'storeSection'])->name('sections.store');
         Route::put('/sections/{id}', [SystemAdminController::class, 'updateSection'])->name('sections.update');

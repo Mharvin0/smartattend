@@ -226,7 +226,7 @@ class CSDLPageController extends Controller
             'status' => 'required|in:completed,no_answer', // CSDL can only set completed or no_answer
             'outcome' => 'nullable|string',
             'follow_up_required' => 'nullable|string',
-            'follow_up_date' => 'nullable|date',
+            'follow_up_date' => 'nullable|date|after:today', // Only future dates allowed
         ]);
 
         $tracking->update([
@@ -503,7 +503,8 @@ class CSDLPageController extends Controller
                 $query->where('archived', false);
             }
             
-            $trackings = $query->orderBy('date', 'desc')
+            $trackings = $query->whereHas('student') // Only include tracking records with valid students
+                ->orderBy('date', 'desc')
                 ->orderBy('created_at', 'desc')
                 ->get();
             
@@ -539,33 +540,32 @@ class CSDLPageController extends Controller
             
             // Data rows
             foreach ($trackings as $tracking) {
-                try {
-                    fputcsv($output, [
-                        $tracking->id ?? '',
-                        ($tracking->student ? ($tracking->student->first_name . ' ' . $tracking->student->last_name) : 'N/A'),
-                        $tracking->student->student_number ?? '',
-                        $tracking->student->section?->name ?? 'N/A',
-                        $tracking->student->department?->name ?? $tracking->student->section?->program?->department?->name ?? 'N/A',
-                        $tracking->student->program?->name ?? $tracking->student->section?->program?->name ?? 'N/A',
-                        ucfirst(str_replace('_', ' ', $tracking->type ?? '')),
-                        $tracking->date ? $tracking->date->format('Y-m-d') : '',
-                        $tracking->time ? Carbon::parse($tracking->time)->format('H:i') : '',
-                        ucfirst($tracking->status ?? ''),
-                        $tracking->trackedBy?->name ?? 'Unknown',
-                        $tracking->notes ?? '',
-                        $tracking->outcome ?? '',
-                        $tracking->follow_up_required ?? '',
-                        $tracking->follow_up_date ? $tracking->follow_up_date->format('Y-m-d') : '',
-                        $tracking->archived ? 'Yes' : 'No',
-                        $tracking->archived_at ? $tracking->archived_at->format('Y-m-d H:i:s') : '',
-                        $tracking->deleted_at ? $tracking->deleted_at->format('Y-m-d H:i:s') : '',
-                        $tracking->created_at ? $tracking->created_at->format('Y-m-d H:i:s') : '',
-                        $tracking->updated_at ? $tracking->updated_at->format('Y-m-d H:i:s') : '',
-                    ]);
-                } catch (\Exception $e) {
-                    // Skip problematic rows and continue
-                    continue;
+                if (!$tracking->student) {
+                    continue; // Skip tracking records without students
                 }
+                
+                fputcsv($output, [
+                    $tracking->id,
+                    $tracking->student->first_name . ' ' . $tracking->student->last_name,
+                    $tracking->student->student_number,
+                    $tracking->student->section?->name ?? 'N/A',
+                    $tracking->student->department?->name ?? $tracking->student->section?->program?->department?->name ?? 'N/A',
+                    $tracking->student->program?->name ?? $tracking->student->section?->program?->name ?? 'N/A',
+                    $tracking->type,
+                    $tracking->date->format('Y-m-d'),
+                    $tracking->time ? Carbon::parse($tracking->time)->format('H:i') : '',
+                    $tracking->status,
+                    $tracking->trackedBy?->name ?? 'Unknown',
+                    $tracking->notes ?? '',
+                    $tracking->outcome ?? '',
+                    $tracking->follow_up_required ?? '',
+                    $tracking->follow_up_date ? $tracking->follow_up_date->format('Y-m-d') : '',
+                    $tracking->archived ? 'Yes' : 'No',
+                    $tracking->archived_at ? $tracking->archived_at->format('Y-m-d H:i') : '',
+                    $tracking->deleted_at ? $tracking->deleted_at->format('Y-m-d H:i') : '',
+                    $tracking->created_at->format('Y-m-d H:i'),
+                    $tracking->updated_at->format('Y-m-d H:i'),
+                ]);
             }
             
             rewind($output);

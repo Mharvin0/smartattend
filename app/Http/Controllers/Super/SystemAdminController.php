@@ -348,7 +348,7 @@ class SystemAdminController extends Controller
             'status' => 'required|in:pending,to_follow,processing',
             'outcome' => 'nullable|string',
             'follow_up_required' => 'nullable|string',
-            'follow_up_date' => 'nullable|date',
+            'follow_up_date' => 'nullable|date|after:today', // Only future dates allowed
         ]);
 
         $tracking->update([
@@ -651,8 +651,8 @@ class SystemAdminController extends Controller
 
     public function attendance()
     {
-        // Get attendance statistics
-        $stats = \App\Models\AttendanceRecord::getAttendanceStats([]);
+        // Get student counts by attendance status (Normal, SLIP, PNS) - all departments
+        $stats = $this->getStudentStatusCounts();
         
         // Get today's attendance overview
         $todayAttendance = $this->getTodayAttendanceOverview();
@@ -691,6 +691,109 @@ class SystemAdminController extends Controller
             'departmentTrends' => $this->getDepartmentAttendanceTrends(),
             'weeklyStatusProgress' => $this->getWeeklyStatusProgress(),
         ]);
+    }
+
+    /**
+     * Get student counts by attendance status (Normal, SLIP, PNS) across all departments
+     * 
+     * This calculates OVERALL status based on ALL attendance records (not filtered by week or date).
+     * Status is determined by:
+     * - PNS: 8+ total absences across all time
+     * - SLIP: 4-7 total absences OR at least one subject with 4-8 absences
+     * - Normal: < 4 total absences
+     */
+    private function getStudentStatusCounts()
+    {
+        // Get all students from all departments with necessary relationships
+        // Load ALL attendance records (not filtered by date/week) with schedule and subject for accurate OVERALL status calculation
+        $students = \App\Models\Student::with([
+            'section.program.department',
+            'attendanceRecords' => function($query) {
+                // IMPORTANT: No date filtering - get ALL attendance records for overall status calculation
+                // This ensures we count absences across all time, not just recent weeks
+                $query->with(['schedule.subject']);
+            }
+        ])->get();
+        
+        $normalCount = 0;
+        $slipCount = 0;
+        $pnsCount = 0;
+        
+        foreach ($students as $student) {
+            // Ensure absence_count is up to date - counts ALL absences (overall, not by week)
+            // This calculates the total absence count across all time, not just recent records
+            $student->calculateAbsenceCount();
+            
+            // Get attendance status - check manual status first, then calculate
+            $status = null;
+            
+            // Check if student has manually set status (Normal, SLIP, PNS)
+            if (in_array($student->status, ['Normal', 'SLIP', 'PNS'])) {
+                $status = $student->status;
+            } else {
+                // Calculate from ALL attendance records and absence count (overall status, not weekly)
+                // The calculateAttendanceStatus method uses all attendance records to determine:
+                // - PNS: 8+ total absences
+                // - SLIP: 4-7 absences OR at least one subject with 4-8 absences
+                // - Normal: < 4 absences
+                $status = $student->calculateAttendanceStatus();
+            }
+            
+            // Debug: Log if status is not one of the expected values
+            if (!in_array($status, ['Normal', 'SLIP', 'PNS'])) {
+                \Log::warning("Unexpected attendance status for student {$student->id}: {$status}", [
+                    'student_id' => $student->id,
+                    'status' => $status,
+                    'absence_count' => $student->absence_count,
+                    'manual_status' => $student->status,
+                ]);
+                // Default to Normal if status is unexpected
+                $status = 'Normal';
+            }
+            
+            // Count by status
+            if ($status === 'Normal') {
+                $normalCount++;
+            } elseif ($status === 'SLIP') {
+                $slipCount++;
+            } elseif ($status === 'PNS') {
+                $pnsCount++;
+            }
+        }
+        
+        return [
+            'present_count' => $normalCount,  // Normal students
+            'late_count' => $slipCount,       // SLIP students
+            'absent_count' => $pnsCount,       // PNS students
+            'total' => $normalCount + $slipCount + $pnsCount,
+        ];
+    }
+
+    /**
+     * Get real-time attendance stats for polling
+     */
+    public function getAttendanceLiveData()
+    {
+        try {
+            $stats = $this->getStudentStatusCounts();
+            
+            return response()->json([
+                'attendanceStats' => $stats,
+                'timestamp' => now()->toISOString(),
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Get attendance live data error: ' . $e->getMessage());
+            return response()->json([
+                'error' => 'Failed to fetch attendance data',
+                'attendanceStats' => [
+                    'present_count' => 0,
+                    'late_count' => 0,
+                    'absent_count' => 0,
+                    'total' => 0,
+                ],
+                'timestamp' => now()->toISOString(),
+            ], 500);
+        }
     }
 
     public function refreshDashboard()
@@ -1391,37 +1494,143 @@ class SystemAdminController extends Controller
     private function getRecentUserActivities()
     {
         try {
-            // Get recent user activities from AuditLog
-            $recentActivities = AuditLog::whereNotNull('user_email')
+            $activities = [];
+            
+            // Get activities from AuditLog (CSDL and Admin actions)
+            $auditLogs = AuditLog::whereNotNull('user_email')
                 ->whereIn('event_category', [
                     AuditLog::CATEGORY_AUTHENTICATION,
                     AuditLog::CATEGORY_USER_MANAGEMENT,
                     AuditLog::CATEGORY_DATA_MANAGEMENT,
                     AuditLog::CATEGORY_ATTENDANCE,
+                    AuditLog::CATEGORY_SYSTEM_ADMIN,
                 ])
                 ->orderBy('created_at', 'desc')
-                ->limit(20)
-                ->get()
-                ->map(function ($log) {
-                    return [
-                        'id' => $log->id,
+                ->limit(30)
+                ->get();
+            
+            foreach ($auditLogs as $log) {
+                $user = \App\Models\User::with('roles')->where('email', $log->user_email)->first();
+                $userRole = $user && $user->roles ? $user->roles->pluck('name')->first() : 'Unknown';
+                
+                // Only include CSDL and Admin users
+                if (in_array($userRole, ['CSDL', 'Admin', 'Super Admin'])) {
+                    $activities[] = [
+                        'id' => 'audit_' . $log->id,
                         'event_type' => $log->event_type,
                         'event_category' => $log->event_category,
-                        'description' => $log->description,
-                        'user_name' => $log->user_name,
+                        'description' => $log->description ?: $this->formatAuditLogDescription($log),
+                        'user_name' => $log->user_name ?: ($user ? $user->name : 'Unknown'),
                         'user_email' => $log->user_email,
+                        'user_role' => $userRole,
                         'status' => $log->status,
                         'severity' => $log->severity,
                         'timestamp' => $log->created_at->format('Y-m-d H:i:s'),
+                        'date' => $log->created_at->format('M d, Y'),
+                        'time' => $log->created_at->format('h:i A'),
                         'time_ago' => $log->created_at->diffForHumans(),
-                        'ip_address' => $log->ip_address,
+                        'created_at' => $log->created_at->toIso8601String(),
                     ];
-                });
-
-            return $recentActivities->toArray();
+                }
+            }
+            
+            // Get Student Tracking activities (CSDL user activities)
+            $trackingActivities = \App\Models\StudentTracking::with(['trackedBy.roles', 'student'])
+                ->whereNotNull('tracked_by')
+                ->orderBy('created_at', 'desc')
+                ->limit(30)
+                ->get();
+            
+            foreach ($trackingActivities as $tracking) {
+                $user = $tracking->trackedBy;
+                if ($user) {
+                    $userRole = $user->roles ? $user->roles->pluck('name')->first() : 'Unknown';
+                    
+                    // Only include CSDL and Admin users
+                    if (in_array($userRole, ['CSDL', 'Admin', 'Super Admin'])) {
+                        $studentName = $tracking->student ? $tracking->student->first_name . ' ' . $tracking->student->last_name : 'Unknown Student';
+                        $activityType = $tracking->type === 'call' ? 'Made a call' : 'Conducted home visit';
+                        $description = "{$activityType} for student {$studentName}";
+                        if ($tracking->notes) {
+                            $description .= " - " . \Illuminate\Support\Str::limit($tracking->notes, 50);
+                        }
+                        
+                        $activities[] = [
+                            'id' => 'tracking_' . $tracking->id,
+                            'event_type' => 'student_tracking',
+                            'event_category' => 'data_management',
+                            'description' => $description,
+                            'user_name' => $user->name,
+                            'user_email' => $user->email,
+                            'user_role' => $userRole,
+                            'status' => 'success',
+                            'severity' => 'info',
+                            'timestamp' => $tracking->created_at->format('Y-m-d H:i:s'),
+                            'date' => $tracking->created_at->format('M d, Y'),
+                            'time' => $tracking->created_at->format('h:i A'),
+                            'time_ago' => $tracking->created_at->diffForHumans(),
+                            'created_at' => $tracking->created_at->toIso8601String(),
+                        ];
+                    }
+                }
+            }
+            
+            // Get Attendance Record activities (Admin activities)
+            $attendanceActivities = \App\Models\AttendanceRecord::with(['student', 'recordedBy.roles'])
+                ->whereNotNull('recorded_by')
+                ->orderBy('created_at', 'desc')
+                ->limit(30)
+                ->get();
+            
+            foreach ($attendanceActivities as $attendance) {
+                $user = $attendance->recordedBy;
+                if ($user) {
+                    $userRole = $user->roles ? $user->roles->pluck('name')->first() : 'Unknown';
+                    
+                    // Only include CSDL and Admin users
+                    if (in_array($userRole, ['CSDL', 'Admin', 'Super Admin'])) {
+                        $studentName = $attendance->student ? $attendance->student->first_name . ' ' . $attendance->student->last_name : 'Unknown Student';
+                        $description = "Recorded attendance for {$studentName} - Status: " . ucfirst($attendance->status);
+                        
+                        $activities[] = [
+                            'id' => 'attendance_' . $attendance->id,
+                            'event_type' => 'attendance_record',
+                            'event_category' => 'attendance',
+                            'description' => $description,
+                            'user_name' => $user->name,
+                            'user_email' => $user->email,
+                            'user_role' => $userRole,
+                            'status' => 'success',
+                            'severity' => 'info',
+                            'timestamp' => $attendance->created_at->format('Y-m-d H:i:s'),
+                            'date' => $attendance->created_at->format('M d, Y'),
+                            'time' => $attendance->created_at->format('h:i A'),
+                            'time_ago' => $attendance->created_at->diffForHumans(),
+                            'created_at' => $attendance->created_at->toIso8601String(),
+                        ];
+                    }
+                }
+            }
+            
+            // Sort all activities by timestamp (most recent first)
+            usort($activities, function($a, $b) {
+                return strtotime($b['timestamp']) - strtotime($a['timestamp']);
+            });
+            
+            // Return the 50 most recent activities
+            return array_slice($activities, 0, 50);
+            
         } catch (\Exception $e) {
+            \Log::error('Error getting recent user activities: ' . $e->getMessage());
             return [];
         }
+    }
+    
+    private function formatAuditLogDescription($log)
+    {
+        $category = ucfirst(str_replace('_', ' ', $log->event_category));
+        $type = ucfirst(str_replace('_', ' ', $log->event_type));
+        return "{$category}: {$type}";
     }
 
     private function getRecentActivityLogs()
@@ -2096,11 +2305,27 @@ class SystemAdminController extends Controller
                 })
                 ->get()
                 ->map(function($department) use ($filters) {
+                    // Get all students in this department
+                    $departmentStudents = \App\Models\Student::whereHas('section.program', function($query) use ($department) {
+                        $query->where('department_id', $department->id);
+                    })->get();
+                    
+                    // Calculate status distribution for department
+                    $deptStatusCounts = $this->calculateStudentStatusDistribution($departmentStudents);
+                    
                     $programs = $department->programs->map(function($program) use ($filters) {
                         $sections = $program->sections;
                         $totalStudents = $sections->sum(function($section) {
                             return $section->students->count();
                         });
+
+                        // Get all students in this program
+                        $programStudents = \App\Models\Student::whereHas('section', function($query) use ($program) {
+                            $query->where('program_id', $program->id);
+                        })->get();
+                        
+                        // Calculate status distribution for program
+                        $programStatusCounts = $this->calculateStudentStatusDistribution($programStudents);
 
                         // Calculate attendance rates for this program
                         $attendanceStats = \App\Models\AttendanceRecord::getAttendanceStats([
@@ -2120,6 +2345,13 @@ class SystemAdminController extends Controller
                             'absent' => $attendanceStats['absent'],
                             'excused' => $attendanceStats['excused'],
                             'sections_count' => $sections->count(),
+                            // Status distribution
+                            'normal_count' => $programStatusCounts['normal'],
+                            'slip_count' => $programStatusCounts['slip'],
+                            'pns_count' => $programStatusCounts['pns'],
+                            'normal_percentage' => $programStatusCounts['normal_percentage'],
+                            'slip_percentage' => $programStatusCounts['slip_percentage'],
+                            'pns_percentage' => $programStatusCounts['pns_percentage'],
                         ];
                     });
 
@@ -2141,6 +2373,14 @@ class SystemAdminController extends Controller
                         'excused' => $departmentStats['excused'],
                         'programs' => $programs,
                         'programs_count' => $programs->count(),
+                        // Status distribution
+                        'normal_count' => $deptStatusCounts['normal'],
+                        'slip_count' => $deptStatusCounts['slip'],
+                        'pns_count' => $deptStatusCounts['pns'],
+                        'normal_percentage' => $deptStatusCounts['normal_percentage'],
+                        'slip_percentage' => $deptStatusCounts['slip_percentage'],
+                        'pns_percentage' => $deptStatusCounts['pns_percentage'],
+                        'total_students' => $departmentStudents->count(),
                     ];
                 });
 
@@ -2152,6 +2392,105 @@ class SystemAdminController extends Controller
             \Log::error('Department attendance rates error: ' . $e->getMessage());
             return response()->json(['error' => 'Failed to load department attendance rates'], 500);
         }
+    }
+    
+    /**
+     * Calculate student status distribution (Normal, SLIP, PNS)
+     */
+    private function calculateStudentStatusDistribution($students)
+    {
+        $normalCount = 0;
+        $slipCount = 0;
+        $pnsCount = 0;
+        $totalStudents = $students->count();
+        
+        foreach ($students as $student) {
+            // Load full student with relationships
+            $fullStudent = \App\Models\Student::with(['attendanceRecords.schedule.subject'])->find($student->id);
+            
+            if (!$fullStudent) {
+                continue;
+            }
+            
+            // Check if student has manually set status
+            $manualStatus = $fullStudent->status;
+            $status = null;
+            
+            if (in_array($manualStatus, ['Normal', 'SLIP', 'PNS'])) {
+                $status = $manualStatus;
+            } else {
+                // Calculate status based on attendance records
+                $absenceCount = $fullStudent->absence_count ?? 0;
+                
+                // If absence_count is 0, calculate it
+                if ($absenceCount === 0) {
+                    $absenceCount = \App\Models\AttendanceRecord::where('student_id', $fullStudent->id)
+                        ->where('status', 'absent')
+                        ->count();
+                }
+                
+                // PNS: >= 8 total absences
+                if ($absenceCount >= 8) {
+                    $status = 'PNS';
+                } else {
+                    // Check for SLIP: at least one subject has 4-8 absences
+                    $attendanceRecords = \App\Models\AttendanceRecord::where('student_id', $fullStudent->id)
+                        ->where('status', 'absent')
+                        ->with('schedule.subject')
+                        ->get();
+                    
+                    $absencesPerSubject = [];
+                    foreach ($attendanceRecords as $record) {
+                        if ($record->schedule && $record->schedule->subject) {
+                            $subjectId = $record->schedule->subject_id;
+                            if (!isset($absencesPerSubject[$subjectId])) {
+                                $absencesPerSubject[$subjectId] = 0;
+                            }
+                            $absencesPerSubject[$subjectId]++;
+                        }
+                    }
+                    
+                    // Check if any subject has 4-8 absences (SLIP condition)
+                    $hasSlip = false;
+                    foreach ($absencesPerSubject as $subjectId => $subjectAbsenceCount) {
+                        if ($subjectAbsenceCount >= 4 && $subjectAbsenceCount < 9) {
+                            $hasSlip = true;
+                            break;
+                        }
+                    }
+                    
+                    if ($hasSlip) {
+                        $status = 'SLIP';
+                    } else {
+                        $status = 'Normal';
+                    }
+                }
+            }
+            
+            // Count by status
+            if ($status === 'PNS') {
+                $pnsCount++;
+            } elseif ($status === 'SLIP') {
+                $slipCount++;
+            } else {
+                $normalCount++;
+            }
+        }
+        
+        // Calculate percentages
+        $normalPercentage = $totalStudents > 0 ? round(($normalCount / $totalStudents) * 100, 1) : 0;
+        $slipPercentage = $totalStudents > 0 ? round(($slipCount / $totalStudents) * 100, 1) : 0;
+        $pnsPercentage = $totalStudents > 0 ? round(($pnsCount / $totalStudents) * 100, 1) : 0;
+        
+        return [
+            'normal' => $normalCount,
+            'slip' => $slipCount,
+            'pns' => $pnsCount,
+            'normal_percentage' => $normalPercentage,
+            'slip_percentage' => $slipPercentage,
+            'pns_percentage' => $pnsPercentage,
+            'total' => $totalStudents,
+        ];
     }
 
     // Faculty Attendance Compliance Tracker for Super Admin
@@ -2511,74 +2850,105 @@ class SystemAdminController extends Controller
             // Use Monday as start of week to match WeeklySummary generation
             $weeks = collect(range(0, 7))->map(fn($i) => $today->startOfWeek(\Carbon\CarbonImmutable::MONDAY)->subWeeks($i))->reverse()->values();
             
-            // Get students who have attendance records using a more efficient query
-            $studentsWithRecords = \App\Models\Student::whereHas('attendanceRecords')
-                ->select('id', 'status', 'absence_count')
-                ->get();
+            // Get all students (we need to calculate status per week)
+            $allStudents = \App\Models\Student::select('id')->get();
+            $totalStudents = $allStudents->count();
             
-            // Calculate status for all students
-            $normalCount = 0;
-            $pnsCount = 0;
-            $slipCount = 0;
-            $totalStudents = $studentsWithRecords->count();
-            
-            foreach ($studentsWithRecords as $student) {
-                // Calculate or get absence_count
-                $absenceCount = (int)($student->absence_count ?? 0);
-                
-                // If absence_count is 0 or null, calculate it
-                if ($absenceCount === 0) {
-                    $absenceCount = \App\Models\AttendanceRecord::where('student_id', $student->id)
-                        ->where('status', 'absent')
-                        ->count();
-                    
-                    // Update the student record if we found absences
-                    if ($absenceCount > 0 && $student->absence_count != $absenceCount) {
-                        $student->absence_count = $absenceCount;
-                        $student->save();
-                    }
-                }
-                
-                // Determine status
-                $status = $student->status ?? null;
-                
-                // If status is not explicitly set (Normal, SLIP, PNS), calculate from absence_count
-                if (!in_array($status, ['Normal', 'SLIP', 'PNS'])) {
-                    if ($absenceCount >= 8) {
-                        $status = 'PNS';
-                    } elseif ($absenceCount >= 4) {
-                        $status = 'SLIP';
-                    } else {
-                        $status = 'Normal';
-                    }
-                }
-                
-                // Ensure status is set
-                if (!$status) {
-                    $status = 'Normal';
-                }
-                
-                // Count by status
-                if ($status === 'PNS') {
-                    $pnsCount++;
-                } elseif ($status === 'SLIP') {
-                    $slipCount++;
-                } else {
-                    $normalCount++;
-                }
-            }
-            
-            // Calculate percentages
-            $normalPercentage = $totalStudents > 0 ? round(($normalCount / $totalStudents) * 100, 1) : 0;
-            $pnsPercentage = $totalStudents > 0 ? round(($pnsCount / $totalStudents) * 100, 1) : 0;
-            $slipPercentage = $totalStudents > 0 ? round(($slipCount / $totalStudents) * 100, 1) : 0;
-            
-            // Return the same data for all weeks (showing current status distribution)
             $weeklyStatusData = [];
+            
             foreach ($weeks as $weekStart) {
                 $weekEnd = $weekStart->endOfWeek(\Carbon\CarbonImmutable::SUNDAY);
                 $rangeStart = $weekStart->toDateString();
                 $rangeEnd = $weekEnd->toDateString();
+                
+                // Calculate status for each student up to this week (real-time)
+                $normalCount = 0;
+                $pnsCount = 0;
+                $slipCount = 0;
+                
+                foreach ($allStudents as $student) {
+                    // Load the student with necessary data
+                    $fullStudent = \App\Models\Student::find($student->id);
+                    
+                    if (!$fullStudent) {
+                        continue;
+                    }
+                    
+                    // Calculate absence count up to the end of this week
+                    $absenceCount = \App\Models\AttendanceRecord::where('student_id', $fullStudent->id)
+                        ->where('status', 'absent')
+                        ->whereDate('date', '<=', $rangeEnd)
+                        ->count();
+                    
+                    // Check if student has manually set status (Normal, SLIP, PNS) in database
+                    // If status is manually set, use it (but only if it's a valid attendance status)
+                    $manualStatus = $fullStudent->status;
+                    $status = null;
+                    
+                    if (in_array($manualStatus, ['Normal', 'SLIP', 'PNS'])) {
+                        // Use manually set status
+                        $status = $manualStatus;
+                    } else {
+                        // Calculate status based on attendance records up to this week
+                        // PNS: >= 8 total absences
+                        if ($absenceCount >= 8) {
+                            $status = 'PNS';
+                        } else {
+                            // Check for SLIP: at least one subject has 4-8 absences (up to this week)
+                            $weekAttendanceRecords = \App\Models\AttendanceRecord::where('student_id', $fullStudent->id)
+                                ->whereDate('date', '<=', $rangeEnd)
+                                ->where('status', 'absent')
+                                ->with('schedule.subject')
+                                ->get();
+                            
+                            // Group absences by subject
+                            $absencesPerSubject = [];
+                            foreach ($weekAttendanceRecords as $record) {
+                                if ($record->schedule && $record->schedule->subject) {
+                                    $subjectId = $record->schedule->subject_id;
+                                    if (!isset($absencesPerSubject[$subjectId])) {
+                                        $absencesPerSubject[$subjectId] = 0;
+                                    }
+                                    $absencesPerSubject[$subjectId]++;
+                                }
+                            }
+                            
+                            // Check if any subject has 4-8 absences (SLIP condition)
+                            $hasSlip = false;
+                            foreach ($absencesPerSubject as $subjectId => $subjectAbsenceCount) {
+                                if ($subjectAbsenceCount >= 4 && $subjectAbsenceCount < 9) {
+                                    $hasSlip = true;
+                                    break;
+                                }
+                            }
+                            
+                            if ($hasSlip) {
+                                $status = 'SLIP';
+                            } else {
+                                $status = 'Normal';
+                            }
+                        }
+                    }
+                    
+                    // Ensure status is set (default to Normal if somehow still null)
+                    if (!$status) {
+                        $status = 'Normal';
+                    }
+                    
+                    // Count by status
+                    if ($status === 'PNS') {
+                        $pnsCount++;
+                    } elseif ($status === 'SLIP') {
+                        $slipCount++;
+                    } else {
+                        $normalCount++;
+                    }
+                }
+                
+                // Calculate percentages
+                $normalPercentage = $totalStudents > 0 ? round(($normalCount / $totalStudents) * 100, 1) : 0;
+                $pnsPercentage = $totalStudents > 0 ? round(($pnsCount / $totalStudents) * 100, 1) : 0;
+                $slipPercentage = $totalStudents > 0 ? round(($slipCount / $totalStudents) * 100, 1) : 0;
                 
                 $weeklyStatusData[] = [
                     'week_start' => $rangeStart,
@@ -2594,14 +2964,6 @@ class SystemAdminController extends Controller
                     'total_students' => $totalStudents,
                 ];
             }
-            
-            // Log for debugging
-            \Log::info('Weekly Status Progress calculated', [
-                'total_students' => $totalStudents,
-                'normal_count' => $normalCount,
-                'slip_count' => $slipCount,
-                'pns_count' => $pnsCount,
-            ]);
             
             return $weeklyStatusData;
         } catch (\Exception $e) {
@@ -2856,12 +3218,15 @@ class SystemAdminController extends Controller
     public function sendStudentToCSDL(Request $request, $id)
     {
         $validated = $request->validate([
-            'type' => 'required|in:call,home_visit',
+            'type' => 'nullable|in:home_visit',
             'csdl_user_id' => 'nullable|exists:users,id',
             'notes' => 'nullable|string',
         ]);
 
         $student = \App\Models\Student::findOrFail($id);
+
+        // CSDL only handles home visits - always set to home_visit
+        $type = 'home_visit';
 
         // Get CSDL - if not specified, use the first available CSDL
         $csdlUserId = $validated['csdl_user_id'] ?? \App\Models\User::role('CSDL')->first()?->id;
@@ -2874,19 +3239,18 @@ class SystemAdminController extends Controller
         \App\Models\StudentTracking::create([
             'student_id' => $student->id,
             'tracked_by' => $csdlUserId,
-            'type' => $validated['type'],
+            'type' => $type,
             'date' => now()->toDateString(),
-            'status' => 'scheduled',
+            'status' => 'pending',
             'notes' => $validated['notes'] ?? "Assigned by " . auth()->user()->name,
         ]);
 
-        // Update student priority so they appear in "Students Needing Attention" table
-        $priority = $validated['type'] === 'home_visit' ? 'PNS' : 'Call Needed';
-        $student->priority = $priority;
+        // Update student priority to PNS for home visits
+        $student->priority = 'PNS';
         $student->save();
         $student->refresh();
 
-        return redirect()->back()->with('success', "Student sent to CSDL for {$validated['type']}.");
+        return redirect()->back()->with('success', "Student sent to CSDL for home visit.");
     }
 
     public function destroyStudent($id)
@@ -2978,7 +3342,8 @@ class SystemAdminController extends Controller
                 $query->where('archived', false);
             }
             
-            $trackings = $query->orderBy('date', 'desc')
+            $trackings = $query->whereHas('student') // Only include tracking records with valid students
+                ->orderBy('date', 'desc')
                 ->orderBy('created_at', 'desc')
                 ->get();
             
@@ -3014,33 +3379,32 @@ class SystemAdminController extends Controller
             
             // Data rows
             foreach ($trackings as $tracking) {
-                try {
-                    fputcsv($output, [
-                        $tracking->id ?? '',
-                        ($tracking->student ? (($tracking->student->first_name ?? '') . ' ' . ($tracking->student->last_name ?? '')) : 'N/A'),
-                        $tracking->student?->student_number ?? 'N/A',
-                        $tracking->student?->section?->name ?? 'N/A',
-                        $tracking->student?->department?->name ?? $tracking->student?->section?->program?->department?->name ?? 'N/A',
-                        $tracking->student?->program?->name ?? $tracking->student?->section?->program?->name ?? 'N/A',
-                        ucfirst(str_replace('_', ' ', $tracking->type ?? '')),
-                        $tracking->date ? $tracking->date->format('Y-m-d') : '',
-                        $tracking->time ? \Carbon\Carbon::parse($tracking->time)->format('H:i') : '',
-                        ucfirst($tracking->status ?? ''),
-                        $tracking->trackedBy?->name ?? 'Unknown',
-                        $tracking->notes ?? '',
-                        $tracking->outcome ?? '',
-                        $tracking->follow_up_required ?? '',
-                        $tracking->follow_up_date ? $tracking->follow_up_date->format('Y-m-d') : '',
-                        $tracking->archived ? 'Yes' : 'No',
-                        $tracking->archived_at ? $tracking->archived_at->format('Y-m-d H:i:s') : '',
-                        $tracking->deleted_at ? $tracking->deleted_at->format('Y-m-d H:i:s') : '',
-                        $tracking->created_at ? $tracking->created_at->format('Y-m-d H:i:s') : '',
-                        $tracking->updated_at ? $tracking->updated_at->format('Y-m-d H:i:s') : '',
-                    ]);
-                } catch (\Exception $e) {
-                    // Skip problematic rows and continue
-                    continue;
+                if (!$tracking->student) {
+                    continue; // Skip tracking records without students
                 }
+                
+                fputcsv($output, [
+                    $tracking->id,
+                    $tracking->student->first_name . ' ' . $tracking->student->last_name,
+                    $tracking->student->student_number,
+                    $tracking->student->section?->name ?? 'N/A',
+                    $tracking->student->department?->name ?? $tracking->student->section?->program?->department?->name ?? 'N/A',
+                    $tracking->student->program?->name ?? $tracking->student->section?->program?->name ?? 'N/A',
+                    $tracking->type,
+                    $tracking->date->format('Y-m-d'),
+                    $tracking->time ? \Carbon\Carbon::parse($tracking->time)->format('H:i') : '',
+                    $tracking->status,
+                    $tracking->trackedBy?->name ?? 'Unknown',
+                    $tracking->notes ?? '',
+                    $tracking->outcome ?? '',
+                    $tracking->follow_up_required ?? '',
+                    $tracking->follow_up_date ? $tracking->follow_up_date->format('Y-m-d') : '',
+                    $tracking->archived ? 'Yes' : 'No',
+                    $tracking->archived_at ? $tracking->archived_at->format('Y-m-d H:i') : '',
+                    $tracking->deleted_at ? $tracking->deleted_at->format('Y-m-d H:i') : '',
+                    $tracking->created_at->format('Y-m-d H:i'),
+                    $tracking->updated_at->format('Y-m-d H:i'),
+                ]);
             }
             
             rewind($output);
@@ -3142,7 +3506,7 @@ class SystemAdminController extends Controller
             // Handle both FormData and JSON requests
             // Convert empty strings to null for nullable fields
             $input = $request->all();
-            foreach (['student_id', 'department_id', 'program_id', 'section_id', 'year_level'] as $field) {
+            foreach (['student_id', 'department_id', 'program_id', 'section_id', 'year_level', 'status'] as $field) {
                 if (isset($input[$field]) && $input[$field] === '') {
                     $input[$field] = null;
                 }
@@ -3155,6 +3519,7 @@ class SystemAdminController extends Controller
                 'program_id' => ['nullable', 'integer', 'exists:programs,id'],
                 'section_id' => ['nullable', 'integer', 'exists:sections,id'],
                 'year_level' => ['nullable', 'string'],
+                'status' => ['nullable', 'string'],
             ])->validate();
             
             // Convert string IDs to integers if they come from FormData
@@ -3202,6 +3567,24 @@ class SystemAdminController extends Controller
 
             $students = $query->get();
             
+            // Apply status filter after calculating attendance status
+            if (!empty($validated['status'])) {
+                $students = $students->filter(function($student) use ($validated) {
+                    $student->updatePriority();
+                    $student->refresh();
+                    // attendance_status is now automatically available via the accessor and $appends
+                    return $student->attendance_status === $validated['status'];
+                });
+            } else {
+                // Update priority for all students
+                $students = $students->map(function($student) {
+                    $student->updatePriority();
+                    $student->refresh();
+                    // attendance_status is now automatically available via the accessor and $appends
+                    return $student;
+                });
+            }
+            
             if ($students->isEmpty()) {
                 return response()->json([
                     'success' => false,
@@ -3215,7 +3598,7 @@ class SystemAdminController extends Controller
                 return $this->exportStudentsToXml($students, $validated['student_id'] ?? null);
             }
 
-        } catch (\ValidationException $e) {
+        } catch (\Illuminate\Validation\ValidationException $e) {
             \Log::error('Export validation failed: ' . $e->getMessage(), [
                 'request_data' => $request->all(),
                 'errors' => $e->errors()

@@ -892,7 +892,12 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsS
                                             type="date"
                                             value={trackingForm.follow_up_date}
                                             onChange={(e) => setTrackingForm({ ...trackingForm, follow_up_date: e.target.value })}
-                                            min={new Date().toISOString().split('T')[0]}
+                                            min={(() => {
+                                                // Only allow future dates (tomorrow and onwards)
+                                                const tomorrow = new Date();
+                                                tomorrow.setDate(tomorrow.getDate() + 1);
+                                                return tomorrow.toISOString().split('T')[0];
+                                            })()}
                                             className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
                                     </div>
