@@ -217,7 +217,7 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsS
                 .print-section table {
                     width: 100%;
                     border-collapse: collapse;
-                    font-size: 16px;
+                    font-size: 17px;
                     margin: 0 auto;
                     table-layout: fixed;
                 }
@@ -229,14 +229,14 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsS
                     word-wrap: break-word;
                     vertical-align: top;
                     line-height: 1.5;
-                    font-size: 16px;
+                    font-size: 17px;
                 }
                 .print-section th {
                     background-color: #f3f4f6 !important;
                     font-weight: bold;
                     -webkit-print-color-adjust: exact;
                     print-color-adjust: exact;
-                    font-size: 16px;
+                    font-size: 18px;
                     padding: 12px;
                     text-align: center;
                 }

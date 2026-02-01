@@ -1476,7 +1476,7 @@ export default function SystemAdmin({
                 .print-section table {
                     width: 100%;
                     border-collapse: collapse;
-                    font-size: 16px;
+                    font-size: 17px;
                     margin: 0;
                     table-layout: auto;
                 }
@@ -1488,7 +1488,7 @@ export default function SystemAdmin({
                     word-wrap: break-word;
                     vertical-align: top;
                     line-height: 1.6;
-                    font-size: 16px;
+                    font-size: 17px;
                     page-break-inside: avoid;
                 }
                 .print-section th {
@@ -1496,7 +1496,7 @@ export default function SystemAdmin({
                     font-weight: bold;
                     -webkit-print-color-adjust: exact;
                     print-color-adjust: exact;
-                    font-size: 17px;
+                    font-size: 18px;
                     padding: 14px;
                     text-align: center;
                 }

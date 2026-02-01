@@ -65,6 +65,11 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 	};
 	
 	const handleDeactivate = (user) => {
+		const roleName = user.roles?.[0]?.name;
+		if (!['Admin', 'CSDL'].includes(roleName)) {
+			alert('Only Admin and CSDL users can be deactivated. Super Admin users cannot be deactivated.');
+			return;
+		}
 		if (confirm(`Are you sure you want to deactivate ${user.name}?`)) {
 			router.delete(route('super.users.destroy', user.id), {
 				onSuccess: () => {
@@ -75,6 +80,11 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 	};
 	
 	const handleRestore = (user) => {
+		const roleName = user.roles?.[0]?.name;
+		if (!['Admin', 'CSDL'].includes(roleName)) {
+			alert('Only Admin and CSDL users can be reactivated.');
+			return;
+		}
 		if (confirm(`Are you sure you want to reactivate ${user.name}?`)) {
 			router.post(route('super.users.restore', user.id), {}, {
 				onSuccess: () => {
@@ -300,6 +310,10 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 										</tr>
 									) : (
 										displayUsers.map((u) => (
+											(() => {
+												const roleName = u.roles?.[0]?.name || 'No Role';
+												const canToggleActive = ['Admin', 'CSDL'].includes(roleName);
+												return (
 											<tr key={u.id} className="transition-colors hover:bg-gray-50">
 												<td className="px-8 py-6">
 													<div className="flex items-center">
@@ -316,11 +330,11 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 												</td>
 												<td className="px-8 py-6">
 													<span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-														u.roles?.[0]?.name === 'Super Admin' 
+														roleName === 'Super Admin' 
 															? 'bg-purple-100 text-purple-800' 
 															: 'bg-blue-100 text-blue-800'
 													}`}>
-														{u.roles?.[0]?.name || 'No Role'}
+														{roleName}
 													</span>
 												</td>
 												<td className="px-8 py-6">
@@ -354,8 +368,8 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 																>
 																	Edit
 																</button>
-																{/* Hide deactivate button for Teacher role users - they are managed in Teachers tab */}
-																{u.roles?.[0]?.name !== 'Teacher' && (
+																{/* Only Admin + CSDL can be deactivated */}
+																{canToggleActive && (
 																	<button 
 																		onClick={() => handleDeactivate(u)}
 																		className="text-red-600 hover:text-red-800 font-medium text-sm transition-colors"
@@ -365,16 +379,24 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 																)}
 															</>
 														) : (
-															<button 
-																onClick={() => handleRestore(u)}
-																className="text-green-600 hover:text-green-800 font-medium text-sm transition-colors"
-															>
-																Reactivate
-															</button>
+															canToggleActive ? (
+																<button 
+																	onClick={() => handleRestore(u)}
+																	className="text-green-600 hover:text-green-800 font-medium text-sm transition-colors"
+																>
+																	Reactivate
+																</button>
+															) : (
+																<span className="text-gray-400 text-sm font-medium">
+																	Not allowed
+																</span>
+															)
 														)}
 													</div>
 												</td>
 											</tr>
+												);
+											})()
 										))
 									)}
 								</tbody>

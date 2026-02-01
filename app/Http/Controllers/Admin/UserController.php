@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Notifications\AccountCreatedNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Inertia\Inertia;
@@ -22,10 +23,13 @@ class UserController extends Controller
 			->orderBy('name')
 			->get(['id','name','email','department_id','optional_department_id']);
 		
-		// Get deactivated users count
+		// Get deactivated users count (only Admin + CSDL can be deactivated)
 		$deactivatedCount = User::with(['roles:name'])
 			->whereDoesntHave('roles', function($query) {
 				$query->where('name', 'Teacher');
+			})
+			->whereHas('roles', function ($query) {
+				$query->whereIn('name', ['Admin', 'CSDL']);
 			})
 			->onlyTrashed()
 			->count();
@@ -41,9 +45,13 @@ class UserController extends Controller
 	public function getDeactivated()
 	{
 		// Get only soft-deleted (deactivated) users
+		// Only Admin + CSDL can be deactivated/reactivated (Super Admin cannot be deactivated)
 		$deactivatedUsers = User::with(['roles:name', 'department', 'optionalDepartment'])
 			->whereDoesntHave('roles', function($query) {
 				$query->where('name', 'Teacher');
+			})
+			->whereHas('roles', function ($query) {
+				$query->whereIn('name', ['Admin', 'CSDL']);
 			})
 			->onlyTrashed()
 			->orderBy('deleted_at', 'desc')
@@ -58,6 +66,12 @@ class UserController extends Controller
 	public function restore($id)
 	{
 		$user = User::onlyTrashed()->findOrFail($id);
+		
+		// Only Admin + CSDL can be reactivated
+		if (!$user->hasAnyRole(['Admin', 'CSDL'])) {
+			return back()->withErrors(['message' => 'Only Admin and CSDL users can be reactivated.']);
+		}
+		
 		$user->restore();
 		return back()->with('success', 'User reactivated successfully');
 	}
@@ -86,6 +100,30 @@ class UserController extends Controller
 			'optional_department_id' => $validated['optional_department_id'] ?? null,
 		]);
 		$user->syncRoles([$validated['role']]);
+
+		// Notify newly created user via email (do not block creation if mail fails)
+		try {
+			$user->load(['department', 'optionalDepartment', 'program']);
+			$creator = auth()->user();
+			$creatorRole = $creator?->roles?->first()?->name;
+			$user->notify(new AccountCreatedNotification(
+				$generatedPassword,
+				$validated['role'],
+				$user->department?->name,
+				$user->optionalDepartment?->name,
+				$user->program?->name,
+				$creator?->name,
+				$creator?->email,
+				$creatorRole
+			));
+		} catch (\Throwable $e) {
+			\Log::warning('AccountCreatedNotification failed to send', [
+				'user_id' => $user->id,
+				'email' => $user->email,
+				'error' => $e->getMessage(),
+			]);
+		}
+
 		return back()->with('success','User created');
 	}
 
@@ -120,6 +158,11 @@ class UserController extends Controller
 		// Prevent deactivating users with Teacher role - they are managed in the Teachers tab
 		if ($user->hasRole('Teacher')) {
 			return back()->withErrors(['message' => 'Cannot deactivate Teacher users. Please manage teachers in the Teachers tab.']);
+		}
+		
+		// Only Admin + CSDL can be deactivated (Super Admin cannot be deactivated)
+		if (!$user->hasAnyRole(['Admin', 'CSDL'])) {
+			return back()->withErrors(['message' => 'Only Admin and CSDL users can be deactivated. Super Admin users cannot be deactivated.']);
 		}
 		
 		// Soft delete (deactivate) instead of hard delete

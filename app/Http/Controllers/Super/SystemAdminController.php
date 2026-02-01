@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Super;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Notifications\AccountCreatedNotification;
 use App\Services\AuditLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -959,6 +960,29 @@ class SystemAdminController extends Controller
 
             // Assign CSDL role
             $user->assignRole('CSDL');
+
+            // Notify newly created user via email (do not block creation if mail fails)
+            try {
+                $user->load(['department', 'optionalDepartment', 'program']);
+                $creator = auth()->user();
+                $creatorRole = $creator?->roles?->first()?->name;
+                $user->notify(new AccountCreatedNotification(
+                    $request->password,
+                    'CSDL',
+                    $user->department?->name,
+                    $user->optionalDepartment?->name,
+                    $user->program?->name,
+                    $creator?->name,
+                    $creator?->email,
+                    $creatorRole
+                ));
+            } catch (\Throwable $e) {
+                \Log::warning('AccountCreatedNotification failed to send (CSDL user)', [
+                    'user_id' => $user->id,
+                    'email' => $user->email,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
             return response()->json([
                 'success' => true,

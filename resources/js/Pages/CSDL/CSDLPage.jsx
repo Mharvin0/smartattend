@@ -198,8 +198,17 @@ export default function CSDLPage({ studentsNeedingCalls = [], recentTracking = [
         style.textContent = `
             @media print {
                 @page {
-                    margin: 1cm 1.5cm;
+                    margin: 0.3cm;
                     size: A4 landscape;
+                }
+                @page:blank {
+                    display: none;
+                }
+                * {
+                    overflow: visible !important;
+                }
+                body {
+                    overflow: visible !important;
                 }
                 body * {
                     visibility: hidden;
@@ -208,30 +217,50 @@ export default function CSDLPage({ studentsNeedingCalls = [], recentTracking = [
                     visibility: visible;
                 }
                 .print-section {
-                    position: absolute;
-                    left: 0;
-                    top: 0;
+                    position: relative;
                     width: 100%;
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
+                    display: block;
                 }
-                .print-section .space-y-4 > div {
-                    display: none;
+                .print-section * {
+                    overflow: visible !important;
                 }
-                .print-section .p-6 {
+                .print-section .px-6,
+                .print-section .py-4,
+                .print-section .border-b,
+                .print-section button,
+                .print-section a[role="button"],
+                .print-section .flex.items-center.gap-2,
+                .print-section .flex.items-center.gap-3,
+                .print-section .space-y-4 > div:not(.p-6),
+                .print-section .border-t,
+                .print-section .bg-gray-50,
+                .print-section .text-xs.text-gray-600,
+                .print-section .flex.items-center.justify-between,
+                .print-section .text-right > .flex,
+                .print-section .rounded-full,
+                .print-section .inline-flex.items-center,
+                .no-print {
+                    display: none !important;
+                }
+                .print-section .p-6,
+                .print-section .overflow-x-auto {
                     width: 100%;
                     max-width: 100%;
-                    margin: 0 auto;
-                    padding: 0;
+                    margin: 0;
+                    padding: 10px 15px;
+                }
+                .print-section .space-y-4 {
+                    display: none !important;
                 }
                 .print-section table {
                     width: 100%;
                     border-collapse: collapse;
                     font-size: 16px;
-                    margin: 0 auto;
-                    table-layout: fixed;
+                    margin: 0;
+                    table-layout: auto;
+                }
+                .print-section .print-table {
+                    margin-top: 0;
                 }
                 .print-section th,
                 .print-section td {
@@ -240,27 +269,38 @@ export default function CSDLPage({ studentsNeedingCalls = [], recentTracking = [
                     text-align: left;
                     word-wrap: break-word;
                     vertical-align: top;
-                    line-height: 1.5;
+                    line-height: 1.4;
                     font-size: 16px;
+                    page-break-inside: avoid;
                 }
                 .print-section th {
                     background-color: #f3f4f6 !important;
                     font-weight: bold;
                     -webkit-print-color-adjust: exact;
                     print-color-adjust: exact;
-                    font-size: 16px;
+                    font-size: 17px;
                     padding: 12px;
                     text-align: center;
                 }
                 .print-section thead {
                     display: table-header-group;
                 }
+                .print-section thead tr {
+                    page-break-after: avoid;
+                    page-break-inside: avoid;
+                }
+                .print-section tbody {
+                    page-break-inside: avoid;
+                }
                 .print-section tbody tr {
                     page-break-inside: avoid;
                     page-break-after: auto;
                 }
-                .no-print {
-                    display: none !important;
+                .print-section tbody td {
+                    page-break-inside: avoid;
+                }
+                .print-section tbody tr:last-child {
+                    page-break-after: auto;
                 }
             }
         `;
@@ -279,15 +319,15 @@ export default function CSDLPage({ studentsNeedingCalls = [], recentTracking = [
             table.innerHTML = `
                 <thead>
                     <tr>
-                        <th style="width: 12%;">Student Name</th>
-                        <th style="width: 10%;">Student Number</th>
-                        <th style="width: 10%;">Section</th>
-                        <th style="width: 6%;">Type</th>
-                        <th style="width: 8%;">Date</th>
-                        <th style="width: 7%;">Time</th>
-                        <th style="width: 8%;">Status</th>
-                        <th style="width: 10%;">Tracked By</th>
-                        <th style="width: 29%;">Notes</th>
+                        <th>Student Name</th>
+                        <th>Student Number</th>
+                        <th>Section</th>
+                        <th>Type</th>
+                        <th>Date</th>
+                        <th>Time</th>
+                        <th>Status</th>
+                        <th>Tracked By</th>
+                        <th>Notes</th>
                     </tr>
                 </thead>
                 <tbody>

@@ -132,84 +132,166 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
             alert('Only active tracking records can be exported. Please switch to the Active tab.');
             return;
         }
-        
-        // Add print styles to the page
+
+        // Build a dedicated print-only table (more reliable than printing the live page)
+        const printRootId = 'csdl-reports-print-root';
+        const styleId = 'csdl-reports-print-style';
+
+        const toTitle = (value) => {
+            if (!value) return 'N/A';
+            const s = String(value).replace(/_/g, ' ');
+            return s.charAt(0).toUpperCase() + s.slice(1);
+        };
+
+        const formatDate = (value) => {
+            if (!value) return 'N/A';
+            try {
+                return new Date(value).toLocaleDateString();
+            } catch {
+                return String(value);
+            }
+        };
+
+        const cleanup = () => {
+            const existingRoot = document.getElementById(printRootId);
+            if (existingRoot) existingRoot.remove();
+            const existingStyle = document.getElementById(styleId);
+            if (existingStyle) existingStyle.remove();
+            window.removeEventListener('afterprint', cleanup);
+        };
+
+        // Remove any previous leftovers
+        cleanup();
+
         const style = document.createElement('style');
+        style.id = styleId;
         style.textContent = `
             @media print {
-                @page {
-                    margin: 1cm 1.5cm;
-                    size: A4 landscape;
-                }
-                body * {
-                    visibility: hidden;
-                }
-                .print-section, .print-section * {
-                    visibility: visible;
-                }
-                .print-section {
-                    position: absolute;
+                @page { size: A4 landscape; margin: 0.3cm; }
+                html, body { height: auto; }
+                body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                body * { visibility: hidden; }
+                #${printRootId}, #${printRootId} * { visibility: visible; }
+                #${printRootId} {
+                    position: fixed;
                     left: 0;
                     top: 0;
                     width: 100%;
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
+                    padding: 12px 16px;
+                    background: #fff;
                 }
-                .print-section .p-6 {
-                    width: 100%;
-                    max-width: 100%;
-                    margin: 0 auto;
-                    padding: 0;
-                }
-                .print-section table {
+                #${printRootId} table {
                     width: 100%;
                     border-collapse: collapse;
-                    font-size: 16px;
-                    margin: 0 auto;
                     table-layout: fixed;
+                    font-size: 14px;
                 }
-                .print-section th,
-                .print-section td {
-                    padding: 10px 12px;
+                #${printRootId} th, #${printRootId} td {
                     border: 1px solid #000;
+                    padding: 8px 10px;
                     text-align: left;
-                    word-wrap: break-word;
                     vertical-align: top;
-                    line-height: 1.5;
-                    font-size: 16px;
+                    word-break: break-word;
                 }
-                .print-section th {
-                    background-color: #f3f4f6 !important;
-                    font-weight: bold;
-                    -webkit-print-color-adjust: exact;
-                    print-color-adjust: exact;
-                    font-size: 16px;
-                    padding: 12px;
+                #${printRootId} th {
+                    background: #f3f4f6;
+                    font-weight: 700;
                     text-align: center;
+                    font-size: 15px;
                 }
-                .print-section thead {
-                    display: table-header-group;
-                }
-                .print-section tbody tr {
-                    page-break-inside: avoid;
-                    page-break-after: auto;
-                }
-                .no-print {
-                    display: none !important;
-                }
+                #${printRootId} thead { display: table-header-group; }
+                #${printRootId} tr { page-break-inside: avoid; }
             }
         `;
         document.head.appendChild(style);
-        
-        // Trigger print
-        window.print();
-        
-        // Remove the style after printing
+
+        const root = document.createElement('div');
+        root.id = printRootId;
+
+        const heading = document.createElement('div');
+        heading.style.display = 'flex';
+        heading.style.alignItems = 'baseline';
+        heading.style.justifyContent = 'space-between';
+        heading.style.marginBottom = '10px';
+
+        const title = document.createElement('div');
+        title.textContent = 'CSDL Tracking Reports (Active)';
+        title.style.fontWeight = '700';
+        title.style.fontSize = '16px';
+
+        const meta = document.createElement('div');
+        meta.textContent = `Generated: ${new Date().toLocaleString()}`;
+        meta.style.fontSize = '12px';
+        meta.style.color = '#111';
+
+        heading.appendChild(title);
+        heading.appendChild(meta);
+        root.appendChild(heading);
+
+        const table = document.createElement('table');
+
+        // Column widths tuned for landscape A4
+        const colgroup = document.createElement('colgroup');
+        const colWidths = ['7%', '18%', '14%', '8%', '12%', '11%', '30%']; // Type, Student, Section, Date, Time, Tracked By, Notes
+        colWidths.forEach((w) => {
+            const col = document.createElement('col');
+            col.style.width = w;
+            colgroup.appendChild(col);
+        });
+        table.appendChild(colgroup);
+
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        ['Type', 'Student', 'Section', 'Date', 'Time', 'Tracked By', 'Notes'].forEach((h) => {
+            const th = document.createElement('th');
+            th.textContent = h;
+            headRow.appendChild(th);
+        });
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        (recentTracking || []).forEach((tracking) => {
+            const tr = document.createElement('tr');
+
+            const tdType = document.createElement('td');
+            tdType.textContent = toTitle(tracking?.type);
+
+            const tdStudent = document.createElement('td');
+            tdStudent.textContent = tracking?.student?.name || 'N/A';
+
+            const tdSection = document.createElement('td');
+            tdSection.textContent = tracking?.student?.section || 'N/A';
+
+            const tdDate = document.createElement('td');
+            tdDate.textContent = formatDate(tracking?.date);
+
+            const tdTime = document.createElement('td');
+            tdTime.textContent = tracking?.time || '-';
+
+            const tdTrackedBy = document.createElement('td');
+            tdTrackedBy.textContent = tracking?.tracked_by || 'N/A';
+
+            const tdNotes = document.createElement('td');
+            const notesParts = [];
+            if (tracking?.notes) notesParts.push(String(tracking.notes));
+            if (tracking?.outcome) notesParts.push(`Outcome: ${tracking.outcome}`);
+            tdNotes.textContent = notesParts.length ? notesParts.join(' | ') : '-';
+
+            [tdType, tdStudent, tdSection, tdDate, tdTime, tdTrackedBy, tdNotes].forEach((td) => tr.appendChild(td));
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        root.appendChild(table);
+
+        document.body.appendChild(root);
+
+        window.addEventListener('afterprint', cleanup);
+
+        // Give the DOM a moment to paint before opening print dialog
         setTimeout(() => {
-            document.head.removeChild(style);
-        }, 1000);
+            window.print();
+        }, 50);
     };
 
     const getTypeIcon = (type) => {
@@ -472,7 +554,7 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tracked By</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Notes</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase no-print">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
@@ -511,7 +593,7 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
                                                     </div>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium no-print">
                                                 <div className="flex items-center gap-2">
                                                     <button
                                                         onClick={() => handleView(tracking.id)}

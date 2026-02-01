@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Notifications\AccountCreatedNotification;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -41,6 +42,26 @@ class RegisteredUserController extends Controller
             'email' => $request->email,
             'password' => Hash::make($request->password),
         ]);
+
+        // Notify newly created user via email (do not block registration if mail fails)
+        try {
+            $user->notify(new AccountCreatedNotification(
+                $request->password,
+                $user->roles?->first()?->name,
+                null,
+                null,
+                null,
+                'Self-registration',
+                $user->email,
+                $user->roles?->first()?->name
+            ));
+        } catch (\Throwable $e) {
+            \Log::warning('AccountCreatedNotification failed to send (self registration)', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         event(new Registered($user));
 
