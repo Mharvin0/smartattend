@@ -5,17 +5,21 @@ import { createInertiaApp } from '@inertiajs/react';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createRoot } from 'react-dom/client';
 import ziggyRoute from 'ziggy-js';
-import { Ziggy } from './ziggy';
 
 // Ensure route() uses the current origin in production builds (prevents localhost URLs on Railway).
+const ziggyBase =
+    typeof window !== 'undefined' && window.Ziggy
+        ? window.Ziggy
+        : undefined;
+
 const ziggyConfig =
-    typeof window !== 'undefined' && window.location
+    typeof window !== 'undefined' && window.location && ziggyBase
         ? {
-              ...Ziggy,
+              ...ziggyBase,
               url: window.location.origin,
               port: window.location.port ? parseInt(window.location.port, 10) : null,
           }
-        : Ziggy;
+        : ziggyBase;
 
 window.route = (name, params, absolute, config = ziggyConfig) => ziggyRoute(name, params, absolute, config);
 

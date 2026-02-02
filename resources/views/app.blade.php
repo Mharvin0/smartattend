@@ -6,6 +6,7 @@
         <meta name="csrf-token" content="{{ csrf_token() }}">
         <title>SmartAttend - University of Pangasinan</title>
         <link rel="icon" type="image/png" href="/images/university_banner.upang.png">
+        @routes
         @vite(['resources/js/app.jsx', 'resources/css/app.css'])
         @inertiaHead
     </head>
