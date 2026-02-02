@@ -14,8 +14,15 @@ class DatabaseSeeder extends Seeder
 {
 	public function run(): void
 	{
-		$this->resetAcademicData();
-		$this->resetUsers();
+		// NOTE:
+		// Seeding should NOT destroy production data by default.
+		// If you want a full reset for local demo/testing, set:
+		//   SEED_DESTRUCTIVE=true
+		// and re-run `php artisan db:seed`.
+		if (filter_var(env('SEED_DESTRUCTIVE', false), FILTER_VALIDATE_BOOL)) {
+			$this->resetAcademicData();
+			$this->resetUsers();
+		}
 
 		$superAdminRole = Role::firstOrCreate(['name' => 'Super Admin']);
 		$adminRole = Role::firstOrCreate(['name' => 'Admin']);
@@ -42,32 +49,29 @@ class DatabaseSeeder extends Seeder
 		$adminRole->givePermissionTo(['view reports','export reports','capture attendance','import attendance','manage interventions']);
 		$csdlUserRole->givePermissionTo(['view reports','track home visits']);
 
-		$super = User::firstOrCreate(
-			['email' => 'superadmin@smartattend.local'],
-			[
-				'name' => 'Super Admin',
-				'password' => Hash::make('password'),
-			]
-		);
-		$super->syncRoles([$superAdminRole]);
+		// Demo users are optional and OFF by default. Enable with:
+		//   SEED_DEMO_USERS=true
+		if (filter_var(env('SEED_DEMO_USERS', false), FILTER_VALIDATE_BOOL)) {
+			$admin = User::firstOrCreate(
+				['email' => 'admin@smartattend.local'],
+				[
+					'name' => 'PedroHub Admin',
+					'password' => Hash::make('password'),
+					'password_changed_at' => null,
+				]
+			);
+			$admin->syncRoles([$adminRole]);
 
-		$admin = User::firstOrCreate(
-			['email' => 'admin@smartattend.local'],
-			[
-				'name' => 'PedroHub Admin',
-				'password' => Hash::make('password'),
-			]
-		);
-		$admin->syncRoles([$adminRole]);
-
-		$csdlUser = User::firstOrCreate(
-			['email' => 'csdl@smartattend.local'],
-			[
-				'name' => 'CSDL User',
-				'password' => Hash::make('password'),
-			]
-		);
-		$csdlUser->syncRoles([$csdlUserRole]);
+			$csdlUser = User::firstOrCreate(
+				['email' => 'csdl@smartattend.local'],
+				[
+					'name' => 'CSDL User',
+					'password' => Hash::make('password'),
+					'password_changed_at' => null,
+				]
+			);
+			$csdlUser->syncRoles([$csdlUserRole]);
+		}
 
 		$this->call([
 			DepartmentProgramSeeder::class,
