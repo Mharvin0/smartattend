@@ -26,6 +26,13 @@ if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
   php artisan migrate --force || true
 fi
 
+# Optionally seed demo data on boot (set RUN_SEEDERS=true)
+# Note: DatabaseSeeder is non-destructive by default, but StudentSeeder clears academic tables.
+if [ "${RUN_SEEDERS:-false}" = "true" ]; then
+  echo "Seeding database..."
+  php artisan db:seed --no-interaction || true
+fi
+
 # Cache config/routes/views (safe; can be toggled off)
 if [ "${CACHE_CONFIG:-true}" = "true" ]; then
   php artisan config:cache || true
