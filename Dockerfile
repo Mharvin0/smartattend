@@ -59,6 +59,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     unzip \
     ca-certificates \
+    gettext-base \
     libzip-dev \
     libpng-dev \
     libjpeg62-turbo-dev \
