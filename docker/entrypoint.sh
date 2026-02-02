@@ -19,7 +19,7 @@ is_truthy() {
 }
 
 # Ensure Laravel dirs exist
-mkdir -p storage/framework/{cache,sessions,views} bootstrap/cache
+mkdir -p storage/framework/{cache,sessions,views} storage/framework/cache/data bootstrap/cache
 chown -R www-data:www-data storage bootstrap/cache || true
 
 # Render nginx config with Railway $PORT (defaults to 8080)
