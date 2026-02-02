@@ -20,16 +20,20 @@ RUN npm run build
 ############################
 # 2) Install PHP dependencies
 ############################
-FROM composer:2 AS vendor
+FROM composer:2 AS composer_bin
+FROM php:8.2-cli-bookworm AS vendor
 WORKDIR /app
 
 COPY composer.json composer.lock ./
+COPY --from=composer_bin /usr/bin/composer /usr/bin/composer
+ENV COMPOSER_ALLOW_SUPERUSER=1
 RUN composer install \
   --no-dev \
   --no-interaction \
   --no-progress \
   --prefer-dist \
-  --optimize-autoloader
+  --optimize-autoloader \
+  --no-scripts
 
 
 ############################
