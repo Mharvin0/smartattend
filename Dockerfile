@@ -27,6 +27,15 @@ WORKDIR /app
 COPY composer.json composer.lock ./
 COPY --from=composer_bin /usr/bin/composer /usr/bin/composer
 ENV COMPOSER_ALLOW_SUPERUSER=1
+
+# Composer needs zip/unzip for dist installs, and git for source fallback
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    unzip \
+    libzip-dev \
+  && docker-php-ext-install -j$(nproc) zip \
+  && rm -rf /var/lib/apt/lists/*
+
 RUN composer install \
   --no-dev \
   --no-interaction \
