@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Notifications\AccountCreatedNotification;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Inertia\Inertia;
 
@@ -168,5 +169,46 @@ class UserController extends Controller
 		// Soft delete (deactivate) instead of hard delete
 		$user->delete();
 		return back()->with('success','User deactivated successfully');
+	}
+
+	/**
+	 * Permanently delete a deactivated (soft-deleted) user.
+	 * Only Admin + CSDL users can be permanently deleted.
+	 */
+	public function forceDestroy($id)
+	{
+		$user = User::onlyTrashed()->with('roles:name')->findOrFail($id);
+
+		// Prevent deleting Super Admin (and any non-Admin/CSDL)
+		if (! $user->hasAnyRole(['Admin', 'CSDL'])) {
+			return back()->withErrors(['message' => 'Only Admin and CSDL users can be permanently deleted.']);
+		}
+
+		DB::transaction(function () use ($user) {
+			// Clean up role/permission pivot records to avoid orphans
+			DB::table('model_has_roles')
+				->where('model_type', User::class)
+				->where('model_id', $user->id)
+				->delete();
+
+			DB::table('model_has_permissions')
+				->where('model_type', User::class)
+				->where('model_id', $user->id)
+				->delete();
+
+			// Clean up auth tokens/reset tokens (best-effort)
+			DB::table('personal_access_tokens')
+				->where('tokenable_type', User::class)
+				->where('tokenable_id', $user->id)
+				->delete();
+
+			DB::table('password_reset_tokens')
+				->where('email', $user->email)
+				->delete();
+
+			$user->forceDelete();
+		});
+
+		return back()->with('success', 'User permanently deleted successfully');
 	}
 }

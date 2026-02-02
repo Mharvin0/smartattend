@@ -94,6 +94,22 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 			});
 		}
 	};
+
+	const handlePermanentDelete = (user) => {
+		const roleName = user.roles?.[0]?.name;
+		if (!['Admin', 'CSDL'].includes(roleName)) {
+			alert('Only Admin and CSDL users can be permanently deleted.');
+			return;
+		}
+		if (confirm(`Permanently delete ${user.name}? This cannot be undone.`)) {
+			router.delete(route('super.users.force-destroy', user.id), {
+				onSuccess: () => {
+					fetchDeactivatedUsers();
+					router.reload({ only: ['users', 'deactivatedCount'] });
+				},
+			});
+		}
+	};
 	
 	const fetchDeactivatedUsers = () => {
 		setIsLoadingDeactivated(true);
@@ -391,6 +407,14 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 																	Not allowed
 																</span>
 															)
+														)}
+														{activeTab === 'deactivated' && canToggleActive && (
+															<button
+																onClick={() => handlePermanentDelete(u)}
+																className="text-red-600 hover:text-red-800 font-medium text-sm transition-colors"
+															>
+																Delete Permanently
+															</button>
 														)}
 													</div>
 												</td>

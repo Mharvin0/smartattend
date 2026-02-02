@@ -273,6 +273,7 @@ Route::middleware(['auth', \App\Http\Middleware\RequirePasswordChange::class])->
         Route::patch('/users/{user}', [UserController::class, 'update'])->name('users.update');
         Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
         Route::post('/users/{id}/restore', [UserController::class, 'restore'])->name('users.restore');
+        Route::delete('/users/{id}/force', [UserController::class, 'forceDestroy'])->name('users.force-destroy');
         
         // Departments and Programs
         Route::get('/departments', [DepartmentController::class, 'index'])->name('departments');
