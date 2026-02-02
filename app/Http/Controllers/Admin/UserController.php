@@ -8,6 +8,7 @@ use App\Notifications\AccountCreatedNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 
 class UserController extends Controller
@@ -197,14 +198,18 @@ class UserController extends Controller
 				->delete();
 
 			// Clean up auth tokens/reset tokens (best-effort)
-			DB::table('personal_access_tokens')
-				->where('tokenable_type', User::class)
-				->where('tokenable_id', $user->id)
-				->delete();
+			if (Schema::hasTable('personal_access_tokens')) {
+				DB::table('personal_access_tokens')
+					->where('tokenable_type', User::class)
+					->where('tokenable_id', $user->id)
+					->delete();
+			}
 
-			DB::table('password_reset_tokens')
-				->where('email', $user->email)
-				->delete();
+			if (Schema::hasTable('password_reset_tokens')) {
+				DB::table('password_reset_tokens')
+					->where('email', $user->email)
+					->delete();
+			}
 
 			$user->forceDelete();
 		});
