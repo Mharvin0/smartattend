@@ -44,7 +44,7 @@ fi
 # Note: DatabaseSeeder is non-destructive by default, but StudentSeeder clears academic tables.
 if is_truthy "${RUN_SEEDERS:-false}"; then
   echo "Seeding database..."
-  php artisan db:seed --no-interaction || true
+  php artisan db:seed --force --no-interaction || true
 fi
 
 # Cache config/routes/views (safe; can be toggled off)
