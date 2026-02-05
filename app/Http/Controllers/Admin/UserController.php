@@ -39,7 +39,8 @@ class UserController extends Controller
 		return Inertia::render('Super/Users', [
 			'users' => $users,
 			'deactivatedCount' => $deactivatedCount,
-			'roles' => ['Super Admin','Admin','CSDL'],
+			// Super Admin should not be creatable/promotable from the Users tab UI.
+			'roles' => ['Admin','CSDL'],
 			'departments' => \App\Models\Department::orderBy('name')->get(['id', 'name']),
 		]);
 	}
@@ -83,7 +84,8 @@ class UserController extends Controller
 		$validated = $request->validate([
 			'name' => ['required','string','max:255'],
 			'email' => ['required','email','max:255','unique:users,email'],
-			'role' => ['required','in:Super Admin,Admin,CSDL'],
+			// Only Admin and CSDL accounts can be created from this screen.
+			'role' => ['required','in:Admin,CSDL'],
 			'department_id' => ['nullable','exists:departments,id'],
 			'optional_department_id' => ['nullable','exists:departments,id','different:department_id'],
 		]);
@@ -131,14 +133,24 @@ class UserController extends Controller
 
 	public function update(Request $request, User $user)
 	{
-		$validated = $request->validate([
+		$rules = [
 			'name' => ['required','string','max:255'],
 			'email' => ['required','email','max:255','unique:users,email,'.$user->id],
 			'password' => ['nullable','string','min:6'],
-			'role' => ['required','in:Super Admin,Admin,CSDL'],
 			'department_id' => ['nullable','exists:departments,id'],
 			'optional_department_id' => ['nullable','exists:departments,id','different:department_id'],
-		]);
+		];
+
+		// Super Admin should not be promotable via this UI. If editing an existing Super Admin,
+		// keep the role unchanged (allow only "Super Admin", and make it optional).
+		if ($user->hasRole('Super Admin')) {
+			$rules['role'] = ['sometimes', 'in:Super Admin'];
+		} else {
+			$rules['role'] = ['required', 'in:Admin,CSDL'];
+		}
+
+		$validated = $request->validate($rules);
+
 		$user->name = $validated['name'];
 		$user->email = $validated['email'];
 		if (!empty($validated['password'])) {
@@ -151,7 +163,11 @@ class UserController extends Controller
 			$user->optional_department_id = $validated['optional_department_id'];
 		}
 		$user->save();
-		$user->syncRoles([$validated['role']]);
+
+		// Only sync role if it's allowed to change from this screen.
+		if (! $user->hasRole('Super Admin')) {
+			$user->syncRoles([$validated['role']]);
+		}
 		return back()->with('success','User updated');
 	}
 

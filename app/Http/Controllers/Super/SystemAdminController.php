@@ -162,7 +162,7 @@ class SystemAdminController extends Controller
     {
         // Get students that need calls or home visits
         // Include students with priority 'Call Needed' or 'PNS', OR students with active pending or to_follow tracking records
-        $studentsWithActiveTracking = \App\Models\StudentTracking::whereIn('status', ['pending', 'to_follow'])
+        $studentsWithActiveTracking = \App\Models\StudentTracking::whereIn('status', ['pending', 'to_follow', 'processing'])
             ->where('archived', false)
             ->pluck('student_id')
             ->unique()
@@ -171,8 +171,12 @@ class SystemAdminController extends Controller
         
         $user = auth()->user();
         $studentsNeedingCalls = \App\Models\Student::forUser($user)
+            ->whereNull('attention_archived_at')
             ->with(['section.program.department', 'department', 'program', 'studentTracking' => function($query) {
+                // Only show "active" tracking statuses in the Students Needing Attention table
+                // (Status dropdown should only be pending/processing/to_follow).
                 $query->where('archived', false)
+                    ->whereIn('status', ['pending', 'to_follow', 'processing'])
                     ->orderBy('date', 'desc')
                     ->orderBy('created_at', 'desc')
                     ->limit(1);
@@ -191,17 +195,19 @@ class SystemAdminController extends Controller
             })
             ->filter(function ($student) use ($studentsWithActiveTracking) {
                 // Filter students that need attention:
-                // 1. Priority is 'Call Needed' or 'PNS'
-                // 2. Attendance status is 'SLIP' or 'PNS'
-                // 3. Has active tracking records
-                $priorityMatch = in_array($student->priority, ['Call Needed', 'PNS']);
-                $attendanceStatusMatch = in_array($student->calculateAttendanceStatus(), ['SLIP', 'PNS']);
+                // - Computed priority from absence_count (Call Needed/PNS)
+                // - OR has active tracking records (pending/to_follow)
+                $absenceCount = (int) ($student->absence_count ?? 0);
+                $computedPriority = $absenceCount < 4 ? 'Safe' : ($absenceCount < 8 ? 'Call Needed' : 'PNS');
+                $priorityMatch = in_array($computedPriority, ['Call Needed', 'PNS']);
                 $hasActiveTracking = in_array($student->id, $studentsWithActiveTracking);
                 
-                return $priorityMatch || $attendanceStatusMatch || $hasActiveTracking;
+                return $priorityMatch || $hasActiveTracking;
             })
             ->map(function ($student) {
                 $latestTracking = $student->studentTracking->first();
+                $absenceCount = (int) ($student->absence_count ?? 0);
+                $computedPriority = $absenceCount < 4 ? 'Safe' : ($absenceCount < 8 ? 'Call Needed' : 'PNS');
                 return [
                     'id' => $student->id,
                     'name' => $student->first_name . ' ' . $student->last_name,
@@ -210,8 +216,9 @@ class SystemAdminController extends Controller
                     'section' => $student->section?->name ?? 'N/A',
                     'department' => $student->department?->name ?? $student->section?->program?->department?->name ?? 'N/A',
                     'program' => $student->program?->name ?? $student->section?->program?->name ?? 'N/A',
-                    'priority' => $student->priority ?? 'Safe',
-                    'absence_count' => $student->absence_count ?? 0,
+                    // Always compute Priority from absence_count for consistent display (e.g. 15 absences != Safe)
+                    'priority' => $computedPriority,
+                    'absence_count' => $absenceCount,
                     'attendance_status' => $student->calculateAttendanceStatus(),
                     'tracking_status' => $latestTracking?->status ?? 'No Status',
                     'last_tracking' => $latestTracking ? [
@@ -275,8 +282,9 @@ class SystemAdminController extends Controller
 
         // Statistics
         $stats = [
-            'students_needing_calls' => \App\Models\Student::where('priority', 'Call Needed')->count(),
-            'students_needing_visits' => \App\Models\Student::where('priority', 'PNS')->count(),
+            // Derive counts from absence_count (priority should follow this)
+            'students_needing_calls' => \App\Models\Student::where('absence_count', '>=', 4)->where('absence_count', '<', 8)->count(),
+            'students_needing_visits' => \App\Models\Student::where('absence_count', '>=', 8)->count(),
             'total_tracked_today' => \App\Models\StudentTracking::where('archived', false)
                 ->whereDate('date', \Carbon\Carbon::today())
                 ->count(),
@@ -334,12 +342,36 @@ class SystemAdminController extends Controller
             'follow_up_date' => $validated['follow_up_date'] ?? null,
         ]);
 
+        // If the student was previously archived from the attention list, bring them back when we track them again.
+        \App\Models\Student::where('id', $validated['student_id'])->update([
+            'attention_archived_at' => null,
+        ]);
+
         return redirect()->back()->with('success', 'Student tracking recorded successfully');
     }
 
     public function updateTracking(Request $request, $id)
     {
         $tracking = \App\Models\StudentTracking::findOrFail($id);
+
+        // Status dropdown updates only send { status }.
+        // Allow status-only updates without requiring other fields.
+        if ($request->has('status') && ! $request->has('type') && ! $request->has('date')) {
+            $validated = $request->validate([
+                'status' => 'required|in:pending,to_follow,processing',
+            ]);
+
+            $tracking->update([
+                'status' => $validated['status'],
+            ]);
+
+            // If a student was archived from the attention list, bring them back when a status is updated.
+            \App\Models\Student::where('id', $tracking->student_id)->update([
+                'attention_archived_at' => null,
+            ]);
+
+            return redirect()->back()->with('success', 'Tracking status updated successfully');
+        }
 
         $validated = $request->validate([
             'type' => 'required|in:call,home_visit',
@@ -612,12 +644,64 @@ class SystemAdminController extends Controller
         ]);
     }
 
-    public function getDeletedTracking()
+    public function getDeletedTracking(Request $request)
     {
-        $deletedTracking = \App\Models\StudentTracking::withTrashed()
+        $user = auth()->user();
+        $departmentIds = $user->getAssignedDepartmentIds();
+
+        $query = \App\Models\StudentTracking::onlyTrashed()
             ->with(['student.section.program.department', 'trackedBy'])
-            ->whereNotNull('deleted_at')
-            ->orderBy('deleted_at', 'desc')
+            ->whereHas('student', function($q) use ($user, $departmentIds) {
+                if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
+                    $q->where(function($subQ) use ($departmentIds) {
+                        $subQ->whereIn('department_id', $departmentIds)
+                             ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
+                                 $progQ->whereIn('department_id', $departmentIds);
+                             });
+                    });
+                }
+            });
+
+        // Apply filters
+        if ($request->has('type') && $request->type) {
+            $query->where('type', $request->type);
+        }
+        if ($request->has('status') && $request->status) {
+            $query->where('status', $request->status);
+        }
+        if ($request->has('department_id') && $request->department_id) {
+            $query->whereHas('student.section.program', function($q) use ($request) {
+                $q->where('department_id', $request->department_id);
+            });
+        }
+        if ($request->has('date_from') && $request->date_from) {
+            $query->whereDate('date', '>=', $request->date_from);
+        }
+        if ($request->has('date_to') && $request->date_to) {
+            $query->whereDate('date', '<=', $request->date_to);
+        }
+        if ($request->has('search') && $request->search) {
+            $search = $request->search;
+            $query->whereHas('student', function($q) use ($search) {
+                $q->where('first_name', 'like', "%{$search}%")
+                  ->orWhere('last_name', 'like', "%{$search}%")
+                  ->orWhere('student_number', 'like', "%{$search}%");
+            });
+        }
+
+        // Get total count before pagination
+        $total = $query->count();
+
+        // Pagination
+        $perPage = (int) $request->get('per_page', 10);
+        $page = (int) $request->get('page', 1);
+        $offset = max(0, ($page - 1) * $perPage);
+
+        $deletedTracking = $query->orderBy('deleted_at', 'desc')
+            ->orderBy('date', 'desc')
+            ->orderBy('created_at', 'desc')
+            ->skip($offset)
+            ->take($perPage)
             ->get()
             ->map(function ($tracking) {
                 return [
@@ -630,11 +714,11 @@ class SystemAdminController extends Controller
                     'follow_up_required' => $tracking->follow_up_required,
                     'follow_up_date' => $tracking->follow_up_date ? $tracking->follow_up_date->format('Y-m-d') : null,
                     'student' => [
-                        'id' => $tracking->student->id,
-                        'name' => $tracking->student->first_name . ' ' . $tracking->student->last_name,
-                        'section' => $tracking->student->section?->name ?? 'N/A',
-                        'department' => $tracking->student->section?->program?->department?->name ?? 'N/A',
-                        'program' => $tracking->student->section?->program?->name ?? 'N/A',
+                        'id' => $tracking->student?->id ?? null,
+                        'name' => ($tracking->student?->first_name ?? '') . ' ' . ($tracking->student?->last_name ?? ''),
+                        'section' => $tracking->student?->section?->name ?? 'N/A',
+                        'department' => $tracking->student?->section?->program?->department?->name ?? 'N/A',
+                        'program' => $tracking->student?->section?->program?->name ?? 'N/A',
                     ],
                     'tracked_by' => $tracking->trackedBy?->name ?? 'Unknown',
                     'tracked_by_id' => $tracking->tracked_by,
@@ -642,11 +726,16 @@ class SystemAdminController extends Controller
                     'deleted_at' => $tracking->deleted_at ? $tracking->deleted_at->format('Y-m-d H:i') : null,
                     'can_edit' => true,
                 ];
-            });
+            })
+            ->filter(fn($tracking) => $tracking['student']['id'] !== null);
 
         return response()->json([
             'success' => true,
             'tracking' => $deletedTracking,
+            'total' => $total,
+            'per_page' => $perPage,
+            'current_page' => $page,
+            'last_page' => (int) ceil($total / max(1, $perPage)),
         ]);
     }
 
@@ -3335,8 +3424,8 @@ class SystemAdminController extends Controller
     {
         $student = \App\Models\Student::findOrFail($id);
         
-        // Change priority to Safe to remove from "Students Needing Attention" table
-        $student->priority = 'Safe';
+        // Archive from attention list without mutating Priority (Priority must reflect absences)
+        $student->attention_archived_at = now();
         $student->save();
         
         // Archive all active tracking records for this student

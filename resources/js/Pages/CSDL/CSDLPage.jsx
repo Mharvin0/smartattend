@@ -192,178 +192,154 @@ export default function CSDLPage({ studentsNeedingCalls = [], recentTracking = [
             alert('Only recent tracking records can be exported. Please switch to the Recent tab.');
             return;
         }
-        
-        // Add print styles to the page
+
+        // Print from a dedicated root (prevents any duplicate sections/tables from being printed).
+        const printRootId = 'csdl-tracking-print-root';
+        const styleId = 'csdl-tracking-print-style';
+
+        const cleanup = () => {
+            const existingRoot = document.getElementById(printRootId);
+            if (existingRoot) existingRoot.remove();
+            const existingStyle = document.getElementById(styleId);
+            if (existingStyle) existingStyle.remove();
+            window.removeEventListener('afterprint', cleanup);
+        };
+
+        // Remove any previous leftovers
+        cleanup();
+
         const style = document.createElement('style');
+        style.id = styleId;
         style.textContent = `
             @media print {
-                @page {
-                    margin: 0.3cm;
-                    size: A4 landscape;
+                @page { size: A4 landscape; margin: 0.3cm; }
+                html, body { height: auto !important; }
+                body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+                /* Critical: remove the app from layout so the browser doesn't paginate invisible content */
+                body * { display: none !important; }
+
+                /* Show ONLY the export root */
+                #${printRootId} { 
+                    display: block !important;
+                    position: static !important; /* fixed elements can repeat on every printed page */
+                    width: 100% !important;
+                    padding: 12px 16px !important;
+                    background: #fff !important;
                 }
-                @page:blank {
-                    display: none;
+
+                /* Restore display types for table elements */
+                #${printRootId} * { display: revert !important; }
+                #${printRootId} table { 
+                    display: table !important;
+                    width: 100% !important;
+                    border-collapse: collapse !important;
+                    table-layout: fixed !important;
+                    font-size: 14px !important;
                 }
-                * {
-                    overflow: visible !important;
+                #${printRootId} thead { display: table-header-group !important; }
+                #${printRootId} tbody { display: table-row-group !important; }
+                #${printRootId} tr { display: table-row !important; page-break-inside: avoid; }
+                #${printRootId} th, #${printRootId} td {
+                    display: table-cell !important;
+                    border: 1px solid #000 !important;
+                    padding: 8px 10px !important;
+                    text-align: left !important;
+                    vertical-align: top !important;
+                    word-break: break-word !important;
                 }
-                body {
-                    overflow: visible !important;
-                }
-                body * {
-                    visibility: hidden;
-                }
-                .print-section, .print-section * {
-                    visibility: visible;
-                }
-                .print-section {
-                    position: relative;
-                    width: 100%;
-                    display: block;
-                }
-                .print-section * {
-                    overflow: visible !important;
-                }
-                .print-section .px-6,
-                .print-section .py-4,
-                .print-section .border-b,
-                .print-section button,
-                .print-section a[role="button"],
-                .print-section .flex.items-center.gap-2,
-                .print-section .flex.items-center.gap-3,
-                .print-section .space-y-4 > div:not(.p-6),
-                .print-section .border-t,
-                .print-section .bg-gray-50,
-                .print-section .text-xs.text-gray-600,
-                .print-section .flex.items-center.justify-between,
-                .print-section .text-right > .flex,
-                .print-section .rounded-full,
-                .print-section .inline-flex.items-center,
-                .no-print {
-                    display: none !important;
-                }
-                .print-section .p-6,
-                .print-section .overflow-x-auto {
-                    width: 100%;
-                    max-width: 100%;
-                    margin: 0;
-                    padding: 10px 15px;
-                }
-                .print-section .space-y-4 {
-                    display: none !important;
-                }
-                .print-section table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    font-size: 16px;
-                    margin: 0;
-                    table-layout: auto;
-                }
-                .print-section .print-table {
-                    margin-top: 0;
-                }
-                .print-section th,
-                .print-section td {
-                    padding: 10px 12px;
-                    border: 1px solid #000;
-                    text-align: left;
-                    word-wrap: break-word;
-                    vertical-align: top;
-                    line-height: 1.4;
-                    font-size: 16px;
-                    page-break-inside: avoid;
-                }
-                .print-section th {
-                    background-color: #f3f4f6 !important;
-                    font-weight: bold;
-                    -webkit-print-color-adjust: exact;
-                    print-color-adjust: exact;
-                    font-size: 17px;
-                    padding: 12px;
-                    text-align: center;
-                }
-                .print-section thead {
-                    display: table-header-group;
-                }
-                .print-section thead tr {
-                    page-break-after: avoid;
-                    page-break-inside: avoid;
-                }
-                .print-section tbody {
-                    page-break-inside: avoid;
-                }
-                .print-section tbody tr {
-                    page-break-inside: avoid;
-                    page-break-after: auto;
-                }
-                .print-section tbody td {
-                    page-break-inside: avoid;
-                }
-                .print-section tbody tr:last-child {
-                    page-break-after: auto;
+                #${printRootId} th {
+                    background: #f3f4f6 !important;
+                    font-weight: 700 !important;
+                    text-align: center !important;
+                    font-size: 15px !important;
                 }
             }
         `;
         document.head.appendChild(style);
-        
-        // Create a hidden table for printing
-        const printSection = document.querySelector('.print-section');
-        if (printSection && recentTracking.length > 0) {
-            const existingTable = printSection.querySelector('.print-table');
-            if (existingTable) {
-                existingTable.remove();
-            }
-            
-            const table = document.createElement('table');
-            table.className = 'print-table';
-            table.innerHTML = `
-                <thead>
-                    <tr>
-                        <th>Student Name</th>
-                        <th>Student Number</th>
-                        <th>Section</th>
-                        <th>Type</th>
-                        <th>Date</th>
-                        <th>Time</th>
-                        <th>Status</th>
-                        <th>Tracked By</th>
-                        <th>Notes</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${recentTracking.map(tracking => `
-                        <tr>
-                            <td>${tracking.student?.name || 'N/A'}</td>
-                            <td>${tracking.student?.student_number || 'N/A'}</td>
-                            <td>${tracking.student?.section || 'N/A'}</td>
-                            <td>${tracking.type === 'call' ? 'Call' : 'Home Visit'}</td>
-                            <td>${tracking.date || 'N/A'}</td>
-                            <td>${tracking.time || 'N/A'}</td>
-                            <td>${(tracking.status || 'pending').charAt(0).toUpperCase() + (tracking.status || 'pending').slice(1).replace('_', ' ')}</td>
-                            <td>${tracking.tracked_by || 'N/A'}</td>
-                            <td>${tracking.notes || 'N/A'}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            `;
-            
-            const p6Div = printSection.querySelector('.p-6');
-            if (p6Div) {
-                p6Div.appendChild(table);
-            }
-        }
-        
-        // Trigger print
+
+        const root = document.createElement('div');
+        root.id = printRootId;
+
+        const heading = document.createElement('div');
+        heading.style.display = 'flex';
+        heading.style.alignItems = 'baseline';
+        heading.style.justifyContent = 'space-between';
+        heading.style.marginBottom = '10px';
+
+        const title = document.createElement('div');
+        title.textContent = 'CSDL Tracking Records (Recent)';
+        title.style.fontWeight = '700';
+        title.style.fontSize = '16px';
+
+        const meta = document.createElement('div');
+        meta.textContent = `Generated: ${new Date().toLocaleString()} • Records: ${recentTracking?.length || 0}`;
+        meta.style.fontSize = '12px';
+        meta.style.color = '#374151';
+
+        heading.appendChild(title);
+        heading.appendChild(meta);
+        root.appendChild(heading);
+
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        [
+            'Student Name',
+            'Student Number',
+            'Section',
+            'Type',
+            'Date',
+            'Time',
+            'Status',
+            'Tracked By',
+            'Notes',
+        ].forEach((label) => {
+            const th = document.createElement('th');
+            th.textContent = label;
+            headRow.appendChild(th);
+        });
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        (recentTracking || []).forEach((tracking) => {
+            const tr = document.createElement('tr');
+            const status = tracking?.status || 'pending';
+            const statusLabel = status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ');
+
+            const values = [
+                tracking?.student?.name || 'N/A',
+                tracking?.student?.student_number || 'N/A',
+                tracking?.student?.section || 'N/A',
+                tracking?.type === 'call' ? 'Call' : 'Home Visit',
+                tracking?.date || 'N/A',
+                tracking?.time || 'N/A',
+                statusLabel,
+                tracking?.tracked_by || 'N/A',
+                tracking?.notes || 'N/A',
+            ];
+
+            values.forEach((value) => {
+                const td = document.createElement('td');
+                td.textContent = String(value ?? '');
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        root.appendChild(table);
+
+        document.body.appendChild(root);
+
+        // Cleanup after print dialog closes (most reliable)
+        window.addEventListener('afterprint', cleanup);
+
+        // Print
         window.print();
-        
-        // Clean up after printing
-        setTimeout(() => {
-            const printTable = document.querySelector('.print-table');
-            if (printTable) {
-                printTable.remove();
-            }
-            document.head.removeChild(style);
-        }, 1000);
+
+        // Fallback cleanup (some browsers don't fire afterprint reliably)
+        setTimeout(cleanup, 3000);
     };
 
     return (
@@ -572,7 +548,7 @@ export default function CSDLPage({ studentsNeedingCalls = [], recentTracking = [
                             <div className="flex items-center gap-3">
                                 <button
                                     onClick={handleExportTracking}
-                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
+                                    className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-4 focus:ring-blue-500/20"
                                     title={`Export ${trackingTab} tracking records`}
                                 >
                                     <Download className="h-4 w-4" />

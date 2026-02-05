@@ -16,9 +16,9 @@ class DatabaseSeeder extends Seeder
 	{
 		// NOTE:
 		// Seeding should NOT destroy production data by default.
-		// If you want a full reset for local demo/testing, set:
+		// full reset for local demo/testing, set:
 		//   SEED_DESTRUCTIVE=true
-		// and re-run `php artisan db:seed`.
+		// re-run `php artisan db:seed`.
 		if (filter_var(env('SEED_DESTRUCTIVE', false), FILTER_VALIDATE_BOOL)) {
 			$this->resetAcademicData();
 			$this->resetUsers();

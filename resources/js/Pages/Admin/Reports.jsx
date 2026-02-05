@@ -86,8 +86,11 @@ export default function Reports({ summaries, sections, filters }) {
 							<div>
 								<label className="block text-lg font-medium text-gray-700 mb-2">Actions</label>
 								<div className="flex gap-3">
-									<a className="btn-primary text-lg px-6 py-3" href={route('admin.reports.weekly.pdf', filters)}>
-										<svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<a
+										className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-lg font-bold text-white shadow-sm transition hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-4 focus:ring-blue-500/20"
+										href={route('admin.reports.weekly.pdf', filters)}
+									>
+										<svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
 										</svg>
 										Export

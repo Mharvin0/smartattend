@@ -132,82 +132,156 @@ export default function Students({ students = [], departments = [], programs = [
     };
 
     const handleExportStudents = () => {
-        // Add print styles to the page
+        const studentsToExport = filteredStudents?.length ? filteredStudents : (students || []);
+
+        const printRootId = 'admin-students-print-root';
+        const styleId = 'admin-students-print-style';
+
+        const cleanup = () => {
+            const existingRoot = document.getElementById(printRootId);
+            if (existingRoot) existingRoot.remove();
+            const existingStyle = document.getElementById(styleId);
+            if (existingStyle) existingStyle.remove();
+            window.removeEventListener('afterprint', cleanup);
+        };
+
+        cleanup();
+
         const style = document.createElement('style');
+        style.id = styleId;
         style.textContent = `
             @media print {
-                @page {
-                    margin: 1cm 1.5cm;
-                    size: A4 landscape;
+                @page { size: A4 landscape; margin: 0.3cm; }
+                html, body { height: auto !important; }
+                body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+                body * { display: none !important; }
+
+                #${printRootId} {
+                    display: block !important;
+                    position: static !important;
+                    width: 100% !important;
+                    padding: 12px 16px !important;
+                    background: #fff !important;
                 }
-                body * {
-                    visibility: hidden;
+
+                #${printRootId} * { display: revert !important; }
+
+                #${printRootId} table {
+                    display: table !important;
+                    width: 100% !important;
+                    border-collapse: collapse !important;
+                    table-layout: fixed !important;
+                    font-size: 12px !important;
                 }
-                .print-section, .print-section * {
-                    visibility: visible;
+                #${printRootId} thead { display: table-header-group !important; }
+                #${printRootId} tbody { display: table-row-group !important; }
+                #${printRootId} tr { display: table-row !important; page-break-inside: avoid; }
+                #${printRootId} th, #${printRootId} td {
+                    display: table-cell !important;
+                    border: 1px solid #000 !important;
+                    padding: 6px 8px !important;
+                    text-align: left !important;
+                    vertical-align: top !important;
+                    word-break: break-word !important;
                 }
-                .print-section {
-                    position: absolute;
-                    left: 0;
-                    top: 0;
-                    width: 100%;
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
-                }
-                .print-section .p-6 {
-                    width: 100%;
-                    max-width: 100%;
-                    margin: 0 auto;
-                    padding: 0;
-                }
-                .print-section table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    font-size: 17px;
-                    margin: 0 auto;
-                    table-layout: fixed;
-                }
-                .print-section th,
-                .print-section td {
-                    padding: 10px 12px;
-                    border: 1px solid #000;
-                    text-align: left;
-                    word-wrap: break-word;
-                    line-height: 1.5;
-                    font-size: 17px;
-                }
-                .print-section th {
-                    background-color: #f3f4f6 !important;
-                    font-weight: bold;
-                    -webkit-print-color-adjust: exact;
-                    print-color-adjust: exact;
-                    font-size: 18px;
-                    padding: 12px;
-                    text-align: center;
-                }
-                .print-section thead {
-                    display: table-header-group;
-                }
-                .print-section tbody tr {
-                    page-break-inside: avoid;
-                    page-break-after: auto;
-                }
-                .no-print {
-                    display: none !important;
+                #${printRootId} th {
+                    background: #f3f4f6 !important;
+                    font-weight: 700 !important;
+                    text-align: center !important;
                 }
             }
         `;
         document.head.appendChild(style);
-        
-        // Trigger print
+
+        const root = document.createElement('div');
+        root.id = printRootId;
+
+        const heading = document.createElement('div');
+        heading.style.display = 'flex';
+        heading.style.alignItems = 'baseline';
+        heading.style.justifyContent = 'space-between';
+        heading.style.marginBottom = '10px';
+
+        const title = document.createElement('div');
+        title.textContent = 'Admin Students Export';
+        title.style.fontWeight = '700';
+        title.style.fontSize = '16px';
+
+        const meta = document.createElement('div');
+        meta.textContent = `Generated: ${new Date().toLocaleString()} • Students: ${studentsToExport?.length || 0}`;
+        meta.style.fontSize = '12px';
+        meta.style.color = '#374151';
+
+        heading.appendChild(title);
+        heading.appendChild(meta);
+        root.appendChild(heading);
+
+        const table = document.createElement('table');
+
+        const colgroup = document.createElement('colgroup');
+        // Student ID, Name, Email, Phone, Section, Program, Department, Year, Status, Absences
+        const colWidths = ['10%', '14%', '16%', '8%', '9%', '11%', '11%', '7%', '7%', '7%'];
+        colWidths.forEach((w) => {
+            const col = document.createElement('col');
+            col.style.width = w;
+            colgroup.appendChild(col);
+        });
+        table.appendChild(colgroup);
+
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        ['Student ID', 'Name', 'Email', 'Phone', 'Section', 'Program', 'Department', 'Year', 'Status', 'Absences'].forEach((label) => {
+            const th = document.createElement('th');
+            th.textContent = label;
+            headRow.appendChild(th);
+        });
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        (studentsToExport || []).forEach((student) => {
+            const tr = document.createElement('tr');
+
+            const absenceCount = (() => {
+                if ((student.attendance_status === 'PNS' || student.status === 'PNS') && (!student.absence_count || student.absence_count === 0)) {
+                    return 8;
+                }
+                if ((student.attendance_status === 'SLIP' || student.status === 'SLIP') && (!student.absence_count || student.absence_count === 0)) {
+                    return 4;
+                }
+                return student.absence_count || 0;
+            })();
+
+            const values = [
+                student.student_id || student.student_number || '',
+                student.name || `${student.first_name || ''} ${student.last_name || ''}`.trim(),
+                student.email || 'N/A',
+                student.phone || 'N/A',
+                student.section?.name || (typeof student.section === 'string' ? student.section : 'N/A'),
+                student.section?.program?.name || (typeof student.program === 'string' ? student.program : 'N/A'),
+                student.department?.name || student.section?.program?.department?.name || 'N/A',
+                student.year_level || 'N/A',
+                student.attendance_status === 'PNS' ? 'Probable No-Show' : (student.attendance_status || 'N/A'),
+                absenceCount,
+            ];
+
+            values.forEach((value) => {
+                const td = document.createElement('td');
+                td.textContent = String(value ?? '');
+                tr.appendChild(td);
+            });
+
+            tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
+        root.appendChild(table);
+        document.body.appendChild(root);
+
+        window.addEventListener('afterprint', cleanup);
         window.print();
-        
-        // Remove the style after printing
-        setTimeout(() => {
-            document.head.removeChild(style);
-        }, 1000);
+        setTimeout(cleanup, 3000);
     };
 
 
@@ -249,7 +323,7 @@ export default function Students({ students = [], departments = [], programs = [
                                 </button>
                                 <button
                                     onClick={() => handleExportStudents()}
-                                    className="bg-gradient-to-r from-purple-500 to-purple-600 text-white px-6 py-3 rounded-xl hover:from-purple-600 hover:to-purple-700 transition-all duration-300 font-medium flex items-center"
+                                    className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-3 rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 font-bold flex items-center focus:outline-none focus:ring-4 focus:ring-blue-500/20"
                                 >
                                     <Download className="h-4 w-4 mr-2" />
                                     Export

@@ -54,6 +54,15 @@ export default function SystemAdmin({
     // Pagination state for Students tab
     const [studentsCurrentPage, setStudentsCurrentPage] = useState(1);
     const studentsPerPage = 20;
+
+    // Pagination state for "Students Needing Attention" table (Management tab)
+    const attentionPerPage = 10;
+    const [attentionCurrentPage, setAttentionCurrentPage] = useState(1);
+
+    useEffect(() => {
+        // Reset to page 1 when the list changes (filtering/reloads)
+        setAttentionCurrentPage(1);
+    }, [studentsNeedingCalls?.length]);
     
     useEffect(() => {
         const interval = setInterval(() => {
@@ -289,6 +298,7 @@ export default function SystemAdmin({
     const [showViewTrackingModal, setShowViewTrackingModal] = useState(false);
     const [trackingTab, setTrackingTab] = useState('recent'); // 'recent', 'archived'
     const [archivedTracking, setArchivedTracking] = useState([]);
+    const [deletedTracking, setDeletedTracking] = useState([]);
     const [recentTrackingData, setRecentTrackingData] = useState(recentTracking || []);
     const [isLoadingTracking, setIsLoadingTracking] = useState(false);
     const [openStatusDropdown, setOpenStatusDropdown] = useState(null);
@@ -1211,9 +1221,12 @@ export default function SystemAdmin({
         // Check if route exists before using it
         let routeName;
         try {
-            routeName = trackingTab === 'archived' 
-                ? 'super.management.archived-tracking' 
-                : 'super.management.get-tracking';
+            routeName =
+                trackingTab === 'archived'
+                    ? 'super.management.archived-tracking'
+                    : trackingTab === 'deleted'
+                    ? 'super.management.deleted-tracking'
+                    : 'super.management.get-tracking';
             
             // Test if route exists
             route(routeName);
@@ -1239,6 +1252,8 @@ export default function SystemAdmin({
             if (data.success) {
                 if (trackingTab === 'archived') {
                     setArchivedTracking(data.tracking || []);
+                } else if (trackingTab === 'deleted') {
+                    setDeletedTracking(data.tracking || []);
                 } else {
                     setRecentTrackingData(data.tracking || []);
                 }
@@ -1293,21 +1308,10 @@ export default function SystemAdmin({
         fetchTrackingRecords(page, trackingFilters);
     };
 
-    // Initialize with existing data, only fetch when filters are applied or tab changes
+    // Initialize / fetch paginated tracking records (10 per page)
     useEffect(() => {
-        if (trackingTab === 'recent' && recentTracking && recentTracking.length > 0) {
-            // Use existing data initially
-            setRecentTrackingData(recentTracking);
-            setTrackingPagination({
-                current_page: 1,
-                last_page: 1,
-                total: recentTracking.length,
-                per_page: 10,
-            });
-        } else if (trackingTab === 'archived') {
-            // Only fetch archived when tab is switched to archived
-            fetchTrackingRecords(1, trackingFilters);
-        }
+        if (activeTab !== 'management') return;
+        fetchTrackingRecords(1, trackingFilters);
     }, [trackingTab]);
 
 
@@ -1371,7 +1375,7 @@ export default function SystemAdmin({
     const handleStatusUpdate = (studentId, trackingId, newStatus) => {
         if (trackingId) {
             // Update existing tracking record
-            router.put(route('management.update-tracking', trackingId), {
+            router.put(route('super.management.update-tracking', trackingId), {
                 status: newStatus,
             }, {
                 preserveScroll: true,
@@ -1421,170 +1425,166 @@ export default function SystemAdmin({
             alert('Only recent tracking records can be exported. Please switch to the Recent tab.');
             return;
         }
-        
-        // Add print styles to the page
+
+        // Print from a dedicated root (prevents duplicates caused by printing the live page).
+        const printRootId = 'super-tracking-print-root';
+        const styleId = 'super-tracking-print-style';
+
+        const cleanup = () => {
+            const existingRoot = document.getElementById(printRootId);
+            if (existingRoot) existingRoot.remove();
+            const existingStyle = document.getElementById(styleId);
+            if (existingStyle) existingStyle.remove();
+            window.removeEventListener('afterprint', cleanup);
+        };
+
+        cleanup();
+
         const style = document.createElement('style');
+        style.id = styleId;
         style.textContent = `
             @media print {
-                @page {
-                    margin: 0.3cm;
-                    size: A4 landscape;
+                @page { size: A4 landscape; margin: 0.3cm; }
+                html, body { height: auto !important; }
+                body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+                body * { display: none !important; }
+
+                #${printRootId} {
+                    display: block !important;
+                    position: static !important;
+                    width: 100% !important;
+                    padding: 12px 16px !important;
+                    background: #fff !important;
                 }
-                @page:blank {
-                    display: none;
+
+                #${printRootId} * { display: revert !important; }
+
+                #${printRootId} table {
+                    display: table !important;
+                    width: 100% !important;
+                    border-collapse: collapse !important;
+                    table-layout: fixed !important;
+                    font-size: 13px !important;
                 }
-                * {
-                    overflow: visible !important;
+                #${printRootId} thead { display: table-header-group !important; }
+                #${printRootId} tbody { display: table-row-group !important; }
+                #${printRootId} tr { display: table-row !important; page-break-inside: avoid; }
+                #${printRootId} th, #${printRootId} td {
+                    display: table-cell !important;
+                    border: 1px solid #000 !important;
+                    padding: 8px 10px !important;
+                    text-align: left !important;
+                    vertical-align: top !important;
+                    word-break: break-word !important;
                 }
-                body {
-                    overflow: visible !important;
-                }
-                body * {
-                    visibility: hidden;
-                }
-                .print-section, .print-section * {
-                    visibility: visible;
-                }
-                .print-section {
-                    position: relative;
-                    width: 100%;
-                    display: block;
-                }
-                .print-section * {
-                    overflow: visible !important;
-                }
-                .print-section .px-6,
-                .print-section .py-4,
-                .print-section .border-b,
-                .print-section button,
-                .print-section .flex.items-center.gap-2,
-                .print-section .space-y-4 > div:not(.p-6),
-                .print-section .border-t,
-                .print-section .bg-gray-50,
-                .print-section .text-xs.text-gray-600,
-                .print-section .flex.items-center.justify-between,
-                .no-print {
-                    display: none !important;
-                }
-                .print-section .p-6,
-                .print-section .overflow-x-auto {
-                    width: 100%;
-                    max-width: 100%;
-                    margin: 0;
-                    padding: 15px;
-                }
-                .print-section table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    font-size: 17px;
-                    margin: 0;
-                    table-layout: auto;
-                }
-                .print-section th,
-                .print-section td {
-                    padding: 12px 14px;
-                    border: 1px solid #000;
-                    text-align: left;
-                    word-wrap: break-word;
-                    vertical-align: top;
-                    line-height: 1.6;
-                    font-size: 17px;
-                    page-break-inside: avoid;
-                }
-                .print-section th {
-                    background-color: #f3f4f6 !important;
-                    font-weight: bold;
-                    -webkit-print-color-adjust: exact;
-                    print-color-adjust: exact;
-                    font-size: 18px;
-                    padding: 14px;
-                    text-align: center;
-                }
-                .print-section thead {
-                    display: table-header-group;
-                }
-                .print-section thead tr {
-                    page-break-after: avoid;
-                    page-break-inside: avoid;
-                }
-                .print-section tbody {
-                    page-break-inside: avoid;
-                }
-                .print-section tbody tr {
-                    page-break-inside: avoid;
-                    page-break-after: auto;
-                }
-                .print-section tbody td {
-                    page-break-inside: avoid;
-                }
-                .print-section tbody tr:last-child {
-                    page-break-after: auto;
+                #${printRootId} th {
+                    background: #f3f4f6 !important;
+                    font-weight: 700 !important;
+                    text-align: center !important;
+                    font-size: 14px !important;
                 }
             }
         `;
         document.head.appendChild(style);
-        
-        // Create a hidden table for printing
-        const printSection = document.querySelector('.print-section');
-        if (printSection && recentTracking.length > 0) {
-            const existingTable = printSection.querySelector('.print-table');
-            if (existingTable) {
-                existingTable.remove();
-            }
-            
-            const table = document.createElement('table');
-            table.className = 'print-table';
-            table.innerHTML = `
-                <thead>
-                    <tr>
-                        <th>Student Name</th>
-                        <th>Student Number</th>
-                        <th>Section</th>
-                        <th>Type</th>
-                        <th>Date</th>
-                        <th>Time</th>
-                        <th>Status</th>
-                        <th>Tracked By</th>
-                        <th>Notes</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${recentTracking.map(tracking => `
-                        <tr>
-                            <td>${tracking.student?.name || 'N/A'}</td>
-                            <td>${tracking.student?.student_number || 'N/A'}</td>
-                            <td>${tracking.student?.section || 'N/A'}</td>
-                            <td>${tracking.type === 'call' ? 'Call' : 'Home Visit'}</td>
-                            <td>${tracking.date || 'N/A'}</td>
-                            <td>${tracking.time || 'N/A'}</td>
-                            <td>${(tracking.status || 'pending').charAt(0).toUpperCase() + (tracking.status || 'pending').slice(1).replace('_', ' ')}</td>
-                            <td>${tracking.tracked_by || 'N/A'}</td>
-                            <td>${tracking.notes || 'N/A'}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            `;
-            
-            const p6Div = printSection.querySelector('.p-6');
-            if (p6Div) {
-                p6Div.appendChild(table);
-            }
-        }
-        
-        // Trigger print
+
+        const root = document.createElement('div');
+        root.id = printRootId;
+
+        const heading = document.createElement('div');
+        heading.style.display = 'flex';
+        heading.style.alignItems = 'baseline';
+        heading.style.justifyContent = 'space-between';
+        heading.style.marginBottom = '10px';
+
+        const title = document.createElement('div');
+        title.textContent = 'Super Admin Tracking Records (Recent)';
+        title.style.fontWeight = '700';
+        title.style.fontSize = '16px';
+
+        const meta = document.createElement('div');
+        meta.textContent = `Generated: ${new Date().toLocaleString()} • Records: ${recentTracking?.length || 0}`;
+        meta.style.fontSize = '12px';
+        meta.style.color = '#374151';
+
+        heading.appendChild(title);
+        heading.appendChild(meta);
+        root.appendChild(heading);
+
+        const table = document.createElement('table');
+
+        const colgroup = document.createElement('colgroup');
+        // Name, Number, Section, Type, Date, Time, Status, Tracked By, Notes
+        const colWidths = ['14%', '10%', '10%', '7%', '9%', '7%', '9%', '10%', '24%'];
+        colWidths.forEach((w) => {
+            const col = document.createElement('col');
+            col.style.width = w;
+            colgroup.appendChild(col);
+        });
+        table.appendChild(colgroup);
+
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        [
+            'Student Name',
+            'Student Number',
+            'Section',
+            'Type',
+            'Date',
+            'Time',
+            'Status',
+            'Tracked By',
+            'Notes',
+        ].forEach((label) => {
+            const th = document.createElement('th');
+            th.textContent = label;
+            headRow.appendChild(th);
+        });
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        (recentTracking || []).forEach((tracking) => {
+            const tr = document.createElement('tr');
+            const status = tracking?.status || 'pending';
+            const statusLabel = status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ');
+
+            const values = [
+                tracking?.student?.name || 'N/A',
+                tracking?.student?.student_number || 'N/A',
+                tracking?.student?.section || 'N/A',
+                tracking?.type === 'call' ? 'Call' : 'Home Visit',
+                tracking?.date || 'N/A',
+                tracking?.time || 'N/A',
+                statusLabel,
+                tracking?.tracked_by || 'N/A',
+                tracking?.notes || 'N/A',
+            ];
+
+            values.forEach((value) => {
+                const td = document.createElement('td');
+                td.textContent = String(value ?? '');
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        root.appendChild(table);
+
+        document.body.appendChild(root);
+        window.addEventListener('afterprint', cleanup);
+
         window.print();
-        
-        // Clean up after printing
-        setTimeout(() => {
-            const printTable = document.querySelector('.print-table');
-            if (printTable) {
-                printTable.remove();
-            }
-            document.head.removeChild(style);
-        }, 1000);
+        setTimeout(cleanup, 3000);
     };
 
     const renderManagement = () => {
+        const attentionTotal = studentsNeedingCalls?.length || 0;
+        const attentionLastPage = Math.max(1, Math.ceil(attentionTotal / attentionPerPage));
+        const attentionStartIdx = (attentionCurrentPage - 1) * attentionPerPage;
+        const attentionEndIdx = attentionStartIdx + attentionPerPage;
+        const paginatedAttentionStudents = (studentsNeedingCalls || []).slice(attentionStartIdx, attentionEndIdx);
+
         return (
             <div className="space-y-6">
                 {/* Header */}
@@ -1661,8 +1661,8 @@ export default function SystemAdmin({
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                                {studentsNeedingCalls.length > 0 ? (
-                                    studentsNeedingCalls.map((student) => (
+                                {paginatedAttentionStudents.length > 0 ? (
+                                    paginatedAttentionStudents.map((student) => (
                                         <tr key={student.id} className="hover:bg-gray-50/50 transition-colors">
                                             <td className="px-4 py-3.5">
                                                 <div className="font-medium text-gray-900 text-sm">{student.name}</div>
@@ -1783,6 +1783,51 @@ export default function SystemAdmin({
                             </tbody>
                         </table>
                     </div>
+
+                    {/* Pagination (10 per page) */}
+                    {attentionLastPage > 1 && (
+                        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100">
+                            <div className="text-xs text-gray-600">
+                                Showing {attentionStartIdx + 1} to {Math.min(attentionEndIdx, attentionTotal)} of {attentionTotal} students
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setAttentionCurrentPage((p) => Math.max(1, p - 1))}
+                                    disabled={attentionCurrentPage === 1}
+                                    className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    Previous
+                                </button>
+                                <div className="flex items-center gap-1">
+                                    {Array.from({ length: attentionLastPage }, (_, i) => i + 1)
+                                        .slice(
+                                            Math.max(0, attentionCurrentPage - 3),
+                                            Math.max(0, attentionCurrentPage - 3) + 5
+                                        )
+                                        .map((pageNum) => (
+                                            <button
+                                                key={pageNum}
+                                                onClick={() => setAttentionCurrentPage(pageNum)}
+                                                className={`px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                                                    attentionCurrentPage === pageNum
+                                                        ? 'bg-blue-600 text-white'
+                                                        : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                                                }`}
+                                            >
+                                                {pageNum}
+                                            </button>
+                                        ))}
+                                </div>
+                                <button
+                                    onClick={() => setAttentionCurrentPage((p) => Math.min(attentionLastPage, p + 1))}
+                                    disabled={attentionCurrentPage === attentionLastPage}
+                                    className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Tracking Records with Tabs */}
@@ -1793,7 +1838,7 @@ export default function SystemAdmin({
                             <div className="flex items-center gap-2">
                                 <button
                                     onClick={handleExportTracking}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg transition-colors text-xs font-medium"
+                                    className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-4 focus:ring-blue-500/20"
                                     title={`Export ${trackingTab} tracking records`}
                                 >
                                     <Download className="h-3.5 w-3.5" />
@@ -1803,7 +1848,6 @@ export default function SystemAdmin({
                                 <button
                                     onClick={() => {
                                         setTrackingTab('recent');
-                                        fetchTrackingRecords(1, trackingFilters);
                                     }}
                                     className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                                         trackingTab === 'recent'
@@ -1816,7 +1860,6 @@ export default function SystemAdmin({
                                 <button
                                     onClick={() => {
                                         setTrackingTab('archived');
-                                        fetchTrackingRecords(1, trackingFilters);
                                     }}
                                     className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                                         trackingTab === 'archived'
@@ -1928,8 +1971,24 @@ export default function SystemAdmin({
                             </div>
                         ) : (
                         <div className="space-y-2">
-                                {(trackingTab === 'recent' ? recentTrackingData : archivedTracking).length > 0 ? (
-                                    (trackingTab === 'recent' ? recentTrackingData : archivedTracking).map((tracking) => (
+                                {(() => {
+                                    const list =
+                                        trackingTab === 'recent'
+                                            ? recentTrackingData
+                                            : trackingTab === 'archived'
+                                            ? archivedTracking
+                                            : deletedTracking;
+                                    return list;
+                                })().length > 0 ? (
+                                    (() => {
+                                        const list =
+                                            trackingTab === 'recent'
+                                                ? recentTrackingData
+                                                : trackingTab === 'archived'
+                                                ? archivedTracking
+                                                : deletedTracking;
+                                        return list;
+                                    })().map((tracking) => (
                                     <div key={tracking.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:border-gray-200 hover:bg-gray-50/50 transition-all">
                                         <div className="flex items-center gap-3">
                                             <div className={`p-1.5 rounded-lg ${tracking.type === 'call' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'}`}>
@@ -2293,163 +2352,163 @@ export default function SystemAdmin({
 
                 {/* View Tracking Modal */}
                 {showViewTrackingModal && viewingTracking && (
-                    <div className="fixed top-0 left-0 right-0 bottom-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] overflow-y-auto">
-                        <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full my-8 mx-4 max-h-[90vh] overflow-y-auto">
-                            <div className="px-6 py-5 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
-                                <h3 className="text-xl font-semibold text-gray-900">Tracking Record Details</h3>
-                                <div className="flex items-center gap-3">
-                                    {viewingTracking.can_edit && (
-                                        <>
-                                            <button
-                                                onClick={() => {
-                                                    if (confirm('Are you sure you want to archive this tracking record?')) {
-                                                        router.post(route('super.management.archive-tracking', viewingTracking.id), {}, {
-                                                            preserveScroll: true,
-                                                            onSuccess: () => {
-                                                                setShowViewTrackingModal(false);
-                                                                setViewingTracking(null);
-                                                                router.reload();
-                                                            },
-                                                            onError: () => {
-                                                                alert('Failed to archive tracking record');
-                                                            }
-                                                        });
-                                                    }
-                                                }}
-                                                className="relative group p-2 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 rounded-md transition-colors"
-                                                title="Archive"
-                                            >
-                                                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                                                </svg>
-                                                <span className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                                                    Archive
-                                                </span>
-                                            </button>
-                                        </>
-                                    )}
-                                    <button
-                                        onClick={() => {
-                                            setShowViewTrackingModal(false);
-                                            setViewingTracking(null);
-                                        }}
-                                        className="text-gray-400 hover:text-gray-600 transition-colors p-2"
-                                    >
-                                        <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
-                                    </button>
-                            </div>
-                            </div>
-                            <div className="p-6">
-                                <div className="grid grid-cols-2 gap-6">
-                                    {/* Left Column - Student Information */}
-                                    <div className="space-y-5">
-                                        <div className="bg-gray-50 rounded-lg p-5">
-                                            <h4 className="font-semibold text-gray-900 mb-4 text-base">Student Information</h4>
-                                            <div className="space-y-3 text-sm">
-                                        <div>
-                                                    <p className="text-gray-600 mb-1">Name</p>
-                                            <p className="font-medium text-gray-900">{viewingTracking.student.name}</p>
-                                        </div>
-                                        <div>
-                                                    <p className="text-gray-600 mb-1">Student Number</p>
-                                            <p className="font-medium text-gray-900">{viewingTracking.student.student_number}</p>
-                                        </div>
-                                        <div>
-                                                    <p className="text-gray-600 mb-1">Section</p>
-                                            <p className="font-medium text-gray-900">{viewingTracking.student.section}</p>
-                                        </div>
-                                        <div>
-                                                    <p className="text-gray-600 mb-1">Department</p>
-                                            <p className="font-medium text-gray-900">{viewingTracking.student.department}</p>
-                                        </div>
-                                        <div>
-                                                    <p className="text-gray-600 mb-1">Program</p>
-                                            <p className="font-medium text-gray-900">{viewingTracking.student.program}</p>
-                                        </div>
-                                    </div>
+                    <div
+                        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 sm:p-6 overflow-y-auto"
+                        onClick={(e) => {
+                            if (e.target === e.currentTarget) {
+                                setShowViewTrackingModal(false);
+                                setViewingTracking(null);
+                            }
+                        }}
+                    >
+                        <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl ring-1 ring-black/5">
+                            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-gray-200 bg-white px-5 py-4 sm:px-6">
+                                <div>
+                                    <h3 className="text-lg sm:text-xl font-bold text-gray-900">Tracking Record Details</h3>
+                                    <p className="mt-0.5 text-sm text-gray-500">
+                                        {viewingTracking.student?.name} • {viewingTracking.student?.student_number}
+                                    </p>
                                 </div>
+                                <button
+                                    onClick={() => {
+                                        setShowViewTrackingModal(false);
+                                        setViewingTracking(null);
+                                    }}
+                                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus:ring-4 focus:ring-blue-500/10"
+                                    aria-label="Close"
+                                >
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
 
-                                        {/* Tracking Details */}
-                                        <div className="bg-gray-50 rounded-lg p-5">
-                                            <h4 className="font-semibold text-gray-900 mb-4 text-base">Tracking Details</h4>
-                                            <div className="space-y-3 text-sm">
-                                        <div>
-                                                    <p className="text-gray-600 mb-1">Type</p>
-                                            <p className="font-medium text-gray-900 capitalize">{viewingTracking.type.replace('_', ' ')}</p>
-                                        </div>
-                                        <div>
-                                                    <p className="text-gray-600 mb-1">Status</p>
-                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(viewingTracking.status)}`}>
-                                                {viewingTracking.status}
-                                            </span>
-                                        </div>
-                                        <div>
-                                                    <p className="text-gray-600 mb-1">Date</p>
-                                            <p className="font-medium text-gray-900">{viewingTracking.date}</p>
-                                        </div>
-                                        {viewingTracking.time && (
-                                            <div>
-                                                        <p className="text-gray-600 mb-1">Time</p>
-                                                <p className="font-medium text-gray-900">{viewingTracking.time}</p>
-                                            </div>
-                                        )}
-                                        <div>
-                                                    <p className="text-gray-600 mb-1">Tracked By</p>
-                                            <p className="font-medium text-gray-900">{viewingTracking.tracked_by}</p>
-                                        </div>
-                                        {viewingTracking.follow_up_date && (
-                                            <div>
-                                                        <p className="text-gray-600 mb-1">Follow-up Date</p>
-                                                <p className="font-medium text-gray-900">{viewingTracking.follow_up_date}</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                        </div>
-
-                                        {/* Timestamps */}
-                                        <div className="bg-gray-50 rounded-lg p-5">
-                                            <h4 className="font-semibold text-gray-900 mb-4 text-base">Record Information</h4>
-                                            <div className="space-y-3 text-sm">
+                            <div className="p-5 sm:p-6">
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                                    <div className="space-y-5">
+                                        <div className="rounded-xl bg-gray-50 p-4 sm:p-5">
+                                            <h4 className="text-sm font-semibold text-gray-900 mb-3">Student</h4>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                                                 <div>
-                                                    <p className="text-gray-600 mb-1">Created</p>
+                                                    <p className="text-gray-500">Section</p>
+                                                    <p className="font-medium text-gray-900">{viewingTracking.student.section}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-gray-500">Department</p>
+                                                    <p className="font-medium text-gray-900">{viewingTracking.student.department}</p>
+                                                </div>
+                                                <div className="sm:col-span-2">
+                                                    <p className="text-gray-500">Program</p>
+                                                    <p className="font-medium text-gray-900">{viewingTracking.student.program}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="rounded-xl bg-gray-50 p-4 sm:p-5">
+                                            <h4 className="text-sm font-semibold text-gray-900 mb-3">Tracking</h4>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                                <div>
+                                                    <p className="text-gray-500">Type</p>
+                                                    <p className="font-medium text-gray-900 capitalize">{viewingTracking.type.replace('_', ' ')}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-gray-500">Status</p>
+                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(viewingTracking.status)}`}>
+                                                        {viewingTracking.status}
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <p className="text-gray-500">Date</p>
+                                                    <p className="font-medium text-gray-900">{viewingTracking.date}</p>
+                                                </div>
+                                                {viewingTracking.time ? (
+                                                    <div>
+                                                        <p className="text-gray-500">Time</p>
+                                                        <p className="font-medium text-gray-900">{viewingTracking.time}</p>
+                                                    </div>
+                                                ) : (
+                                                    <div>
+                                                        <p className="text-gray-500">Time</p>
+                                                        <p className="font-medium text-gray-400">—</p>
+                                                    </div>
+                                                )}
+                                                <div className="sm:col-span-2">
+                                                    <p className="text-gray-500">Tracked By</p>
+                                                    <p className="font-medium text-gray-900">{viewingTracking.tracked_by}</p>
+                                                </div>
+                                                {viewingTracking.follow_up_date && (
+                                                    <div className="sm:col-span-2">
+                                                        <p className="text-gray-500">Follow-up Date</p>
+                                                        <p className="font-medium text-gray-900">{viewingTracking.follow_up_date}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="rounded-xl bg-gray-50 p-4 sm:p-5">
+                                            <h4 className="text-sm font-semibold text-gray-900 mb-3">Record</h4>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                                <div>
+                                                    <p className="text-gray-500">Created</p>
                                                     <p className="font-medium text-gray-900">{viewingTracking.created_at}</p>
                                                 </div>
                                                 <div>
-                                                    <p className="text-gray-600 mb-1">Last Updated</p>
+                                                    <p className="text-gray-500">Updated</p>
                                                     <p className="font-medium text-gray-900">{viewingTracking.updated_at}</p>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* Right Column - Notes and Additional Information */}
-                                    <div className="space-y-5">
-                                    {viewingTracking.notes && (
-                                        <div>
-                                                <h4 className="font-semibold text-gray-900 mb-3 text-base">Notes</h4>
-                                                <p className="text-gray-900 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg border border-gray-200 min-h-[120px]">{viewingTracking.notes}</p>
-                                        </div>
-                                    )}
-                                        {!viewingTracking.notes && (
-                                            <div className="flex items-center justify-center h-full text-gray-400">
-                                                <p className="text-sm">No additional notes or information</p>
-                                        </div>
+                                    <div className="space-y-3">
+                                        <h4 className="text-sm font-semibold text-gray-900">Notes</h4>
+                                        {viewingTracking.notes ? (
+                                            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-900 whitespace-pre-wrap max-h-[320px] overflow-y-auto">
+                                                {viewingTracking.notes}
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center justify-center rounded-xl border border-dashed border-gray-200 bg-white p-8 text-sm text-gray-400">
+                                                No notes added.
+                                            </div>
                                         )}
-                                        </div>
                                     </div>
                                 </div>
-                            <div className="px-6 py-5 border-t border-gray-200 flex justify-end">
-                                <button
-                                    onClick={() => {
-                                        setShowViewTrackingModal(false);
-                                        setViewingTracking(null);
-                                    }}
-                                    className="px-6 py-2.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors font-medium"
-                                >
-                                    Close
-                                </button>
+                            </div>
+
+                            <div className="sticky bottom-0 border-t border-gray-200 bg-white px-5 py-4 sm:px-6">
+                                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                                    <button
+                                        onClick={() => {
+                                            setShowViewTrackingModal(false);
+                                            setViewingTracking(null);
+                                        }}
+                                        className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-4 focus:ring-blue-500/10"
+                                    >
+                                        Close
+                                    </button>
+                                    {viewingTracking.can_edit && (
+                                        <button
+                                            onClick={() => {
+                                                if (confirm('Are you sure you want to archive this tracking record?')) {
+                                                    router.post(route('super.management.archive-tracking', viewingTracking.id), {}, {
+                                                        preserveScroll: true,
+                                                        onSuccess: () => {
+                                                            setShowViewTrackingModal(false);
+                                                            setViewingTracking(null);
+                                                            router.reload();
+                                                        },
+                                                        onError: () => {
+                                                            alert('Failed to archive tracking record');
+                                                        }
+                                                    });
+                                                }
+                                            }}
+                                            className="inline-flex items-center justify-center rounded-xl bg-yellow-500 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-yellow-600 focus:outline-none focus:ring-4 focus:ring-yellow-500/20"
+                                        >
+                                            Archive Record
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -3201,117 +3260,156 @@ export default function SystemAdmin({
     };
 
     const handleExportStudents = () => {
-        // Add print styles to the page
+        const studentsToExport = filteredStudents?.length ? filteredStudents : (localStudents || []);
+
+        const printRootId = 'super-students-print-root';
+        const styleId = 'super-students-print-style';
+
+        const cleanup = () => {
+            const existingRoot = document.getElementById(printRootId);
+            if (existingRoot) existingRoot.remove();
+            const existingStyle = document.getElementById(styleId);
+            if (existingStyle) existingStyle.remove();
+            window.removeEventListener('afterprint', cleanup);
+        };
+
+        cleanup();
+
         const style = document.createElement('style');
+        style.id = styleId;
         style.textContent = `
             @media print {
-                @page {
-                    margin: 0.3cm;
-                    size: A4 landscape;
+                @page { size: A4 landscape; margin: 0.3cm; }
+                html, body { height: auto !important; }
+                body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+                body * { display: none !important; }
+
+                #${printRootId} {
+                    display: block !important;
+                    position: static !important;
+                    width: 100% !important;
+                    padding: 12px 16px !important;
+                    background: #fff !important;
                 }
-                @page:blank {
-                    display: none;
+
+                #${printRootId} * { display: revert !important; }
+
+                #${printRootId} table {
+                    display: table !important;
+                    width: 100% !important;
+                    border-collapse: collapse !important;
+                    table-layout: fixed !important;
+                    font-size: 12px !important;
                 }
-                * {
-                    overflow: visible !important;
+                #${printRootId} thead { display: table-header-group !important; }
+                #${printRootId} tbody { display: table-row-group !important; }
+                #${printRootId} tr { display: table-row !important; page-break-inside: avoid; }
+                #${printRootId} th, #${printRootId} td {
+                    display: table-cell !important;
+                    border: 1px solid #000 !important;
+                    padding: 6px 8px !important;
+                    text-align: left !important;
+                    vertical-align: top !important;
+                    word-break: break-word !important;
                 }
-                body {
-                    overflow: visible !important;
-                }
-                body * {
-                    visibility: hidden;
-                }
-                .print-section, .print-section * {
-                    visibility: visible;
-                }
-                .print-section {
-                    position: relative;
-                    width: 100%;
-                    display: block;
-                }
-                .print-section * {
-                    overflow: visible !important;
-                }
-                .print-section button,
-                .print-section .no-print,
-                .print-section .sticky,
-                .print-section .flex.items-center.space-x-1,
-                .print-section .border-t,
-                .print-section .bg-gray-50,
-                .print-section .text-xs.text-gray-600,
-                .print-section .flex.items-center.justify-between,
-                .print-section .px-6.py-4,
-                .print-section .border-b {
-                    display: none !important;
-                }
-                .print-section .p-6,
-                .print-section .overflow-x-auto {
-                    width: 100%;
-                    max-width: 100%;
-                    margin: 0;
-                    padding: 15px;
-                }
-                .print-section table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    font-size: 16px;
-                    margin: 0;
-                    table-layout: auto;
-                }
-                .print-section th,
-                .print-section td {
-                    padding: 12px 14px;
-                    border: 1px solid #000;
-                    text-align: left;
-                    word-wrap: break-word;
-                    vertical-align: top;
-                    line-height: 1.6;
-                    font-size: 16px;
-                    page-break-inside: avoid;
-                }
-                .print-section th {
-                    background-color: #f3f4f6 !important;
-                    font-weight: bold;
-                    -webkit-print-color-adjust: exact;
-                    print-color-adjust: exact;
-                    font-size: 17px;
-                    padding: 14px;
-                    text-align: center;
-                }
-                .print-section thead {
-                    display: table-header-group;
-                }
-                .print-section thead tr {
-                    page-break-after: avoid;
-                    page-break-inside: avoid;
-                }
-                .print-section tbody {
-                    page-break-inside: avoid;
-                }
-                .print-section tbody tr {
-                    page-break-inside: avoid;
-                    page-break-after: auto;
-                }
-                .print-section tbody td {
-                    page-break-inside: avoid;
-                }
-                .print-section tbody tr:last-child {
-                    page-break-after: auto;
-                }
-                .print-section tbody td:last-child {
-                    display: none;
+                #${printRootId} th {
+                    background: #f3f4f6 !important;
+                    font-weight: 700 !important;
+                    text-align: center !important;
                 }
             }
         `;
         document.head.appendChild(style);
-        
-        // Trigger print
+
+        const root = document.createElement('div');
+        root.id = printRootId;
+
+        const heading = document.createElement('div');
+        heading.style.display = 'flex';
+        heading.style.alignItems = 'baseline';
+        heading.style.justifyContent = 'space-between';
+        heading.style.marginBottom = '10px';
+
+        const title = document.createElement('div');
+        title.textContent = 'Super Admin Students Export';
+        title.style.fontWeight = '700';
+        title.style.fontSize = '16px';
+
+        const meta = document.createElement('div');
+        meta.textContent = `Generated: ${new Date().toLocaleString()} • Students: ${studentsToExport?.length || 0}`;
+        meta.style.fontSize = '12px';
+        meta.style.color = '#374151';
+
+        heading.appendChild(title);
+        heading.appendChild(meta);
+        root.appendChild(heading);
+
+        const table = document.createElement('table');
+
+        const colgroup = document.createElement('colgroup');
+        // Student ID, Name, Email, Phone, Section, Program, Department, Year, Status, Absences
+        const colWidths = ['10%', '14%', '16%', '8%', '9%', '11%', '11%', '7%', '7%', '7%'];
+        colWidths.forEach((w) => {
+            const col = document.createElement('col');
+            col.style.width = w;
+            colgroup.appendChild(col);
+        });
+        table.appendChild(colgroup);
+
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        ['Student ID', 'Name', 'Email', 'Phone', 'Section', 'Program', 'Department', 'Year', 'Status', 'Absences'].forEach((label) => {
+            const th = document.createElement('th');
+            th.textContent = label;
+            headRow.appendChild(th);
+        });
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        (studentsToExport || []).forEach((student) => {
+            const tr = document.createElement('tr');
+
+            const absenceCount = (() => {
+                if ((student.attendance_status === 'PNS' || student.status === 'PNS') && (!student.absence_count || student.absence_count === 0)) {
+                    return 8;
+                }
+                if ((student.attendance_status === 'SLIP' || student.status === 'SLIP') && (!student.absence_count || student.absence_count === 0)) {
+                    return 4;
+                }
+                return student.absence_count || 0;
+            })();
+
+            const values = [
+                student.student_id || student.student_number || '',
+                student.name || `${student.first_name || ''} ${student.last_name || ''}`.trim(),
+                student.email || 'N/A',
+                student.phone || 'N/A',
+                student.section?.name || (typeof student.section === 'string' ? student.section : 'N/A'),
+                student.section?.program?.name || (typeof student.program === 'string' ? student.program : 'N/A'),
+                student.department?.name || student.section?.program?.department?.name || 'N/A',
+                student.year_level || 'N/A',
+                student.attendance_status === 'PNS' ? 'Probable No-Show' : (student.attendance_status || 'N/A'),
+                absenceCount,
+            ];
+
+            values.forEach((value) => {
+                const td = document.createElement('td');
+                td.textContent = String(value ?? '');
+                tr.appendChild(td);
+            });
+
+            tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
+        root.appendChild(table);
+        document.body.appendChild(root);
+
+        window.addEventListener('afterprint', cleanup);
         window.print();
-        
-        // Remove the style after printing
-        setTimeout(() => {
-            document.head.removeChild(style);
-        }, 1000);
+        setTimeout(cleanup, 3000);
     };
 
     const renderTeachers = () => {
@@ -3503,7 +3601,7 @@ export default function SystemAdmin({
                                 </button>
                                 <button
                                     onClick={handleExportStudents}
-                                    className="bg-gradient-to-r from-purple-500 to-purple-600 text-white px-6 py-3 rounded-xl hover:from-purple-600 hover:to-purple-700 transition-all duration-300 font-medium flex items-center"
+                                    className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-3 rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 font-bold flex items-center focus:outline-none focus:ring-4 focus:ring-blue-500/20"
                                 >
                                     <Download className="h-4 w-4 mr-2" />
                                     Export

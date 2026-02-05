@@ -26,6 +26,9 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 	const [deactivatedUsers, setDeactivatedUsers] = useState([]);
 	const [isLoadingDeactivated, setIsLoadingDeactivated] = useState(false);
 
+	// Only Admin + CSDL can be created/promoted from this screen (never Super Admin).
+	const allowedRoleOptions = (roles || []).filter((r) => ['Admin', 'CSDL'].includes(r));
+
 	const submitCreate = (e) => {
 		e.preventDefault();
 		post(route('super.users.store'), {
@@ -43,10 +46,11 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 	
 	const handleEdit = (user) => {
 		setEditingUser(user);
+		const currentRole = user.roles?.[0]?.name || 'Admin';
 		editForm.setData({
 			name: user.name || '',
 			email: user.email || '',
-			role: user.roles?.[0]?.name || 'Admin',
+			role: currentRole,
 			department_id: user.department_id || '',
 			optional_department_id: user.optional_department_id || '',
 		});
@@ -201,7 +205,7 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 										value={data.role} 
 										onChange={(e) => setData('role', e.target.value)}
 									>
-										{roles.map((r) => <option key={r} value={r}>{r}</option>)}
+										{allowedRoleOptions.map((r) => <option key={r} value={r}>{r}</option>)}
 									</select>
 								</div>
 								<div>
@@ -430,25 +434,31 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 					
 					{/* Edit User Modal */}
 					{showEditModal && editingUser && (
-						<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-							<div className="bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
-								<div className="px-6 py-5 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
-									<h3 className="text-xl font-semibold text-gray-900">Edit User</h3>
+						<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-6">
+							<div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/5 max-h-[90vh] overflow-y-auto">
+								<div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-6 py-5">
+									<div>
+										<h3 className="text-xl font-bold text-gray-900">Edit User</h3>
+										<p className="mt-0.5 text-sm text-gray-500">Update account details and permissions.</p>
+									</div>
 									<button
 										onClick={() => {
 											setShowEditModal(false);
 											setEditingUser(null);
 											editForm.reset();
 										}}
-										className="text-gray-400 hover:text-gray-600"
+										className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus:ring-4 focus:ring-brand-primary/10"
+										aria-label="Close"
 									>
 										<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
 										</svg>
 									</button>
 								</div>
-								<form onSubmit={submitEdit} className="p-6 space-y-4">
-									<div>
+								<form onSubmit={submitEdit}>
+									<div className="p-6">
+										<div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+											<div className="sm:col-span-2">
 										<label className="block text-sm font-semibold text-gray-700 mb-2">Full Name</label>
 										<input 
 											className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-gray-900 shadow-sm outline-none ring-0 transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10" 
@@ -458,7 +468,7 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 											required
 										/>
 									</div>
-									<div>
+											<div className="sm:col-span-2">
 										<label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
 										<input 
 											className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-gray-900 shadow-sm outline-none ring-0 transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10" 
@@ -469,17 +479,26 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 											required
 										/>
 									</div>
-									<div>
+											<div className="sm:col-span-1">
 										<label className="block text-sm font-semibold text-gray-700 mb-2">Role</label>
-										<select 
-											className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-gray-900 shadow-sm outline-none ring-0 transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10" 
-											value={editForm.data.role} 
-											onChange={(e) => editForm.setData('role', e.target.value)}
-										>
-											{roles.map((r) => <option key={r} value={r}>{r}</option>)}
-										</select>
+										{(editingUser.roles?.[0]?.name === 'Super Admin') ? (
+											<div className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-gray-700 shadow-sm">
+												<div className="flex items-center justify-between">
+													<span className="font-semibold">Super Admin</span>
+													<span className="text-xs font-medium text-gray-500">Protected</span>
+												</div>
+											</div>
+										) : (
+											<select 
+												className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-gray-900 shadow-sm outline-none ring-0 transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10" 
+												value={editForm.data.role} 
+												onChange={(e) => editForm.setData('role', e.target.value)}
+											>
+												{allowedRoleOptions.map((r) => <option key={r} value={r}>{r}</option>)}
+											</select>
+										)}
 									</div>
-									<div>
+											<div className="sm:col-span-1">
 										<label className="block text-sm font-semibold text-gray-700 mb-2">Department</label>
 										<select 
 											className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-gray-900 shadow-sm outline-none ring-0 transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10" 
@@ -492,7 +511,7 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 											))}
 										</select>
 									</div>
-									<div>
+											<div className="sm:col-span-2">
 										<label className="block text-sm font-semibold text-gray-700 mb-2">Optional Department</label>
 										<select 
 											className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-gray-900 shadow-sm outline-none ring-0 transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10" 
@@ -505,7 +524,10 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 											))}
 										</select>
 									</div>
-									<div className="flex justify-end space-x-3 pt-4">
+										</div>
+									</div>
+									<div className="sticky bottom-0 border-t border-gray-200 bg-white px-6 py-4">
+										<div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
 										<button
 											type="button"
 											onClick={() => {
@@ -513,17 +535,18 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 												setEditingUser(null);
 												editForm.reset();
 											}}
-											className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+											className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-3 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-4 focus:ring-brand-primary/10"
 										>
 											Cancel
 										</button>
 										<button
 											type="submit"
 											disabled={editForm.processing}
-											className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+											className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-brand-primary to-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-lg transition hover:from-brand-primary/90 hover:to-emerald-600/90 focus:outline-none focus:ring-4 focus:ring-brand-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
 										>
 											{editForm.processing ? 'Saving...' : 'Save Changes'}
 										</button>
+									</div>
 									</div>
 								</form>
 							</div>

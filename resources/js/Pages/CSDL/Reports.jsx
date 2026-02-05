@@ -168,39 +168,48 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
         style.textContent = `
             @media print {
                 @page { size: A4 landscape; margin: 0.3cm; }
-                html, body { height: auto; }
+                html, body { height: auto !important; }
                 body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                body * { visibility: hidden; }
-                #${printRootId}, #${printRootId} * { visibility: visible; }
+
+                /* Critical: remove the app from layout so the browser doesn't paginate invisible content */
+                body * { display: none !important; }
+
                 #${printRootId} {
-                    position: fixed;
-                    left: 0;
-                    top: 0;
-                    width: 100%;
-                    padding: 12px 16px;
-                    background: #fff;
+                    display: block !important;
+                    position: static !important; /* fixed elements can repeat on every printed page */
+                    width: 100% !important;
+                    padding: 12px 16px !important;
+                    background: #fff !important;
                 }
+
+                /* Re-enable display for print root contents */
+                #${printRootId} * { display: revert !important; }
+
+                /* Restore display types for table elements */
                 #${printRootId} table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    table-layout: fixed;
-                    font-size: 14px;
+                    display: table !important;
+                    width: 100% !important;
+                    border-collapse: collapse !important;
+                    table-layout: fixed !important;
+                    font-size: 14px !important;
                 }
+                #${printRootId} thead { display: table-header-group !important; }
+                #${printRootId} tbody { display: table-row-group !important; }
+                #${printRootId} tr { display: table-row !important; page-break-inside: avoid; }
                 #${printRootId} th, #${printRootId} td {
-                    border: 1px solid #000;
-                    padding: 8px 10px;
-                    text-align: left;
-                    vertical-align: top;
-                    word-break: break-word;
+                    display: table-cell !important;
+                    border: 1px solid #000 !important;
+                    padding: 8px 10px !important;
+                    text-align: left !important;
+                    vertical-align: top !important;
+                    word-break: break-word !important;
                 }
                 #${printRootId} th {
-                    background: #f3f4f6;
-                    font-weight: 700;
-                    text-align: center;
-                    font-size: 15px;
+                    background: #f3f4f6 !important;
+                    font-weight: 700 !important;
+                    text-align: center !important;
+                    font-size: 15px !important;
                 }
-                #${printRootId} thead { display: table-header-group; }
-                #${printRootId} tr { page-break-inside: avoid; }
             }
         `;
         document.head.appendChild(style);
@@ -322,7 +331,7 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
                     <div className="flex items-center space-x-2">
                         <button 
                             onClick={handleExportReport}
-                            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                            className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-4 focus:ring-blue-500/10"
                         >
                             <Download className="h-4 w-4" />
                             Export

@@ -180,138 +180,157 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsS
             alert('Only recent tracking records can be exported. Please switch to the Recent tab.');
             return;
         }
-        
-        // Add print styles to the page
+
+        // Print from a dedicated root (prevents duplicates caused by printing the live page).
+        const printRootId = 'admin-tracking-print-root';
+        const styleId = 'admin-tracking-print-style';
+
+        const cleanup = () => {
+            const existingRoot = document.getElementById(printRootId);
+            if (existingRoot) existingRoot.remove();
+            const existingStyle = document.getElementById(styleId);
+            if (existingStyle) existingStyle.remove();
+            window.removeEventListener('afterprint', cleanup);
+        };
+
+        cleanup();
+
         const style = document.createElement('style');
+        style.id = styleId;
         style.textContent = `
             @media print {
-                @page {
-                    margin: 1cm 1.5cm;
-                    size: A4 landscape;
+                @page { size: A4 landscape; margin: 0.3cm; }
+                html, body { height: auto !important; }
+                body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+                body * { display: none !important; }
+
+                #${printRootId} {
+                    display: block !important;
+                    position: static !important;
+                    width: 100% !important;
+                    padding: 12px 16px !important;
+                    background: #fff !important;
                 }
-                body * {
-                    visibility: hidden;
+
+                #${printRootId} * { display: revert !important; }
+
+                #${printRootId} table {
+                    display: table !important;
+                    width: 100% !important;
+                    border-collapse: collapse !important;
+                    table-layout: fixed !important;
+                    font-size: 13px !important;
                 }
-                .print-section, .print-section * {
-                    visibility: visible;
+                #${printRootId} thead { display: table-header-group !important; }
+                #${printRootId} tbody { display: table-row-group !important; }
+                #${printRootId} tr { display: table-row !important; page-break-inside: avoid; }
+                #${printRootId} th, #${printRootId} td {
+                    display: table-cell !important;
+                    border: 1px solid #000 !important;
+                    padding: 8px 10px !important;
+                    text-align: left !important;
+                    vertical-align: top !important;
+                    word-break: break-word !important;
                 }
-                .print-section {
-                    position: absolute;
-                    left: 0;
-                    top: 0;
-                    width: 100%;
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
-                }
-                .print-section .space-y-4 > div {
-                    display: none;
-                }
-                .print-section .p-6 {
-                    width: 100%;
-                    max-width: 100%;
-                    margin: 0 auto;
-                    padding: 0;
-                }
-                .print-section table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    font-size: 17px;
-                    margin: 0 auto;
-                    table-layout: fixed;
-                }
-                .print-section th,
-                .print-section td {
-                    padding: 10px 12px;
-                    border: 1px solid #000;
-                    text-align: left;
-                    word-wrap: break-word;
-                    vertical-align: top;
-                    line-height: 1.5;
-                    font-size: 17px;
-                }
-                .print-section th {
-                    background-color: #f3f4f6 !important;
-                    font-weight: bold;
-                    -webkit-print-color-adjust: exact;
-                    print-color-adjust: exact;
-                    font-size: 18px;
-                    padding: 12px;
-                    text-align: center;
-                }
-                .print-section thead {
-                    display: table-header-group;
-                }
-                .print-section tbody tr {
-                    page-break-inside: avoid;
-                    page-break-after: auto;
-                }
-                .no-print {
-                    display: none !important;
+                #${printRootId} th {
+                    background: #f3f4f6 !important;
+                    font-weight: 700 !important;
+                    text-align: center !important;
+                    font-size: 14px !important;
                 }
             }
         `;
         document.head.appendChild(style);
-        
-        // Create a hidden table for printing
-        const printSection = document.querySelector('.print-section');
-        if (printSection && recentTracking.length > 0) {
-            const existingTable = printSection.querySelector('.print-table');
-            if (existingTable) {
-                existingTable.remove();
-            }
-            
-            const table = document.createElement('table');
-            table.className = 'print-table';
-            table.innerHTML = `
-                <thead>
-                    <tr>
-                        <th style="width: 12%;">Student Name</th>
-                        <th style="width: 10%;">Student Number</th>
-                        <th style="width: 10%;">Section</th>
-                        <th style="width: 6%;">Type</th>
-                        <th style="width: 8%;">Date</th>
-                        <th style="width: 7%;">Time</th>
-                        <th style="width: 8%;">Status</th>
-                        <th style="width: 10%;">Tracked By</th>
-                        <th style="width: 29%;">Notes</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${recentTracking.map(tracking => `
-                        <tr>
-                            <td>${tracking.student?.name || 'N/A'}</td>
-                            <td>${tracking.student?.student_number || 'N/A'}</td>
-                            <td>${tracking.student?.section || 'N/A'}</td>
-                            <td>${tracking.type === 'call' ? 'Call' : 'Home Visit'}</td>
-                            <td>${tracking.date || 'N/A'}</td>
-                            <td>${tracking.time || 'N/A'}</td>
-                            <td>${(tracking.status || 'pending').charAt(0).toUpperCase() + (tracking.status || 'pending').slice(1).replace('_', ' ')}</td>
-                            <td>${tracking.tracked_by || 'N/A'}</td>
-                            <td>${tracking.notes || 'N/A'}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            `;
-            
-            const p6Div = printSection.querySelector('.p-6');
-            if (p6Div) {
-                p6Div.appendChild(table);
-            }
-        }
-        
-        // Trigger print
+
+        const root = document.createElement('div');
+        root.id = printRootId;
+
+        const heading = document.createElement('div');
+        heading.style.display = 'flex';
+        heading.style.alignItems = 'baseline';
+        heading.style.justifyContent = 'space-between';
+        heading.style.marginBottom = '10px';
+
+        const title = document.createElement('div');
+        title.textContent = 'Admin Tracking Records (Recent)';
+        title.style.fontWeight = '700';
+        title.style.fontSize = '16px';
+
+        const meta = document.createElement('div');
+        meta.textContent = `Generated: ${new Date().toLocaleString()} • Records: ${recentTracking?.length || 0}`;
+        meta.style.fontSize = '12px';
+        meta.style.color = '#374151';
+
+        heading.appendChild(title);
+        heading.appendChild(meta);
+        root.appendChild(heading);
+
+        const table = document.createElement('table');
+
+        const colgroup = document.createElement('colgroup');
+        // Name, Number, Section, Type, Date, Time, Status, Tracked By, Notes
+        const colWidths = ['14%', '10%', '10%', '7%', '9%', '7%', '9%', '10%', '24%'];
+        colWidths.forEach((w) => {
+            const col = document.createElement('col');
+            col.style.width = w;
+            colgroup.appendChild(col);
+        });
+        table.appendChild(colgroup);
+
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        [
+            'Student Name',
+            'Student Number',
+            'Section',
+            'Type',
+            'Date',
+            'Time',
+            'Status',
+            'Tracked By',
+            'Notes',
+        ].forEach((label) => {
+            const th = document.createElement('th');
+            th.textContent = label;
+            headRow.appendChild(th);
+        });
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        (recentTracking || []).forEach((tracking) => {
+            const tr = document.createElement('tr');
+            const status = tracking?.status || 'pending';
+            const statusLabel = status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ');
+
+            const values = [
+                tracking?.student?.name || 'N/A',
+                tracking?.student?.student_number || 'N/A',
+                tracking?.student?.section || 'N/A',
+                tracking?.type === 'call' ? 'Call' : 'Home Visit',
+                tracking?.date || 'N/A',
+                tracking?.time || 'N/A',
+                statusLabel,
+                tracking?.tracked_by || 'N/A',
+                tracking?.notes || 'N/A',
+            ];
+
+            values.forEach((value) => {
+                const td = document.createElement('td');
+                td.textContent = String(value ?? '');
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        root.appendChild(table);
+
+        document.body.appendChild(root);
+        window.addEventListener('afterprint', cleanup);
+
         window.print();
-        
-        // Clean up after printing
-        setTimeout(() => {
-            const printTable = document.querySelector('.print-table');
-            if (printTable) {
-                printTable.remove();
-            }
-            document.head.removeChild(style);
-        }, 1000);
+        setTimeout(cleanup, 3000);
     };
 
     return (
@@ -580,7 +599,7 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsS
                             <div className="flex items-center gap-2">
                                 <button
                                     onClick={handleExportTracking}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg transition-colors text-xs font-medium"
+                                    className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-4 focus:ring-blue-500/20"
                                     title={`Export ${trackingTab} tracking records`}
                                 >
                                     <Download className="h-3.5 w-3.5" />
