@@ -16,10 +16,14 @@ class UserController extends Controller
 	public function index()
 	{
 		// Exclude users with Teacher role - teachers are managed separately in the Teachers tab
+		// Exclude Super Admin - they don't need to see themselves in the list
 		// Exclude soft-deleted (deactivated) users - they are shown in the Deactivated tab
 		$users = User::with(['roles:name', 'department', 'optionalDepartment'])
 			->whereDoesntHave('roles', function($query) {
 				$query->where('name', 'Teacher');
+			})
+			->whereDoesntHave('roles', function($query) {
+				$query->where('name', 'Super Admin');
 			})
 			->whereNull('deleted_at') // Only show active users
 			->orderBy('name')

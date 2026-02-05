@@ -25,8 +25,7 @@ Optional (recommended):
 - `SESSION_DRIVER=file`
 - `QUEUE_CONNECTION=sync`
 
-### 3) One-time migrations (no shell needed)
-Set:
-- `RUN_MIGRATIONS=true`
-Deploy once, then set it back to `false`.
+### 3) Migrations
+Migrations run automatically on every deploy (`RUN_MIGRATIONS` defaults to `true`).
+Set `RUN_MIGRATIONS=false` only if you run migrations separately (e.g. from CI).
 

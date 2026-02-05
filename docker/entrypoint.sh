@@ -34,8 +34,9 @@ if [ -z "${APP_KEY:-}" ]; then
   exit 1
 fi
 
-# Optionally run migrations on boot (set RUN_MIGRATIONS=true)
-if is_truthy "${RUN_MIGRATIONS:-false}"; then
+# Run migrations on boot by default so new migrations apply on each deploy.
+# Set RUN_MIGRATIONS=false to skip (e.g. if you run them separately).
+if is_truthy "${RUN_MIGRATIONS:-true}"; then
   echo "Running migrations..."
   php artisan migrate --force || true
 fi
