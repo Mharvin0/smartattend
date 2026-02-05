@@ -8,6 +8,7 @@ use App\Notifications\AccountCreatedNotification;
 use App\Services\AuditLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
@@ -170,8 +171,11 @@ class SystemAdminController extends Controller
             ->toArray();
         
         $user = auth()->user();
-        $studentsNeedingCalls = \App\Models\Student::forUser($user)
-            ->whereNull('attention_archived_at')
+        $studentsQuery = \App\Models\Student::forUser($user);
+        if (Schema::hasColumn('students', 'attention_archived_at')) {
+            $studentsQuery->whereNull('attention_archived_at');
+        }
+        $studentsNeedingCalls = $studentsQuery
             ->with(['section.program.department', 'department', 'program', 'studentTracking' => function($query) {
                 // Only show "active" tracking statuses in the Students Needing Attention table
                 // (Status dropdown should only be pending/processing/to_follow).
@@ -343,9 +347,11 @@ class SystemAdminController extends Controller
         ]);
 
         // If the student was previously archived from the attention list, bring them back when we track them again.
-        \App\Models\Student::where('id', $validated['student_id'])->update([
-            'attention_archived_at' => null,
-        ]);
+        if (Schema::hasColumn('students', 'attention_archived_at')) {
+            \App\Models\Student::where('id', $validated['student_id'])->update([
+                'attention_archived_at' => null,
+            ]);
+        }
 
         return redirect()->back()->with('success', 'Student tracking recorded successfully');
     }
@@ -366,9 +372,11 @@ class SystemAdminController extends Controller
             ]);
 
             // If a student was archived from the attention list, bring them back when a status is updated.
-            \App\Models\Student::where('id', $tracking->student_id)->update([
-                'attention_archived_at' => null,
-            ]);
+            if (Schema::hasColumn('students', 'attention_archived_at')) {
+                \App\Models\Student::where('id', $tracking->student_id)->update([
+                    'attention_archived_at' => null,
+                ]);
+            }
 
             return redirect()->back()->with('success', 'Tracking status updated successfully');
         }
@@ -3423,11 +3431,13 @@ class SystemAdminController extends Controller
     public function archiveStudentFromAttention($id)
     {
         $student = \App\Models\Student::findOrFail($id);
-        
+
         // Archive from attention list without mutating Priority (Priority must reflect absences)
-        $student->attention_archived_at = now();
-        $student->save();
-        
+        if (Schema::hasColumn('students', 'attention_archived_at')) {
+            $student->attention_archived_at = now();
+            $student->save();
+        }
+
         // Archive all active tracking records for this student
         \App\Models\StudentTracking::where('student_id', $student->id)
             ->where('archived', false)
