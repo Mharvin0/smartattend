@@ -3,15 +3,31 @@ import { Head, router } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Phone, Home, Users, Calendar, CheckCircle, XCircle, Clock, AlertCircle, Download, ChevronDown } from 'lucide-react';
 
-export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsSentToCSDL = [], recentTracking = [], stats = {}, programs = [] }) {
+export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsSentToCSDL = [], recentTracking = [], stats = {}, programs = [], departments = [] }) {
     const [selectedStudent, setSelectedStudent] = useState(null);
     const [showTrackingModal, setShowTrackingModal] = useState(false);
     const [editingTracking, setEditingTracking] = useState(null);
     const [viewingTracking, setViewingTracking] = useState(null);
     const [showViewTrackingModal, setShowViewTrackingModal] = useState(false);
-    const [trackingTab, setTrackingTab] = useState('recent'); // 'recent', 'archived'
+    const [trackingTab, setTrackingTab] = useState('recent'); // 'recent', 'archived', 'deleted'
+    const [recentTrackingData, setRecentTrackingData] = useState(recentTracking || []);
     const [archivedTracking, setArchivedTracking] = useState([]);
+    const [deletedTracking, setDeletedTracking] = useState([]);
     const [isLoadingTracking, setIsLoadingTracking] = useState(false);
+    const [trackingFilters, setTrackingFilters] = useState({
+        type: '',
+        status: '',
+        department_id: '',
+        date_from: '',
+        date_to: '',
+        search: '',
+    });
+    const [trackingPagination, setTrackingPagination] = useState({
+        current_page: 1,
+        last_page: 1,
+        total: 0,
+        per_page: 10,
+    });
     const [trackingForm, setTrackingForm] = useState({
         type: 'call',
         date: new Date().toISOString().split('T')[0],
@@ -84,9 +100,56 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsS
         });
     };
 
-    const fetchArchivedTracking = () => {
+    useEffect(() => {
+        setRecentTrackingData(recentTracking || []);
+    }, [recentTracking]);
+
+    const resolveTrackingRoute = (routeName) => {
+        const hasRoute = typeof window !== 'undefined'
+            && window.Ziggy
+            && window.Ziggy.routes
+            && window.Ziggy.routes[routeName];
+
+        if (hasRoute) {
+            return route(routeName);
+        }
+
+        if (routeName === 'admin.tracking.get-tracking') {
+            return '/admin/tracking/records';
+        }
+        if (routeName === 'admin.tracking.archived-tracking') {
+            return '/admin/tracking/archived';
+        }
+        if (routeName === 'admin.tracking.deleted-tracking') {
+            return '/admin/tracking/deleted';
+        }
+
+        return null;
+    };
+
+    const fetchTrackingRecords = (page = 1, filters = trackingFilters) => {
         setIsLoadingTracking(true);
-        fetch(route('admin.tracking.archived-tracking'), {
+        const params = new URLSearchParams({
+            page: page.toString(),
+            per_page: trackingPagination.per_page.toString(),
+            ...(filters || {}),
+        });
+
+        const routeName =
+            trackingTab === 'archived'
+                ? 'admin.tracking.archived-tracking'
+                : trackingTab === 'deleted'
+                ? 'admin.tracking.deleted-tracking'
+                : 'admin.tracking.get-tracking';
+
+        const trackingUrl = resolveTrackingRoute(routeName);
+        if (!trackingUrl) {
+            console.error('Tracking route not found:', routeName);
+            setIsLoadingTracking(false);
+            return;
+        }
+
+        fetch(`${trackingUrl}?${params.toString()}`, {
             method: 'GET',
             headers: {
                 'Accept': 'application/json',
@@ -96,23 +159,61 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsS
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                setArchivedTracking(data.tracking || []);
+                if (trackingTab === 'archived') {
+                    setArchivedTracking(data.tracking || []);
+                } else if (trackingTab === 'deleted') {
+                    setDeletedTracking(data.tracking || []);
+                } else {
+                    setRecentTrackingData(data.tracking || []);
+                }
+                setTrackingPagination({
+                    current_page: data.current_page || 1,
+                    last_page: data.last_page || 1,
+                    total: data.total || 0,
+                    per_page: data.per_page || trackingPagination.per_page,
+                });
             }
         })
         .catch(error => {
-            console.error('Error fetching archived tracking:', error);
+            console.error('Error fetching tracking records:', error);
         })
         .finally(() => {
             setIsLoadingTracking(false);
         });
     };
 
-
     useEffect(() => {
-        if (trackingTab === 'archived') {
-            fetchArchivedTracking();
-        }
+        setTrackingPagination(prev => ({ ...prev, current_page: 1 }));
+        fetchTrackingRecords(1, trackingFilters);
     }, [trackingTab]);
+
+    const handleTrackingFilterChange = (key, value) => {
+        setTrackingFilters(prev => ({ ...prev, [key]: value }));
+    };
+
+    const handleTrackingFilterApply = () => {
+        setTrackingPagination(prev => ({ ...prev, current_page: 1 }));
+        fetchTrackingRecords(1, trackingFilters);
+    };
+
+    const handleTrackingFilterReset = () => {
+        const resetFilters = {
+            type: '',
+            status: '',
+            department_id: '',
+            date_from: '',
+            date_to: '',
+            search: '',
+        };
+        setTrackingFilters(resetFilters);
+        setTrackingPagination(prev => ({ ...prev, current_page: 1 }));
+        fetchTrackingRecords(1, resetFilters);
+    };
+
+    const handleTrackingPageChange = (page) => {
+        if (page < 1 || page > trackingPagination.last_page) return;
+        fetchTrackingRecords(page, trackingFilters);
+    };
 
 
     const getPriorityColor = (priority) => {
@@ -258,7 +359,7 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsS
         title.style.fontSize = '16px';
 
         const meta = document.createElement('div');
-        meta.textContent = `Generated: ${new Date().toLocaleString()} • Records: ${recentTracking?.length || 0}`;
+        meta.textContent = `Generated: ${new Date().toLocaleString()} • Records: ${recentTrackingData?.length || 0}`;
         meta.style.fontSize = '12px';
         meta.style.color = '#374151';
 
@@ -299,7 +400,7 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsS
         table.appendChild(thead);
 
         const tbody = document.createElement('tbody');
-        (recentTracking || []).forEach((tracking) => {
+        (recentTrackingData || []).forEach((tracking) => {
             const tr = document.createElement('tr');
             const status = tracking?.status || 'pending';
             const statusLabel = status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ');
@@ -626,10 +727,110 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsS
                                 >
                                     Archived
                                 </button>
+                                <button
+                                    onClick={() => setTrackingTab('deleted')}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                                        trackingTab === 'deleted'
+                                            ? 'bg-white text-gray-900 shadow-sm'
+                                            : 'text-gray-600 hover:text-gray-900'
+                                    }`}
+                                >
+                                    Deleted
+                                </button>
                             </div>
                             </div>
                         </div>
                     </div>
+
+                    {/* Filters Section */}
+                    <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
+                                <select
+                                    value={trackingFilters.type}
+                                    onChange={(e) => handleTrackingFilterChange('type', e.target.value)}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    <option value="">All</option>
+                                    <option value="call">Call</option>
+                                    <option value="home_visit">Home Visit</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
+                                <select
+                                    value={trackingFilters.status}
+                                    onChange={(e) => handleTrackingFilterChange('status', e.target.value)}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    <option value="">All</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="processing">Processing</option>
+                                    <option value="to_follow">To Follow</option>
+                                    <option value="completed">Completed</option>
+                                    <option value="cancelled">Cancelled</option>
+                                    <option value="no_answer">No Answer</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Department</label>
+                                <select
+                                    value={trackingFilters.department_id}
+                                    onChange={(e) => handleTrackingFilterChange('department_id', e.target.value)}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    <option value="">All</option>
+                                    {departments?.map((dept) => (
+                                        <option key={dept.id} value={dept.id}>{dept.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Date From</label>
+                                <input
+                                    type="date"
+                                    value={trackingFilters.date_from}
+                                    onChange={(e) => handleTrackingFilterChange('date_from', e.target.value)}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Date To</label>
+                                <input
+                                    type="date"
+                                    value={trackingFilters.date_to}
+                                    onChange={(e) => handleTrackingFilterChange('date_to', e.target.value)}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Search</label>
+                                <input
+                                    type="text"
+                                    placeholder="Student name/number"
+                                    value={trackingFilters.search}
+                                    onChange={(e) => handleTrackingFilterChange('search', e.target.value)}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 mt-3">
+                            <button
+                                onClick={handleTrackingFilterApply}
+                                className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 transition-colors"
+                            >
+                                Apply Filters
+                            </button>
+                            <button
+                                onClick={handleTrackingFilterReset}
+                                className="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-medium rounded-md hover:bg-gray-300 transition-colors"
+                            >
+                                Reset
+                            </button>
+                        </div>
+                    </div>
+
                     <div className="p-4">
                         {isLoadingTracking ? (
                             <div className="text-center py-12 text-gray-400">
@@ -638,8 +839,24 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsS
                             </div>
                         ) : (
                             <div className="space-y-2">
-                                {(trackingTab === 'recent' ? recentTracking : archivedTracking).length > 0 ? (
-                                    (trackingTab === 'recent' ? recentTracking : archivedTracking).map((tracking) => (
+                                {(() => {
+                                    const list =
+                                        trackingTab === 'recent'
+                                            ? recentTrackingData
+                                            : trackingTab === 'archived'
+                                            ? archivedTracking
+                                            : deletedTracking;
+                                    return list;
+                                })().length > 0 ? (
+                                    (() => {
+                                        const list =
+                                            trackingTab === 'recent'
+                                                ? recentTrackingData
+                                                : trackingTab === 'archived'
+                                                ? archivedTracking
+                                                : deletedTracking;
+                                        return list;
+                                    })().map((tracking) => (
                                     <div key={tracking.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:border-gray-200 hover:bg-gray-50/50 transition-all">
                                         <div className="flex items-center gap-3">
                                             <div className={`p-1.5 rounded-lg ${tracking.type === 'call' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'}`}>
@@ -648,6 +865,7 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsS
                                             <div>
                                                 <p className="font-medium text-gray-900 text-sm">{tracking.student.name}</p>
                                                 <p className="text-xs text-gray-500 mt-0.5">{tracking.student.section}</p>
+                                                <p className="text-xs text-gray-400 mt-0.5">{tracking.student.department} • {tracking.student.program}</p>
                                                 {tracking.notes && (
                                                     <p className="text-xs text-gray-600 mt-1.5 max-w-md line-clamp-1">{tracking.notes}</p>
                                                 )}
@@ -667,6 +885,9 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsS
                                                 <p className="text-xs text-gray-400 mt-0.5">by {tracking.tracked_by}</p>
                                                 {trackingTab === 'archived' && tracking.archived_at && (
                                                     <p className="text-xs text-gray-400 mt-0.5">Archived: {tracking.archived_at}</p>
+                                                )}
+                                                {trackingTab === 'deleted' && tracking.deleted_at && (
+                                                    <p className="text-xs text-gray-400 mt-0.5">Deleted: {tracking.deleted_at}</p>
                                                 )}
                                             </div>
                                             <div className="flex items-center gap-2">
@@ -705,7 +926,7 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsS
                                                                 router.post(route('admin.tracking.unarchive-tracking', tracking.id), {}, {
                                                                     preserveScroll: true,
                                                                     onSuccess: () => {
-                                                                        fetchArchivedTracking();
+                                                                        fetchTrackingRecords(trackingPagination.current_page, trackingFilters);
                                                                         router.reload({ only: ['recentTracking'] });
                                                                     },
                                                                     onError: () => {
@@ -720,6 +941,27 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsS
                                                         Unarchive
                                                     </button>
                                                 )}
+                                                {trackingTab === 'deleted' && (
+                                                    <button
+                                                        onClick={() => {
+                                                            if (confirm('Are you sure you want to restore this tracking record?')) {
+                                                                router.post(route('admin.tracking.restore-tracking', tracking.id), {}, {
+                                                                    preserveScroll: true,
+                                                                    onSuccess: () => {
+                                                                        fetchTrackingRecords(trackingPagination.current_page, trackingFilters);
+                                                                    },
+                                                                    onError: () => {
+                                                                        alert('Failed to restore tracking record');
+                                                                    }
+                                                                });
+                                                            }
+                                                        }}
+                                                        className="text-xs font-medium text-green-600 hover:text-green-700 transition-colors"
+                                                        title="Restore"
+                                                    >
+                                                        Restore
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -730,12 +972,65 @@ export default function AdminTrackingPage({ studentsNeedingCalls = [], studentsS
                                         <p className="text-sm font-medium">
                                             {trackingTab === 'recent' && 'No tracking records yet'}
                                             {trackingTab === 'archived' && 'No archived tracking records'}
+                                            {trackingTab === 'deleted' && 'No deleted tracking records'}
                                         </p>
                                     </div>
                                 )}
                             </div>
                         )}
                     </div>
+
+                    {/* Pagination */}
+                    {trackingPagination.last_page > 1 && (
+                        <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100 px-6 pb-4">
+                            <div className="text-xs text-gray-600">
+                                Showing {((trackingPagination.current_page - 1) * trackingPagination.per_page) + 1} to {Math.min(trackingPagination.current_page * trackingPagination.per_page, trackingPagination.total)} of {trackingPagination.total} results
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => handleTrackingPageChange(trackingPagination.current_page - 1)}
+                                    disabled={trackingPagination.current_page === 1}
+                                    className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    Previous
+                                </button>
+                                <div className="flex items-center gap-1">
+                                    {Array.from({ length: Math.min(5, trackingPagination.last_page) }, (_, i) => {
+                                        let pageNum;
+                                        if (trackingPagination.last_page <= 5) {
+                                            pageNum = i + 1;
+                                        } else if (trackingPagination.current_page <= 3) {
+                                            pageNum = i + 1;
+                                        } else if (trackingPagination.current_page >= trackingPagination.last_page - 2) {
+                                            pageNum = trackingPagination.last_page - 4 + i;
+                                        } else {
+                                            pageNum = trackingPagination.current_page - 2 + i;
+                                        }
+                                        return (
+                                            <button
+                                                key={pageNum}
+                                                onClick={() => handleTrackingPageChange(pageNum)}
+                                                className={`px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                                                    trackingPagination.current_page === pageNum
+                                                        ? 'bg-blue-600 text-white'
+                                                        : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                                                }`}
+                                            >
+                                                {pageNum}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <button
+                                    onClick={() => handleTrackingPageChange(trackingPagination.current_page + 1)}
+                                    disabled={trackingPagination.current_page === trackingPagination.last_page}
+                                    className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 

@@ -52,7 +52,7 @@ class ReportController extends Controller
             'department_id' => $request->get('department_id') ?: null,
             'program_id' => $request->get('program_id') ?: null,
             'section_id' => $request->get('section_id') ?: null,
-            'type' => $request->get('type') ?: null,
+            'type' => 'home_visit',
             'status' => $request->get('status') ?: null,
             'tracked_by' => $request->get('tracked_by') ?: null,
             'date_from' => $request->get('date_from') ?: null,
@@ -110,9 +110,7 @@ class ReportController extends Controller
             });
         }
 
-        if (!empty($filters['type'])) {
-            $query->where('type', $filters['type']);
-        }
+        $query->where('type', 'home_visit');
 
         if (!empty($filters['status'])) {
             $query->where('status', $filters['status']);
@@ -150,19 +148,19 @@ class ReportController extends Controller
         // Get tracking statistics (only for active records)
         $stats = [
             'today' => [
-                'calls' => StudentTracking::where('archived', false)->whereDate('date', $today)->where('type', 'call')->count(),
+                'calls' => 0,
                 'visits' => StudentTracking::where('archived', false)->whereDate('date', $today)->where('type', 'home_visit')->count(),
-                'total' => StudentTracking::where('archived', false)->whereDate('date', $today)->count(),
+                'total' => StudentTracking::where('archived', false)->whereDate('date', $today)->where('type', 'home_visit')->count(),
             ],
             'this_week' => [
-                'calls' => StudentTracking::where('archived', false)->whereBetween('date', [$startOfWeek, $endOfWeek])->where('type', 'call')->count(),
+                'calls' => 0,
                 'visits' => StudentTracking::where('archived', false)->whereBetween('date', [$startOfWeek, $endOfWeek])->where('type', 'home_visit')->count(),
-                'total' => StudentTracking::where('archived', false)->whereBetween('date', [$startOfWeek, $endOfWeek])->count(),
+                'total' => StudentTracking::where('archived', false)->whereBetween('date', [$startOfWeek, $endOfWeek])->where('type', 'home_visit')->count(),
             ],
             'this_month' => [
-                'calls' => StudentTracking::where('archived', false)->whereBetween('date', [$startOfMonth, $endOfMonth])->where('type', 'call')->count(),
+                'calls' => 0,
                 'visits' => StudentTracking::where('archived', false)->whereBetween('date', [$startOfMonth, $endOfMonth])->where('type', 'home_visit')->count(),
-                'total' => StudentTracking::where('archived', false)->whereBetween('date', [$startOfMonth, $endOfMonth])->count(),
+                'total' => StudentTracking::where('archived', false)->whereBetween('date', [$startOfMonth, $endOfMonth])->where('type', 'home_visit')->count(),
             ],
         ];
 

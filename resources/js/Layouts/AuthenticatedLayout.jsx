@@ -36,8 +36,8 @@ export default function AuthenticatedLayout({ header, children }) {
 				<div className="absolute bottom-0 right-0 h-80 w-80 rounded-full bg-yellow-200/25 blur-2xl" />
 			</div>
 			{/* Sidebar */}
-			<div className={`fixed inset-y-0 z-50 flex flex-col bg-white transition-all duration-300 ${
-				sidebarOpen ? 'w-72' : 'w-24'
+			<div className={`fixed inset-y-0 z-50 flex w-72 flex-col bg-white transition-transform duration-300 ${
+				sidebarOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none'
 			} border-r border-gray-200`}>
 				{/* Logo */}
 				<div className="flex h-20 items-center justify-between px-6">
@@ -49,18 +49,6 @@ export default function AuthenticatedLayout({ header, children }) {
 							SmartAttend
 						</span>
 					</Link>
-					<button
-						onClick={() => setSidebarOpen(!sidebarOpen)}
-						className="rounded-lg p-2 hover:bg-gray-100"
-					>
-						<svg className="h-6 w-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={
-								sidebarOpen
-									? "M11 19l-7-7 7-7m8 14l-7-7 7-7"
-									: "M13 5l7 7-7 7M5 5l7 7-7 7"
-							} />
-						</svg>
-					</button>
 				</div>
 
 				{/* Navigation */}
@@ -321,9 +309,24 @@ export default function AuthenticatedLayout({ header, children }) {
 			</div>
 
 			{/* Top Navigation Bar */}
-			<div className={`fixed top-0 right-0 z-40 flex h-20 items-center justify-end bg-white shadow-sm transition-all duration-300 ${
-				sidebarOpen ? 'left-72' : 'left-24'
+			<div className={`fixed top-0 right-0 z-40 flex h-20 items-center justify-between bg-white shadow-sm transition-all duration-300 ${
+				sidebarOpen ? 'left-72' : 'left-0'
 			} border-b border-gray-200`}>
+				<div className="flex items-center gap-4 px-4">
+					<button
+						onClick={() => setSidebarOpen(!sidebarOpen)}
+						className="rounded-lg p-2 hover:bg-gray-100"
+						aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+					>
+						<svg className="h-6 w-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={
+								sidebarOpen
+									? "M11 19l-7-7 7-7m8 14l-7-7 7-7"
+									: "M13 5l7 7-7 7M5 5l7 7-7 7"
+							} />
+						</svg>
+					</button>
+				</div>
 				<div className="flex items-center gap-4 px-6">
 					{/* Profile Button */}
 					<Dropdown>
@@ -369,7 +372,7 @@ export default function AuthenticatedLayout({ header, children }) {
 			</div>
 
 			{/* Main Content */}
-			<div className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-72' : 'ml-24'} pt-20`}>
+			<div className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-72' : 'ml-0'} pt-20`}>
 				{header && (
 					<header className="bg-white shadow">
 						<div className="mx-auto px-6 py-8 sm:px-8 lg:px-10">

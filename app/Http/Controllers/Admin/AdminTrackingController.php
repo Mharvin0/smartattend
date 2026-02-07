@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Student;
 use App\Models\StudentTracking;
+use App\Models\Department;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Carbon\Carbon;
@@ -88,11 +89,9 @@ class AdminTrackingController extends Controller
             ->orderBy('priority', 'desc')
             ->orderBy('absence_count', 'desc')
             ->get()
-            ->map(function ($student) use ($studentsWithActiveCallTracking) {
-                // Only update priority if student doesn't have active tracking
-                if (!in_array($student->id, $studentsWithActiveCallTracking)) {
-                    $student->updatePriority();
-                }
+            ->map(function ($student) {
+                // Keep priority/absence count in sync for display
+                $student->updatePriority();
                 $latestTracking = $student->studentTracking->first();
                 return [
                     'id' => $student->id,
@@ -135,6 +134,8 @@ class AdminTrackingController extends Controller
             ->orderBy('absence_count', 'desc')
             ->get()
             ->map(function ($student) {
+                // Ensure priority reflects current absences
+                $student->updatePriority();
                 $latestTracking = $student->studentTracking->first();
                 return [
                     'id' => $student->id,
@@ -262,12 +263,23 @@ class AdminTrackingController extends Controller
                 ];
             });
 
+        $departments = Department::whereIn('id', $departmentIds)
+            ->orderBy('name')
+            ->get()
+            ->map(function ($department) {
+                return [
+                    'id' => $department->id,
+                    'name' => $department->name,
+                ];
+            });
+
         return Inertia::render('Admin/AdminTrackingPage', [
             'studentsNeedingCalls' => $studentsNeedingCalls,
             'studentsSentToCSDL' => $studentsSentToCSDL,
             'recentTracking' => $recentTracking,
             'stats' => $stats,
             'programs' => $programs, // Fixed programs based on admin's department
+            'departments' => $departments,
         ]);
     }
 
@@ -374,15 +386,15 @@ class AdminTrackingController extends Controller
         ]);
     }
 
-    public function getArchivedTracking()
+    public function getTrackingRecords(Request $request)
     {
         $user = auth()->user();
         $departmentIds = $user->getAssignedDepartmentIds();
         $programIds = \App\Models\Program::whereIn('department_id', $departmentIds)
             ->pluck('id')
             ->toArray();
-        
-        $archivedTracking = StudentTracking::with(['student.section.program.department', 'trackedBy'])
+
+        $query = StudentTracking::with(['student.section.program.department', 'trackedBy'])
             ->whereHas('student', function($q) use ($programIds) {
                 if (!empty($programIds)) {
                     $q->whereHas('section', function($sectionQ) use ($programIds) {
@@ -392,9 +404,43 @@ class AdminTrackingController extends Controller
                     $q->whereRaw('1 = 0');
                 }
             })
-            ->where('archived', true)
-            ->orderBy('archived_at', 'desc')
-            ->orderBy('date', 'desc')
+            ->where('archived', false);
+
+        if ($request->has('type') && $request->type) {
+            $query->where('type', $request->type);
+        }
+        if ($request->has('status') && $request->status) {
+            $query->where('status', $request->status);
+        }
+        if ($request->has('department_id') && $request->department_id) {
+            $query->whereHas('student.section.program', function($q) use ($request) {
+                $q->where('department_id', $request->department_id);
+            });
+        }
+        if ($request->has('date_from') && $request->date_from) {
+            $query->whereDate('date', '>=', $request->date_from);
+        }
+        if ($request->has('date_to') && $request->date_to) {
+            $query->whereDate('date', '<=', $request->date_to);
+        }
+        if ($request->has('search') && $request->search) {
+            $search = $request->search;
+            $query->whereHas('student', function($q) use ($search) {
+                $q->where('first_name', 'like', "%{$search}%")
+                  ->orWhere('last_name', 'like', "%{$search}%")
+                  ->orWhere('student_number', 'like', "%{$search}%");
+            });
+        }
+
+        $total = $query->count();
+        $perPage = (int) $request->get('per_page', 10);
+        $page = (int) $request->get('page', 1);
+        $offset = max(0, ($page - 1) * $perPage);
+
+        $tracking = $query->orderBy('date', 'desc')
+            ->orderBy('created_at', 'desc')
+            ->skip($offset)
+            ->take($perPage)
             ->get()
             ->map(function ($tracking) {
                 return [
@@ -410,6 +456,103 @@ class AdminTrackingController extends Controller
                         'id' => $tracking->student?->id ?? null,
                         'name' => $tracking->student ? ($tracking->student->first_name . ' ' . $tracking->student->last_name) : 'Unknown Student',
                         'section' => $tracking->student?->section?->name ?? 'N/A',
+                        'department' => $tracking->student?->section?->program?->department?->name ?? 'N/A',
+                        'program' => $tracking->student?->section?->program?->name ?? 'N/A',
+                    ],
+                    'tracked_by' => $tracking->trackedBy?->name ?? 'Unknown',
+                    'tracked_by_id' => $tracking->tracked_by,
+                    'notes' => $tracking->notes,
+                    'archived' => $tracking->archived,
+                    'can_edit' => $tracking->type === 'call',
+                ];
+            })
+            ->filter(function ($tracking) {
+                return $tracking['student']['id'] !== null;
+            })
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'tracking' => $tracking,
+            'total' => $total,
+            'per_page' => $perPage,
+            'current_page' => $page,
+            'last_page' => ceil($total / $perPage),
+        ]);
+    }
+
+    public function getArchivedTracking(Request $request)
+    {
+        $user = auth()->user();
+        $departmentIds = $user->getAssignedDepartmentIds();
+        $programIds = \App\Models\Program::whereIn('department_id', $departmentIds)
+            ->pluck('id')
+            ->toArray();
+        
+        $query = StudentTracking::with(['student.section.program.department', 'trackedBy'])
+            ->whereHas('student', function($q) use ($programIds) {
+                if (!empty($programIds)) {
+                    $q->whereHas('section', function($sectionQ) use ($programIds) {
+                        $sectionQ->whereIn('program_id', $programIds);
+                    });
+                } else {
+                    $q->whereRaw('1 = 0');
+                }
+            })
+            ->where('archived', true);
+
+        if ($request->has('type') && $request->type) {
+            $query->where('type', $request->type);
+        }
+        if ($request->has('status') && $request->status) {
+            $query->where('status', $request->status);
+        }
+        if ($request->has('department_id') && $request->department_id) {
+            $query->whereHas('student.section.program', function($q) use ($request) {
+                $q->where('department_id', $request->department_id);
+            });
+        }
+        if ($request->has('date_from') && $request->date_from) {
+            $query->whereDate('date', '>=', $request->date_from);
+        }
+        if ($request->has('date_to') && $request->date_to) {
+            $query->whereDate('date', '<=', $request->date_to);
+        }
+        if ($request->has('search') && $request->search) {
+            $search = $request->search;
+            $query->whereHas('student', function($q) use ($search) {
+                $q->where('first_name', 'like', "%{$search}%")
+                  ->orWhere('last_name', 'like', "%{$search}%")
+                  ->orWhere('student_number', 'like', "%{$search}%");
+            });
+        }
+
+        $total = $query->count();
+        $perPage = (int) $request->get('per_page', 10);
+        $page = (int) $request->get('page', 1);
+        $offset = max(0, ($page - 1) * $perPage);
+
+        $archivedTracking = $query->orderBy('archived_at', 'desc')
+            ->orderBy('date', 'desc')
+            ->skip($offset)
+            ->take($perPage)
+            ->get()
+            ->map(function ($tracking) {
+                return [
+                    'id' => $tracking->id,
+                    'type' => $tracking->type,
+                    'date' => $tracking->date->format('Y-m-d'),
+                    'time' => $tracking->time ? Carbon::parse($tracking->time)->format('H:i') : null,
+                    'status' => $tracking->status,
+                    'outcome' => $tracking->outcome,
+                    'follow_up_required' => $tracking->follow_up_required,
+                    'follow_up_date' => $tracking->follow_up_date ? $tracking->follow_up_date->format('Y-m-d') : null,
+                    'student' => [
+                        'id' => $tracking->student?->id ?? null,
+                        'name' => $tracking->student ? ($tracking->student->first_name . ' ' . $tracking->student->last_name) : 'Unknown Student',
+                        'section' => $tracking->student?->section?->name ?? 'N/A',
+                        'department' => $tracking->student?->section?->program?->department?->name ?? 'N/A',
+                        'program' => $tracking->student?->section?->program?->name ?? 'N/A',
                     ],
                     'tracked_by' => $tracking->trackedBy?->name ?? 'Unknown',
                     'tracked_by_id' => $tracking->tracked_by,
@@ -427,10 +570,14 @@ class AdminTrackingController extends Controller
         return response()->json([
             'success' => true,
             'tracking' => $archivedTracking,
+            'total' => $total,
+            'per_page' => $perPage,
+            'current_page' => $page,
+            'last_page' => ceil($total / $perPage),
         ]);
     }
 
-    public function getDeletedTracking()
+    public function getDeletedTracking(Request $request)
     {
         $user = auth()->user();
         $departmentIds = $user->getAssignedDepartmentIds();
@@ -438,7 +585,7 @@ class AdminTrackingController extends Controller
             ->pluck('id')
             ->toArray();
         
-        $deletedTracking = StudentTracking::withTrashed()
+        $query = StudentTracking::withTrashed()
             ->with(['student.section.program.department', 'trackedBy'])
             ->whereHas('student', function($q) use ($programIds) {
                 if (!empty($programIds)) {
@@ -449,8 +596,43 @@ class AdminTrackingController extends Controller
                     $q->whereRaw('1 = 0');
                 }
             })
-            ->whereNotNull('deleted_at')
+            ->whereNotNull('deleted_at');
+
+        if ($request->has('type') && $request->type) {
+            $query->where('type', $request->type);
+        }
+        if ($request->has('status') && $request->status) {
+            $query->where('status', $request->status);
+        }
+        if ($request->has('department_id') && $request->department_id) {
+            $query->whereHas('student.section.program', function($q) use ($request) {
+                $q->where('department_id', $request->department_id);
+            });
+        }
+        if ($request->has('date_from') && $request->date_from) {
+            $query->whereDate('date', '>=', $request->date_from);
+        }
+        if ($request->has('date_to') && $request->date_to) {
+            $query->whereDate('date', '<=', $request->date_to);
+        }
+        if ($request->has('search') && $request->search) {
+            $search = $request->search;
+            $query->whereHas('student', function($q) use ($search) {
+                $q->where('first_name', 'like', "%{$search}%")
+                  ->orWhere('last_name', 'like', "%{$search}%")
+                  ->orWhere('student_number', 'like', "%{$search}%");
+            });
+        }
+
+        $total = $query->count();
+        $perPage = (int) $request->get('per_page', 10);
+        $page = (int) $request->get('page', 1);
+        $offset = max(0, ($page - 1) * $perPage);
+
+        $deletedTracking = $query->orderBy('deleted_at', 'desc')
             ->orderBy('deleted_at', 'desc')
+            ->skip($offset)
+            ->take($perPage)
             ->get()
             ->map(function ($tracking) {
                 return [
@@ -466,6 +648,8 @@ class AdminTrackingController extends Controller
                         'id' => $tracking->student?->id ?? null,
                         'name' => $tracking->student ? ($tracking->student->first_name . ' ' . $tracking->student->last_name) : 'Unknown Student',
                         'section' => $tracking->student?->section?->name ?? 'N/A',
+                        'department' => $tracking->student?->section?->program?->department?->name ?? 'N/A',
+                        'program' => $tracking->student?->section?->program?->name ?? 'N/A',
                     ],
                     'tracked_by' => $tracking->trackedBy?->name ?? 'Unknown',
                     'tracked_by_id' => $tracking->tracked_by,
@@ -482,6 +666,10 @@ class AdminTrackingController extends Controller
         return response()->json([
             'success' => true,
             'tracking' => $deletedTracking,
+            'total' => $total,
+            'per_page' => $perPage,
+            'current_page' => $page,
+            'last_page' => ceil($total / $perPage),
         ]);
     }
 

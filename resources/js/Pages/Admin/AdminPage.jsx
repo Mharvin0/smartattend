@@ -9,7 +9,8 @@ export default function AdminPage() {
         students, 
         todayStats, 
         attendanceRate, 
-        recentRecords
+        recentActivity,
+        dashboardCounts
     } = usePage().props;
     
     const [currentTime, setCurrentTime] = useState(new Date());
@@ -57,36 +58,17 @@ export default function AdminPage() {
     const renderDashboard = () => (
         <div className="space-y-6">
             {/* Stats Cards */}
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-6 border border-white/20">
                                 <div className="flex items-center justify-between">
                                     <div>
-                            <p className="text-sm font-medium text-gray-600">Today's Attendance</p>
+                            <p className="text-sm font-medium text-gray-600">At-Risk Students</p>
                             <p className="text-3xl font-bold text-gray-900 mt-2">
-                                {liveData?.stats?.present || todayStats?.present || 0}
+                                {liveData?.dashboardCounts?.at_risk ?? dashboardCounts?.at_risk ?? 0}
                             </p>
-                            <p className="text-xs text-gray-500 mt-1">
-                                            {attendanceRate || 0}% Rate
-                                        </p>
+                            <p className="text-xs text-gray-500 mt-1">Call Needed + PNS</p>
                                     </div>
                         <div className="h-16 w-16 bg-blue-500 rounded-2xl flex items-center justify-center">
-                            <svg className="h-8 w-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-6 border border-white/20">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                            <p className="text-sm font-medium text-gray-600">Absent Today</p>
-                            <p className="text-3xl font-bold text-gray-900 mt-2">
-                                {liveData?.stats?.absent || todayStats?.absent || 0}
-                            </p>
-                            <p className="text-xs text-gray-500 mt-1">Students</p>
-                                    </div>
-                        <div className="h-16 w-16 bg-red-500 rounded-2xl flex items-center justify-center">
                             <svg className="h-8 w-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                                         </svg>
@@ -97,26 +79,26 @@ export default function AdminPage() {
                 <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-6 border border-white/20">
                                 <div className="flex items-center justify-between">
                                     <div>
-                            <p className="text-sm font-medium text-gray-600">Late Today</p>
+                            <p className="text-sm font-medium text-gray-600">PNS Count</p>
                             <p className="text-3xl font-bold text-gray-900 mt-2">
-                                {liveData?.stats?.late || todayStats?.late || 0}
+                                {liveData?.dashboardCounts?.pns ?? dashboardCounts?.pns ?? 0}
                             </p>
-                            <p className="text-xs text-gray-500 mt-1">Students</p>
+                            <p className="text-xs text-gray-500 mt-1">8+ absences</p>
                                     </div>
-                        <div className="h-16 w-16 bg-yellow-500 rounded-2xl flex items-center justify-center">
+                        <div className="h-16 w-16 bg-red-500 rounded-2xl flex items-center justify-center">
                             <svg className="h-8 w-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                                         </svg>
                                     </div>
                                 </div>
                             </div>
-                            
+
                 <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-6 border border-white/20">
                                 <div className="flex items-center justify-between">
                                     <div>
                             <p className="text-sm font-medium text-gray-600">Total Students</p>
                             <p className="text-3xl font-bold text-gray-900 mt-2">
-                                {students?.length || 0}
+                                {liveData?.dashboardCounts?.total_students ?? dashboardCounts?.total_students ?? students?.length ?? 0}
                             </p>
                             <p className="text-xs text-gray-500 mt-1">Registered</p>
                                     </div>
@@ -133,27 +115,26 @@ export default function AdminPage() {
             <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 border border-white/20">
                 <h3 className="text-xl font-bold text-gray-900 mb-6">Recent Activity</h3>
                 <div className="space-y-3 max-h-96 overflow-y-auto">
-                    {(liveData?.recentActivity || recentRecords?.slice(0, 10) || []).map((record, index) => (
-                        <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                    {(liveData?.recentActivity || recentActivity || []).map((record, index) => (
+                        <div key={record.id || index} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
                             <div className="flex items-center space-x-3">
-                                        <div className={`w-3 h-3 rounded-full ${
-                                            record.status === 'present' ? 'bg-green-500' :
-                                            record.status === 'late' ? 'bg-yellow-500' : 
-                                            record.status === 'excused' ? 'bg-purple-500' : 'bg-red-500'
-                                        }`}></div>
+                                <div className={`w-3 h-3 rounded-full ${
+                                    record.source === 'super_admin' ? 'bg-indigo-500' : 'bg-emerald-500'
+                                }`}></div>
                                 <div>
                                     <p className="font-medium text-gray-900">
-                                        {record.student?.first_name || record.student?.name} {record.student?.last_name}
+                                        {record.student?.name || 'Unknown Student'}
                                     </p>
                                     <p className="text-sm text-gray-500">
-                                        {record.student?.section?.name || (typeof record.student?.section === 'string' ? record.student?.section : 'N/A')} • {record.status} • {record.time || record.date}
-                                            </p>
-                                        </div>
-                                    </div>
+                                        {record.student?.section || 'N/A'} • {record.action} • {record.status ? record.status.replace('_', ' ') : 'No Status'} • {record.time || record.date}
+                                    </p>
+                                    <p className="text-xs text-gray-400 mt-0.5">{record.source_label}</p>
+                                </div>
                             </div>
-                                ))}
-                            </div>
-                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
 
                             </div>
     );

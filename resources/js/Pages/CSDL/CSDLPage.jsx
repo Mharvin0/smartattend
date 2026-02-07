@@ -3,7 +3,7 @@ import { Head, router } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Phone, Home, Users, Calendar, CheckCircle, XCircle, Clock, AlertCircle, Download, ChevronDown } from 'lucide-react';
 
-export default function CSDLPage({ studentsNeedingCalls = [], recentTracking = [], stats = {} }) {
+export default function CSDLPage({ recentTracking = [], stats = {}, homeVisitAssignments = [] }) {
     const [selectedStudent, setSelectedStudent] = useState(null);
     const [showTrackingModal, setShowTrackingModal] = useState(false);
     const [editingTracking, setEditingTracking] = useState(null);
@@ -77,12 +77,12 @@ export default function CSDLPage({ studentsNeedingCalls = [], recentTracking = [
                 setShowTrackingModal(false);
                 setSelectedStudent(null);
                 setEditingTracking(null);
-                setTrackingForm({
+        setTrackingForm({
                     type: 'home_visit',
                     date: new Date().toISOString().split('T')[0],
                     time: '',
                     notes: '',
-                    status: 'completed',
+            status: 'completed',
                     outcome: '',
                     follow_up_required: '',
                     follow_up_date: '',
@@ -140,9 +140,9 @@ export default function CSDLPage({ studentsNeedingCalls = [], recentTracking = [
         switch (status) {
             case 'completed': return 'bg-green-100 text-green-800';
             case 'no_answer': return 'bg-red-100 text-red-800';
-            case 'pending': return 'bg-yellow-100 text-yellow-800';
             case 'to_follow': return 'bg-blue-100 text-blue-800';
             case 'processing': return 'bg-purple-100 text-purple-800';
+            case 'pending': return 'bg-yellow-100 text-yellow-800';
             default: return 'bg-gray-100 text-gray-800';
         }
     };
@@ -162,7 +162,7 @@ export default function CSDLPage({ studentsNeedingCalls = [], recentTracking = [
             }, {
                 preserveScroll: true,
                 onSuccess: () => {
-                    router.reload({ only: ['recentTracking', 'studentsNeedingCalls'] });
+                    router.reload({ only: ['recentTracking', 'stats', 'homeVisitAssignments'] });
                 },
             });
         } else {
@@ -180,7 +180,7 @@ export default function CSDLPage({ studentsNeedingCalls = [], recentTracking = [
             }, {
                 preserveScroll: true,
                 onSuccess: () => {
-                    router.reload({ only: ['recentTracking', 'studentsNeedingCalls'] });
+                    router.reload({ only: ['recentTracking', 'stats', 'homeVisitAssignments'] });
                 },
             });
         }
@@ -394,144 +394,62 @@ export default function CSDLPage({ studentsNeedingCalls = [], recentTracking = [
                     </div>
                 </div>
 
-                {/* Students Needing Attention */}
+                {/* Students Needing Home Visits */}
                 <div className="bg-white rounded-lg shadow">
                     <div className="px-6 py-4 border-b border-gray-200">
-                        <h3 className="text-lg font-semibold text-gray-900">Students Needing Attention</h3>
+                        <h3 className="text-lg font-semibold text-gray-900">Students Needing Home Visits</h3>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Student</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Section</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Absences</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Tracking</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Update</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Notes</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sent By</th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
-                                {studentsNeedingCalls.length > 0 ? (
-                                    studentsNeedingCalls.map((student) => (
-                                        <tr key={student.id} className="hover:bg-gray-50">
+                                {homeVisitAssignments.length > 0 ? (
+                                    homeVisitAssignments.map((item) => (
+                                        <tr key={item.id} className="hover:bg-gray-50">
                                             <td className="px-6 py-4 whitespace-nowrap">
-                                                <div className="text-sm font-medium text-gray-900">{student.name}</div>
-                                                <div className="text-sm text-gray-500">{student.student_number}</div>
+                                                <div className="text-sm font-medium text-gray-900">{item.student.name}</div>
+                                                <div className="text-sm text-gray-500">{item.student.student_number}</div>
+                                                <div className="text-xs text-gray-400">{item.student.department} • {item.student.program}</div>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {item.student.section}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
-                                                <div className="flex items-center gap-4">
-                                                    <label className="flex items-center gap-2 cursor-pointer">
-                                                        <input
-                                                            type="radio"
-                                                            name={`status-${student.id}`}
-                                                            value="completed"
-                                                            checked={student.tracking_status === 'completed'}
-                                                            onChange={() => handleStatusUpdate(student.id, student.last_tracking?.id, 'completed')}
-                                                            className="w-4 h-4 text-green-600 focus:ring-green-500"
-                                                        />
-                                                        <span className="text-sm font-medium text-gray-700">Completed</span>
-                                                    </label>
-                                                    <label className="flex items-center gap-2 cursor-pointer">
-                                                        <input
-                                                            type="radio"
-                                                            name={`status-${student.id}`}
-                                                            value="no_answer"
-                                                            checked={student.tracking_status === 'no_answer'}
-                                                            onChange={() => handleStatusUpdate(student.id, student.last_tracking?.id, 'no_answer')}
-                                                            className="w-4 h-4 text-red-600 focus:ring-red-500"
-                                                        />
-                                                        <span className="text-sm font-medium text-gray-700">No answer</span>
-                                                    </label>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPriorityColor(student.priority)}`}>
-                                                    {student.priority}
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>
+                                                    {item.status === 'completed'
+                                                        ? 'Completed'
+                                                        : item.status === 'no_answer'
+                                                        ? 'No answer'
+                                                        : item.status
+                                                        ? item.status.replace('_', ' ')
+                                                        : 'No Status'}
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {student.absence_count}
+                                                <div>{new Date(item.date).toLocaleDateString()}</div>
+                                                {item.time && <div>{item.time}</div>}
+                                            </td>
+                                            <td className="px-6 py-4 text-sm text-gray-500">
+                                                <div className="max-w-xs truncate">{item.notes || '-'}</div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {student.guardian_contact || 'N/A'}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {student.last_tracking ? (
-                                                    <div>
-                                                        <div className="flex items-center gap-1">
-                                                            {getTypeIcon(student.last_tracking.type)}
-                                                            <span className="capitalize">{student.last_tracking.type.replace('_', ' ')}</span>
-                                                        </div>
-                                                        <div className="text-xs">{student.last_tracking.date}</div>
-                                                    </div>
-                                                ) : 'Never'}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                                <div className="flex items-center gap-2">
-                                                    <button
-                                                        onClick={() => handleTrackStudent(student)}
-                                                        className="text-blue-600 hover:text-blue-900"
-                                                    >
-                                                        Track
-                                                    </button>
-                                                    <button
-                                                        onClick={() => {
-                                                            if (confirm('Are you sure you want to archive this student from the attention list?')) {
-                                                                router.post(route('csdl.csdl-page.archive-student-from-attention', student.id), {}, {
-                                                                    preserveScroll: true,
-                                                                    onSuccess: () => {
-                                                                        router.reload({ only: ['studentsNeedingCalls'] });
-                                                                    },
-                                                                    onError: () => {
-                                                                        alert('Failed to archive student');
-                                                                    }
-                                                                });
-                                                            }
-                                                        }}
-                                                        className="relative group p-1.5 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 rounded-md transition-colors"
-                                                        title="Archive"
-                                                    >
-                                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                                                        </svg>
-                                                        <span className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                                                            Archive
-                                                        </span>
-                                                    </button>
-                                                    <button
-                                                        onClick={() => {
-                                                            if (confirm('Are you sure you want to delete this student? This action cannot be undone.')) {
-                                                                router.delete(route('csdl.csdl-page.delete-student', student.id), {
-                                                                    preserveScroll: true,
-                                                                    onSuccess: () => {
-                                                                        router.reload({ only: ['studentsNeedingCalls'] });
-                                                                    },
-                                                                    onError: () => {
-                                                                        alert('Failed to delete student');
-                                                                    }
-                                                                });
-                                                            }
-                                                        }}
-                                                        className="relative group p-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
-                                                        title="Delete"
-                                                    >
-                                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                        </svg>
-                                                        <span className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                                                            Delete
-                                                        </span>
-                                                    </button>
-                                                </div>
+                                                {item.tracked_by}
                                             </td>
                                         </tr>
                                     ))
                                 ) : (
                                     <tr>
-                                        <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
-                                            No students need attention at this time
+                                        <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                                            No home visit assignments found
                                         </td>
                                     </tr>
                                 )}
@@ -832,7 +750,7 @@ export default function CSDLPage({ studentsNeedingCalls = [], recentTracking = [
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
-                                        <div className="flex items-center gap-6">
+                                        <div className="flex flex-wrap items-center gap-6">
                                             <label className="flex items-center gap-2 cursor-pointer">
                                                 <input
                                                     type="radio"
@@ -844,6 +762,30 @@ export default function CSDLPage({ studentsNeedingCalls = [], recentTracking = [
                                                     required
                                                 />
                                                 <span className="text-sm font-medium text-gray-700">Completed</span>
+                                            </label>
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="status"
+                                                    value="processing"
+                                                    checked={trackingForm.status === 'processing'}
+                                                    onChange={(e) => setTrackingForm({ ...trackingForm, status: e.target.value })}
+                                                    className="w-4 h-4 text-purple-600 focus:ring-purple-500"
+                                                    required
+                                                />
+                                                <span className="text-sm font-medium text-gray-700">Processing</span>
+                                            </label>
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="status"
+                                                    value="to_follow"
+                                                    checked={trackingForm.status === 'to_follow'}
+                                                    onChange={(e) => setTrackingForm({ ...trackingForm, status: e.target.value })}
+                                                    className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                                                    required
+                                                />
+                                                <span className="text-sm font-medium text-gray-700">To follow</span>
                                             </label>
                                             <label className="flex items-center gap-2 cursor-pointer">
                                                 <input

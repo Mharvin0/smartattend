@@ -42,71 +42,10 @@ class CSDLPageController extends Controller
     {
         $user = auth()->user();
         
-        // CSDL users only see students who need home visits (PNS priority)
-        // Get students with priority 'PNS' OR students with active home visit tracking records
-        $studentsWithActiveTracking = StudentTracking::where('type', 'home_visit')
-            ->whereIn('status', ['pending', 'to_follow', 'processing', 'completed', 'no_answer'])
-            ->where('archived', false)
-            ->pluck('student_id')
-            ->unique()
-            ->values()
-            ->toArray();
-        
-        $studentsNeedingCalls = Student::forUser($user)
-            ->where(function($query) use ($studentsWithActiveTracking) {
-                // Only show students with PNS priority (home visits needed)
-                $query->where('priority', 'PNS');
-                if (!empty($studentsWithActiveTracking)) {
-                    $query->orWhereIn('id', $studentsWithActiveTracking);
-                }
-            })
-            ->with(['section.program.department', 'department', 'program', 'studentTracking' => function($query) {
-                $query->where('type', 'home_visit')
-                    ->where('archived', false)
-                    ->orderBy('date', 'desc')
-                    ->orderBy('created_at', 'desc')
-                    ->limit(1);
-            }])
-            ->orderBy('priority', 'desc')
-            ->orderBy('absence_count', 'desc')
-            ->get()
-            ->map(function ($student) use ($studentsWithActiveTracking) {
-                // Only update priority if student doesn't have active scheduled tracking
-                // This preserves manually set priorities for students sent to CSDL
-                if (!in_array($student->id, $studentsWithActiveTracking)) {
-                    $student->updatePriority();
-                }
-                $latestTracking = $student->studentTracking->first();
-                return [
-                    'id' => $student->id,
-                    'name' => $student->first_name . ' ' . $student->last_name,
-                    'student_number' => $student->student_number,
-                    'email' => $student->email,
-                    'section' => $student->section?->name ?? 'N/A',
-                    'department' => $student->department?->name ?? $student->section?->program?->department?->name ?? 'N/A',
-                    'program' => $student->program?->name ?? $student->section?->program?->name ?? 'N/A',
-                    'priority' => $student->priority ?? 'Safe',
-                    'absence_count' => $student->absence_count ?? 0,
-                    'guardian_contact' => $student->guardian_contact,
-                    'tracking_status' => $latestTracking?->status ?? 'No Status',
-                    'last_tracking' => $this->getLastTracking($student->id),
-                ];
-            });
-
-        // Get recent tracking records - Filter by user's departments and only home visits
-        $departmentIds = $user->getAssignedDepartmentIds();
+        // Get recent tracking records - Only home visits
         $recentTracking = StudentTracking::with(['student.section.program.department', 'trackedBy'])
             ->where('type', 'home_visit') // CSDL only sees home visit records
-            ->whereHas('student', function($q) use ($user, $departmentIds) {
-                if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
-                    $q->where(function($subQ) use ($departmentIds) {
-                        $subQ->whereIn('department_id', $departmentIds)
-                             ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
-                                 $progQ->whereIn('department_id', $departmentIds);
-                             });
-                    });
-                }
-            })
+            ->whereHas('student')
             ->where('archived', false)
             ->orderBy('date', 'desc')
             ->orderBy('created_at', 'desc')
@@ -135,35 +74,50 @@ class CSDLPageController extends Controller
             })
             ->filter(fn($tracking) => $tracking['student']['id'] !== null);
 
-        // Statistics - filtered by user's departments and only home visits
+        $homeVisitAssignments = StudentTracking::with(['student.section.program.department', 'trackedBy.roles'])
+            ->where('type', 'home_visit')
+            ->where('archived', false)
+            ->whereHas('student')
+            ->orderBy('date', 'desc')
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->groupBy('student_id')
+            ->map(fn($group) => $group->first())
+            ->values()
+            ->map(function ($tracking) {
+                return [
+                    'id' => $tracking->id,
+                    'status' => $tracking->status,
+                    'date' => $tracking->date->format('Y-m-d'),
+                    'time' => $tracking->time ? Carbon::parse($tracking->time)->format('H:i') : null,
+                    'notes' => $tracking->notes,
+                    'outcome' => $tracking->outcome,
+                    'follow_up_required' => $tracking->follow_up_required,
+                    'follow_up_date' => $tracking->follow_up_date ? $tracking->follow_up_date->format('Y-m-d') : null,
+                    'tracked_by' => $tracking->trackedBy?->name ?? 'Unknown',
+                    'student' => [
+                        'id' => $tracking->student?->id ?? null,
+                        'name' => ($tracking->student?->first_name ?? '') . ' ' . ($tracking->student?->last_name ?? ''),
+                        'student_number' => $tracking->student?->student_number ?? 'N/A',
+                        'section' => $tracking->student?->section?->name ?? 'N/A',
+                        'program' => $tracking->student?->section?->program?->name ?? 'N/A',
+                        'department' => $tracking->student?->section?->program?->department?->name ?? 'N/A',
+                    ],
+                ];
+            })
+            ->filter(fn($row) => $row['student']['id'] !== null);
+
+        // Statistics - only home visits
         $stats = [
             'students_needing_calls' => 0, // CSDL doesn't see call-needed students
-            'students_needing_visits' => Student::forUser($user)->where('priority', 'PNS')->count(),
+            'students_needing_visits' => $homeVisitAssignments->count(),
             'total_tracked_today' => StudentTracking::where('type', 'home_visit')
-                ->whereHas('student', function($q) use ($user, $departmentIds) {
-                    if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
-                        $q->where(function($subQ) use ($departmentIds) {
-                            $subQ->whereIn('department_id', $departmentIds)
-                                 ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
-                                     $progQ->whereIn('department_id', $departmentIds);
-                                 });
-                        });
-                    }
-                })
+                ->whereHas('student')
                 ->where('archived', false)
                 ->whereDate('date', Carbon::today())
                 ->count(),
             'total_tracked_this_week' => StudentTracking::where('type', 'home_visit')
-                ->whereHas('student', function($q) use ($user, $departmentIds) {
-                    if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
-                        $q->where(function($subQ) use ($departmentIds) {
-                            $subQ->whereIn('department_id', $departmentIds)
-                                 ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
-                                     $progQ->whereIn('department_id', $departmentIds);
-                                 });
-                        });
-                    }
-                })
+                ->whereHas('student')
                 ->where('archived', false)
                 ->whereBetween('date', [
                     Carbon::now()->startOfWeek(),
@@ -173,9 +127,9 @@ class CSDLPageController extends Controller
         ];
 
         return Inertia::render('CSDL/CSDLPage', [
-            'studentsNeedingCalls' => $studentsNeedingCalls,
             'recentTracking' => $recentTracking,
             'stats' => $stats,
+            'homeVisitAssignments' => $homeVisitAssignments,
         ]);
     }
 
@@ -187,7 +141,7 @@ class CSDLPageController extends Controller
             'date' => 'required|date',
             'time' => 'nullable|date_format:H:i',
             'notes' => 'nullable|string',
-            'status' => 'required|in:completed,no_answer', // CSDL can only set completed or no_answer
+            'status' => 'required|in:completed,processing,to_follow,no_answer',
             'outcome' => 'nullable|string',
             'follow_up_required' => 'nullable|string',
             'follow_up_date' => 'nullable|date|after:today',
@@ -223,7 +177,7 @@ class CSDLPageController extends Controller
             'date' => 'required|date',
             'time' => 'nullable|date_format:H:i',
             'notes' => 'nullable|string',
-            'status' => 'required|in:completed,no_answer', // CSDL can only set completed or no_answer
+            'status' => 'required|in:completed,processing,to_follow,no_answer',
             'outcome' => 'nullable|string',
             'follow_up_required' => 'nullable|string',
             'follow_up_date' => 'nullable|date|after:today', // Only future dates allowed

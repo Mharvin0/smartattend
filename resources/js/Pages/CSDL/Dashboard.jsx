@@ -19,7 +19,7 @@ import {
     Clock
 } from 'lucide-react';
 
-export default function CSDLDashboard({ stats = {}, recentTracking = [], studentsNeedingAttention = [] }) {
+export default function CSDLDashboard({ stats = {}, recentTracking = [], studentsNeedingAttention = [], visitsByWeek = null, statusTrendByWeek = null }) {
     const [liveData, setLiveData] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [lastRefresh, setLastRefresh] = useState(new Date());
@@ -79,10 +79,12 @@ export default function CSDLDashboard({ stats = {}, recentTracking = [], student
 
     // Update charts when live data changes
     useEffect(() => {
-        if (!liveData) return;
+        const visitsData = liveData?.visitsByWeek || visitsByWeek;
+        const statusData = liveData?.statusTrendByWeek || statusTrendByWeek;
+        if (!visitsData || !statusData) return;
 
         // Visits Over Time Chart
-        if (visitsChartRef.current && liveData.visitsByDay) {
+        if (visitsChartRef.current && visitsData?.labels?.length) {
             if (visitsChartInstance.current) {
                 visitsChartInstance.current.destroy();
             }
@@ -91,10 +93,10 @@ export default function CSDLDashboard({ stats = {}, recentTracking = [], student
             visitsChartInstance.current = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: liveData.visitsByDay.map(d => d.label),
+                    labels: visitsData.labels,
                     datasets: [{
-                        label: 'Home Visits',
-                        data: liveData.visitsByDay.map(d => d.count),
+                        label: 'Students Needing Home Visits',
+                        data: visitsData.needing,
                         backgroundColor: 'rgba(59, 130, 246, 0.5)',
                         borderColor: 'rgba(59, 130, 246, 1)',
                         borderWidth: 2,
@@ -136,44 +138,58 @@ export default function CSDLDashboard({ stats = {}, recentTracking = [], student
         }
 
         // Visits by Status Chart
-        if (statusChartRef.current && liveData.visitsByStatus) {
+        if (statusChartRef.current && statusData?.labels?.length) {
             if (statusChartInstance.current) {
                 statusChartInstance.current.destroy();
             }
 
             const ctx = statusChartRef.current.getContext('2d');
-            const statusLabels = Object.keys(liveData.visitsByStatus);
-            const statusData = Object.values(liveData.visitsByStatus);
+            const statusLabels = statusData.labels;
+            const statusSeries = statusData.series || {};
+            const statusOrder = ['completed', 'processing', 'to_follow', 'no_answer'];
+            const statusStyles = {
+                completed: {
+                    label: 'Completed',
+                    backgroundColor: 'rgba(34, 197, 94, 0.6)',
+                    borderColor: 'rgba(34, 197, 94, 1)',
+                },
+                processing: {
+                    label: 'Processing',
+                    backgroundColor: 'rgba(147, 51, 234, 0.6)',
+                    borderColor: 'rgba(147, 51, 234, 1)',
+                },
+                to_follow: {
+                    label: 'To Follow',
+                    backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                    borderColor: 'rgba(59, 130, 246, 1)',
+                },
+                no_answer: {
+                    label: 'No Answer',
+                    backgroundColor: 'rgba(239, 68, 68, 0.6)',
+                    borderColor: 'rgba(239, 68, 68, 1)',
+                },
+            };
             
             statusChartInstance.current = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: statusLabels.map(s => s.charAt(0).toUpperCase() + s.slice(1)),
-                    datasets: [{
-                        label: 'Visits',
-                        data: statusData,
-                        backgroundColor: [
-                            'rgba(34, 197, 94, 0.6)',
-                            'rgba(59, 130, 246, 0.6)',
-                            'rgba(234, 179, 8, 0.6)',
-                            'rgba(239, 68, 68, 0.6)',
-                        ],
-                        borderColor: [
-                            'rgba(34, 197, 94, 1)',
-                            'rgba(59, 130, 246, 1)',
-                            'rgba(234, 179, 8, 1)',
-                            'rgba(239, 68, 68, 1)',
-                        ],
+                    labels: statusLabels,
+                    datasets: statusOrder.map((key) => ({
+                        label: statusStyles[key].label,
+                        data: statusSeries[key] || [],
+                        backgroundColor: statusStyles[key].backgroundColor,
+                        borderColor: statusStyles[key].borderColor,
                         borderWidth: 2,
                         borderRadius: 4,
-                    }],
+                    })),
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
                         legend: {
-                            display: false,
+                            display: true,
+                            position: 'bottom',
                         },
                         tooltip: {
                             backgroundColor: 'rgba(0, 0, 0, 0.8)',
@@ -185,6 +201,7 @@ export default function CSDLDashboard({ stats = {}, recentTracking = [], student
                     scales: {
                         y: {
                             beginAtZero: true,
+                            stacked: true,
                             ticks: {
                                 stepSize: 1,
                             },
@@ -193,6 +210,7 @@ export default function CSDLDashboard({ stats = {}, recentTracking = [], student
                             },
                         },
                         x: {
+                            stacked: true,
                             grid: {
                                 display: false,
                             },
@@ -206,7 +224,7 @@ export default function CSDLDashboard({ stats = {}, recentTracking = [], student
             if (visitsChartInstance.current) visitsChartInstance.current.destroy();
             if (statusChartInstance.current) statusChartInstance.current.destroy();
         };
-    }, [liveData]);
+    }, [liveData, visitsByWeek, statusTrendByWeek]);
 
     const currentStats = liveData?.stats || stats;
     const currentStudents = liveData?.studentsNeedingVisits || studentsNeedingAttention;
@@ -257,31 +275,26 @@ export default function CSDLDashboard({ stats = {}, recentTracking = [], student
                 </div>
 
                 {/* Stats Cards */}
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                     <StatsCard
-                        icon={<AlertCircle className="h-6 w-6 text-red-600" />}
-                        title="Need Visits"
-                        value={currentStats.students_needing_visits || 0}
+                        icon={<CheckCircle className="h-6 w-6 text-green-600" />}
+                        title="Completed"
+                        value={currentStats.completed || 0}
                     />
                     <StatsCard
-                        icon={<Calendar className="h-6 w-6 text-blue-600" />}
-                        title="Tracked Today"
-                        value={currentStats.total_tracked_today || 0}
+                        icon={<RefreshCw className="h-6 w-6 text-purple-600" />}
+                        title="Processing"
+                        value={currentStats.processing || 0}
                     />
                     <StatsCard
-                        icon={<Users className="h-6 w-6 text-green-600" />}
-                        title="This Week"
-                        value={currentStats.total_tracked_this_week || 0}
+                        icon={<Clock className="h-6 w-6 text-blue-600" />}
+                        title="To Follow"
+                        value={currentStats.to_follow || 0}
                     />
                     <StatsCard
-                        icon={<Home className="h-6 w-6 text-purple-600" />}
-                        title="Visits Today"
-                        value={currentStats.visits_today || 0}
-                    />
-                    <StatsCard
-                        icon={<TrendingUp className="h-6 w-6 text-indigo-600" />}
-                        title="This Month"
-                        value={currentStats.visits_this_month || 0}
+                        icon={<Phone className="h-6 w-6 text-red-600" />}
+                        title="No Answer"
+                        value={currentStats.no_answer || 0}
                     />
                 </div>
 
@@ -292,9 +305,9 @@ export default function CSDLDashboard({ stats = {}, recentTracking = [], student
                         <div className="mb-4">
                             <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                                 <BarChart3 className="h-5 w-5 text-blue-600" />
-                                Visits Over Time
+                                Students Needing Home Visits by Week
                             </h3>
-                            <p className="text-sm text-gray-600">Last 7 days</p>
+                            <p className="text-sm text-gray-600">Last 7 weeks</p>
                         </div>
                         <div className="h-64">
                             <canvas ref={visitsChartRef}></canvas>
@@ -306,214 +319,13 @@ export default function CSDLDashboard({ stats = {}, recentTracking = [], student
                         <div className="mb-4">
                             <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                                 <CheckCircle className="h-5 w-5 text-green-600" />
-                                Visits by Status
+                                Home Visit Status by Week
                             </h3>
-                            <p className="text-sm text-gray-600">This month</p>
+                            <p className="text-sm text-gray-600">Last 7 weeks</p>
                         </div>
                         <div className="h-64">
                             <canvas ref={statusChartRef}></canvas>
                         </div>
-                    </div>
-                </div>
-
-                {/* Students Needing Home Visits - Detailed View */}
-                <div className="bg-white rounded-lg shadow">
-                    <div className="p-6 border-b">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                                    <AlertCircle className="h-5 w-5 text-red-600" />
-                                    Students Needing Home Visits
-                                </h3>
-                                <p className="text-sm text-gray-600">
-                                    {currentStudents.length} student{currentStudents.length !== 1 ? 's' : ''} requiring immediate attention
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="p-6">
-                        {currentStudents.length > 0 ? (
-                            <div className="space-y-4">
-                                {currentStudents.map((student) => (
-                                    <div 
-                                        key={student.id} 
-                                        className="border rounded-lg overflow-hidden hover:shadow-md transition-shadow"
-                                    >
-                                        <div 
-                                            className="p-4 cursor-pointer"
-                                            onClick={() => setExpandedStudent(expandedStudent === student.id ? null : student.id)}
-                                        >
-                                            <div className="flex items-start justify-between">
-                                                <div className="flex-1">
-                                                    <div className="flex items-center gap-3 mb-2">
-                                                        <h4 className="text-lg font-semibold text-gray-900">
-                                                            {student.name}
-                                                        </h4>
-                                                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${getPriorityColor(student.priority)}`}>
-                                                            {student.priority}
-                                                        </span>
-                                                        {student.total_visits > 0 && (
-                                                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                                                {student.total_visits} visit{student.total_visits !== 1 ? 's' : ''}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
-                                                        <div>
-                                                            <span className="font-medium">Student #:</span> {student.student_number}
-                                                        </div>
-                                                        <div>
-                                                            <span className="font-medium">Section:</span> {student.section}
-                                                        </div>
-                                                        <div>
-                                                            <span className="font-medium">Department:</span> {student.department}
-                                                        </div>
-                                                        <div>
-                                                            <span className="font-medium">Absences:</span> {student.absence_count}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div className="ml-4">
-                                                    <button className="text-blue-600 hover:text-blue-800">
-                                                        {expandedStudent === student.id ? '▼' : '▶'}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        {expandedStudent === student.id && (
-                                            <div className="border-t bg-gray-50 p-4">
-                                                <div className="grid md:grid-cols-2 gap-6">
-                                                    {/* Student Information */}
-                                                    <div>
-                                                        <h5 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                                                            <User className="h-4 w-4" />
-                                                            Student Information
-                                                        </h5>
-                                                        <div className="space-y-2 text-sm">
-                                                            <div className="flex items-start gap-2">
-                                                                <span className="font-medium text-gray-700 w-32">Program:</span>
-                                                                <span className="text-gray-600">{student.program}</span>
-                                                            </div>
-                                                            <div className="flex items-start gap-2">
-                                                                <span className="font-medium text-gray-700 w-32">Year Level:</span>
-                                                                <span className="text-gray-600">{student.year_level}</span>
-                                                            </div>
-                                                            <div className="flex items-start gap-2">
-                                                                <span className="font-medium text-gray-700 w-32">Gender:</span>
-                                                                <span className="text-gray-600">{student.gender}</span>
-                                                            </div>
-                                                            <div className="flex items-start gap-2">
-                                                                <span className="font-medium text-gray-700 w-32">Birth Date:</span>
-                                                                <span className="text-gray-600">{formatDate(student.birth_date)}</span>
-                                                            </div>
-                                                            <div className="flex items-start gap-2">
-                                                                <span className="font-medium text-gray-700 w-32">Status:</span>
-                                                                <span className={`px-2 py-1 rounded text-xs ${
-                                                                    student.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                                                                }`}>
-                                                                    {student.status || 'active'}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Contact Information */}
-                                                    <div>
-                                                        <h5 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                                                            <Phone className="h-4 w-4" />
-                                                            Contact Information
-                                                        </h5>
-                                                        <div className="space-y-2 text-sm">
-                                                            <div className="flex items-start gap-2">
-                                                                <Mail className="h-4 w-4 text-gray-400 mt-0.5" />
-                                                                <div>
-                                                                    <span className="font-medium text-gray-700">Email:</span>
-                                                                    <span className="text-gray-600 ml-2">{student.email || 'N/A'}</span>
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex items-start gap-2">
-                                                                <Phone className="h-4 w-4 text-gray-400 mt-0.5" />
-                                                                <div>
-                                                                    <span className="font-medium text-gray-700">Phone:</span>
-                                                                    <span className="text-gray-600 ml-2">{student.phone || 'N/A'}</span>
-                                                                </div>
-                                                            </div>
-                                                            <div className="mt-4 pt-3 border-t">
-                                                                <h6 className="font-medium text-gray-700 mb-2">Guardian Information</h6>
-                                                                <div className="space-y-1">
-                                                                    <div className="flex items-start gap-2">
-                                                                        <User className="h-4 w-4 text-gray-400 mt-0.5" />
-                                                                        <div>
-                                                                            <span className="font-medium text-gray-700">Name:</span>
-                                                                            <span className="text-gray-600 ml-2">{student.guardian_name}</span>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="flex items-start gap-2">
-                                                                        <Phone className="h-4 w-4 text-gray-400 mt-0.5" />
-                                                                        <div>
-                                                                            <span className="font-medium text-gray-700">Contact:</span>
-                                                                            <span className="text-gray-600 ml-2">{student.guardian_contact}</span>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                {/* Visit History */}
-                                                {student.last_visit_date && (
-                                                    <div className="mt-4 pt-4 border-t">
-                                                        <h5 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                                                            <Home className="h-4 w-4" />
-                                                            Last Visit Information
-                                                        </h5>
-                                                        <div className="grid md:grid-cols-3 gap-4 text-sm">
-                                                            <div>
-                                                                <span className="font-medium text-gray-700">Date:</span>
-                                                                <span className="text-gray-600 ml-2">{formatDate(student.last_visit_date)}</span>
-                                                            </div>
-                                                            <div>
-                                                                <span className="font-medium text-gray-700">Status:</span>
-                                                                <span className={`ml-2 px-2 py-1 rounded text-xs ${
-                                                                    student.last_visit_status === 'completed' ? 'bg-green-100 text-green-800' :
-                                                                    student.last_visit_status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
-                                                                    'bg-gray-100 text-gray-800'
-                                                                }`}>
-                                                                    {student.last_visit_status || 'N/A'}
-                                                                </span>
-                                                            </div>
-                                                            <div>
-                                                                <span className="font-medium text-gray-700">Total Visits:</span>
-                                                                <span className="text-gray-600 ml-2">{student.total_visits}</span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                {/* Action Button */}
-                                                <div className="mt-4 pt-4 border-t">
-                                                    <button
-                                                        onClick={() => router.visit('/csdl/csdl-page')}
-                                                        className="w-full md:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                                                    >
-                                                        <Home className="h-4 w-4" />
-                                                        Track Home Visit
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="text-center py-12 text-gray-500">
-                                <CheckCircle className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                                <p className="text-lg font-medium">No students need home visits</p>
-                                <p className="text-sm mt-2">All students are up to date</p>
-                            </div>
-                        )}
                     </div>
                 </div>
 

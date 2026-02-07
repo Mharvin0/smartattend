@@ -4,7 +4,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { BarChart3, TrendingUp, Phone, Home, Calendar, Download, Filter, Eye, Archive, ArchiveRestore } from 'lucide-react';
 
 export default function Reports({ stats = {}, recentTracking = [], filters = {}, tab = 'active', filterOptions = {} }) {
-    const [typeFilter, setTypeFilter] = useState(filters.type || '');
+    const [typeFilter] = useState('home_visit');
     const [statusFilter, setStatusFilter] = useState(filters.status || '');
     const [departmentFilter, setDepartmentFilter] = useState(filters.department_id || '');
     const [programFilter, setProgramFilter] = useState(filters.program_id || '');
@@ -15,6 +15,8 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
     const [searchFilter, setSearchFilter] = useState(filters.search || '');
     const [activeTab, setActiveTab] = useState(tab);
     const [searchTimeout, setSearchTimeout] = useState(null);
+    const [currentPage, setCurrentPage] = useState(1);
+    const perPage = 15;
 
     const { departments = [], programs = [], sections = [], trackedByUsers = [] } = filterOptions;
 
@@ -31,7 +33,7 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
     const applyFilters = useCallback(() => {
         router.get(route('csdl.reports'), {
             tab: activeTab,
-            type: typeFilter || undefined,
+            type: 'home_visit',
             status: statusFilter || undefined,
             department_id: departmentFilter || undefined,
             program_id: programFilter || undefined,
@@ -51,7 +53,6 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
         // Skip on initial mount - only apply when filters actually change
         const hasChanges = 
             activeTab !== tab ||
-            typeFilter !== (filters.type || '') ||
             statusFilter !== (filters.status || '') ||
             departmentFilter !== (filters.department_id || '') ||
             programFilter !== (filters.program_id || '') ||
@@ -100,6 +101,10 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
         setActiveTab(newTab);
         // Tab change will trigger auto-filter via useEffect
     };
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [recentTracking, activeTab]);
 
     const handleView = (id) => {
         router.visit(route('csdl.reports.show', id));
@@ -317,6 +322,11 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
         }
     };
 
+    const totalPages = Math.ceil((recentTracking?.length || 0) / perPage);
+    const startIndex = (currentPage - 1) * perPage;
+    const endIndex = startIndex + perPage;
+    const paginatedTracking = (recentTracking || []).slice(startIndex, endIndex);
+
     return (
         <AuthenticatedLayout>
             <Head title="CSDL Reports" />
@@ -483,18 +493,6 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
                             {/* Second Row */}
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                                    <select
-                                        value={typeFilter}
-                                        onChange={(e) => setTypeFilter(e.target.value)}
-                                        className="w-full border border-gray-300 rounded-md px-3 py-2"
-                                    >
-                                        <option value="">All Types</option>
-                                        <option value="call">Call</option>
-                                        <option value="home_visit">Home Visit</option>
-                                    </select>
-                                </div>
-                                <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                                     <select
                                         value={statusFilter}
@@ -567,8 +565,8 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
-                                {recentTracking.length > 0 ? (
-                                    recentTracking.map((tracking) => (
+                                {paginatedTracking.length > 0 ? (
+                                    paginatedTracking.map((tracking) => (
                                         <tr key={tracking.id} className="hover:bg-gray-50">
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="flex items-center gap-2">
@@ -643,6 +641,57 @@ export default function Reports({ stats = {}, recentTracking = [], filters = {},
                             </tbody>
                         </table>
                     </div>
+
+                    {totalPages > 1 && (
+                        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200">
+                            <div className="text-sm text-gray-600">
+                                Showing {startIndex + 1} to {Math.min(endIndex, recentTracking.length)} of {recentTracking.length} records
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                                    disabled={currentPage === 1}
+                                    className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    Previous
+                                </button>
+                                <div className="flex items-center gap-1">
+                                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                        let pageNum;
+                                        if (totalPages <= 5) {
+                                            pageNum = i + 1;
+                                        } else if (currentPage <= 3) {
+                                            pageNum = i + 1;
+                                        } else if (currentPage >= totalPages - 2) {
+                                            pageNum = totalPages - 4 + i;
+                                        } else {
+                                            pageNum = currentPage - 2 + i;
+                                        }
+                                        return (
+                                            <button
+                                                key={pageNum}
+                                                onClick={() => setCurrentPage(pageNum)}
+                                                className={`px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                                                    currentPage === pageNum
+                                                        ? 'bg-blue-600 text-white'
+                                                        : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                                                }`}
+                                            >
+                                                {pageNum}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <button
+                                    onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                                    disabled={currentPage === totalPages}
+                                    className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </AuthenticatedLayout>

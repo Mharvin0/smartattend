@@ -47,6 +47,12 @@ class DashboardController extends Controller
             $endOfWeek = $today->copy()->endOfWeek();
             $startOfMonth = $today->copy()->startOfMonth();
             $departmentIds = $user->getAssignedDepartmentIds();
+            
+            $baseTrackingQuery = StudentTracking::where('type', 'home_visit')
+                ->where('archived', false);
+            $userTrackingQuery = (clone $baseTrackingQuery)->where('tracked_by', $user->id);
+            $useAllTracking = !(clone $userTrackingQuery)->exists();
+            $trackingQuery = $useAllTracking ? $baseTrackingQuery : $userTrackingQuery;
 
             // Helper function to build student query with department filtering
             $buildStudentQuery = function($query) use ($user, $departmentIds) {
@@ -81,45 +87,20 @@ class DashboardController extends Controller
             
             // Get statistics - CSDL only sees home visits
             $stats = [
-                'students_needing_visits' => Student::forUser($user)
-                    ->where(function($query) use ($studentsWithActiveTrackingForStats) {
-                        $query->where('priority', 'PNS');
-                        if (!empty($studentsWithActiveTrackingForStats)) {
-                            $query->orWhereIn('id', $studentsWithActiveTrackingForStats);
-                        }
-                    })
-                    ->count(),
-                'total_tracked_today' => StudentTracking::where('type', 'home_visit')
-                    ->whereHas('student', $buildStudentQuery)
-                    ->whereDate('date', $today)
-                    ->count(),
-                'total_tracked_this_week' => StudentTracking::where('type', 'home_visit')
-                    ->whereHas('student', $buildStudentQuery)
-                    ->whereBetween('date', [$startOfWeek, $endOfWeek])
-                    ->count(),
-                'visits_today' => StudentTracking::where('type', 'home_visit')
-                    ->whereHas('student', $buildStudentQuery)
-                    ->whereDate('date', $today)
-                    ->count(),
-                'visits_this_month' => StudentTracking::where('type', 'home_visit')
-                    ->whereHas('student', $buildStudentQuery)
-                    ->whereBetween('date', [$startOfMonth, $today])
-                    ->count(),
+                'completed' => (clone $trackingQuery)->where('status', 'completed')->count(),
+                'processing' => (clone $trackingQuery)->where('status', 'processing')->count(),
+                'to_follow' => (clone $trackingQuery)->where('status', 'to_follow')->count(),
+                'no_answer' => (clone $trackingQuery)->where('status', 'no_answer')->count(),
             ];
 
             // Get recent tracking records - CSDL only sees home visit records
-            $recentTracking = StudentTracking::with(['student.section.program.department', 'trackedBy'])
+            $recentTrackingQuery = StudentTracking::with(['student.section.program.department', 'trackedBy'])
                 ->where('type', 'home_visit')
-                ->whereHas('student', function($q) use ($user, $departmentIds) {
-                    if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
-                        $q->where(function($subQ) use ($departmentIds) {
-                            $subQ->whereIn('department_id', $departmentIds)
-                                 ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
-                                     $progQ->whereIn('department_id', $departmentIds);
-                                 });
-                        });
-                    }
-                })
+                ->where('archived', false);
+            if (!$useAllTracking) {
+                $recentTrackingQuery->where('tracked_by', $user->id);
+            }
+            $recentTracking = $recentTrackingQuery
                 ->orderBy('date', 'desc')
                 ->orderBy('created_at', 'desc')
                 ->limit(10)
@@ -145,6 +126,34 @@ class DashboardController extends Controller
                         'can_edit' => true, // CSDL users can edit all tracking records
                     ];
                 });
+
+            $weeklyLabels = [];
+            $studentsNeedingByWeek = [];
+            $statusTrendByWeek = [
+                'completed' => [],
+                'processing' => [],
+                'to_follow' => [],
+                'no_answer' => [],
+            ];
+            $statusKeys = array_keys($statusTrendByWeek);
+
+            for ($i = 6; $i >= 0; $i--) {
+                $weekStart = $today->copy()->startOfWeek()->subWeeks($i);
+                $weekEnd = $weekStart->copy()->endOfWeek();
+                $weeklyLabels[] = $weekStart->format('M d');
+
+                $studentsNeedingByWeek[] = (clone $trackingQuery)
+                    ->whereBetween('date', [$weekStart->toDateString(), $weekEnd->toDateString()])
+                    ->distinct('student_id')
+                    ->count('student_id');
+
+                foreach ($statusKeys as $statusKey) {
+                    $statusTrendByWeek[$statusKey][] = (clone $trackingQuery)
+                        ->where('status', $statusKey)
+                        ->whereBetween('created_at', [$weekStart->startOfDay(), $weekEnd->endOfDay()])
+                        ->count();
+                }
+            }
 
             // Get students needing attention - CSDL sees PNS students OR students with active home visit tracking records
             // Get students with active home visit tracking records (sent by admin/superadmin)
@@ -222,20 +231,40 @@ class DashboardController extends Controller
                 'stats' => $stats,
                 'recentTracking' => $recentTracking,
                 'studentsNeedingAttention' => $studentsNeedingAttention,
+                'visitsByWeek' => [
+                    'labels' => $weeklyLabels,
+                    'needing' => $studentsNeedingByWeek,
+                ],
+                'statusTrendByWeek' => [
+                    'labels' => $weeklyLabels,
+                    'series' => $statusTrendByWeek,
+                ],
             ]);
         } catch (\Exception $e) {
             \Log::error('CSDL Dashboard Error: ' . $e->getMessage());
             
             return Inertia::render('CSDL/Dashboard', [
                 'stats' => [
-                    'students_needing_visits' => 0,
-                    'total_tracked_today' => 0,
-                    'total_tracked_this_week' => 0,
-                    'visits_today' => 0,
-                    'visits_this_month' => 0,
+                    'completed' => 0,
+                    'processing' => 0,
+                    'to_follow' => 0,
+                    'no_answer' => 0,
                 ],
                 'recentTracking' => [],
                 'studentsNeedingAttention' => [],
+                'visitsByWeek' => [
+                    'labels' => [],
+                    'needing' => [],
+                ],
+                'statusTrendByWeek' => [
+                    'labels' => [],
+                    'series' => [
+                        'completed' => [],
+                        'processing' => [],
+                        'to_follow' => [],
+                        'no_answer' => [],
+                    ],
+                ],
             ]);
         }
     }
@@ -248,55 +277,35 @@ class DashboardController extends Controller
             $startOfWeek = $today->copy()->startOfWeek();
             $endOfWeek = $today->copy()->endOfWeek();
             $startOfMonth = $today->copy()->startOfMonth();
-            $departmentIds = $user->getAssignedDepartmentIds();
+            $baseTrackingQuery = StudentTracking::where('type', 'home_visit')
+                ->where('archived', false);
+            $userTrackingQuery = (clone $baseTrackingQuery)->where('tracked_by', $user->id);
+            $useAllTracking = !(clone $userTrackingQuery)->exists();
+            $trackingQuery = $useAllTracking ? $baseTrackingQuery : $userTrackingQuery;
 
-            // Get all students needing home visits with detailed information
-            // Get students with active home visit tracking records (sent by admin/superadmin)
-            $studentsWithActiveTracking = StudentTracking::where('type', 'home_visit')
-                ->whereIn('status', ['pending', 'to_follow', 'processing', 'completed', 'no_answer'])
-                ->where('archived', false)
-                ->whereHas('student', function($q) use ($user, $departmentIds) {
-                    if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
-                        $q->where(function($subQ) use ($departmentIds) {
-                            $subQ->whereIn('department_id', $departmentIds)
-                                 ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
-                                     $progQ->whereIn('department_id', $departmentIds);
-                                 });
-                        });
-                    }
-                })
+            $assignedStudentIds = (clone $trackingQuery)
                 ->pluck('student_id')
                 ->unique()
                 ->values()
                 ->toArray();
             
-            $studentsNeedingVisits = Student::forUser($user)
-                ->where(function($query) use ($studentsWithActiveTracking) {
-                    // Show students with PNS priority (home visits needed)
-                    $query->where('priority', 'PNS');
-                    // OR students with active home visit tracking records (sent by admin/superadmin)
-                    if (!empty($studentsWithActiveTracking)) {
-                        $query->orWhereIn('id', $studentsWithActiveTracking);
-                    }
-                })
+            $studentsNeedingVisits = Student::whereIn('id', $assignedStudentIds)
                 ->with([
                     'section.program.department',
-                    'studentTracking' => function($query) {
+                    'studentTracking' => function($query) use ($user, $useAllTracking) {
                         $query->where('type', 'home_visit')
                             ->where('archived', false)
                             ->orderBy('date', 'desc')
                             ->orderBy('created_at', 'desc');
+                        if (!$useAllTracking) {
+                            $query->where('tracked_by', $user->id);
+                        }
                     }
                 ])
                 ->orderBy('priority', 'desc')
                 ->orderBy('absence_count', 'desc')
                 ->get()
-                ->map(function ($student) use ($studentsWithActiveTracking) {
-                    // Only update priority if student doesn't have active tracking
-                    // This preserves manually set priorities for students sent to CSDL
-                    if (!in_array($student->id, $studentsWithActiveTracking)) {
-                        $student->updatePriority();
-                    }
+                ->map(function ($student) {
                     $lastVisit = $student->studentTracking->first();
                     
                     return [
@@ -324,108 +333,51 @@ class DashboardController extends Controller
 
             // Get statistics
             $stats = [
-                'students_needing_visits' => $studentsNeedingVisits->count(),
-                'total_tracked_today' => StudentTracking::where('type', 'home_visit')
-                    ->whereHas('student', function($q) use ($user, $departmentIds) {
-                        if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
-                            $q->where(function($subQ) use ($departmentIds) {
-                                $subQ->whereIn('department_id', $departmentIds)
-                                     ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
-                                         $progQ->whereIn('department_id', $departmentIds);
-                                     });
-                            });
-                        }
-                    })
-                    ->whereDate('date', $today)
-                    ->count(),
-                'total_tracked_this_week' => StudentTracking::where('type', 'home_visit')
-                    ->whereHas('student', function($q) use ($user, $departmentIds) {
-                        if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
-                            $q->where(function($subQ) use ($departmentIds) {
-                                $subQ->whereIn('department_id', $departmentIds)
-                                     ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
-                                         $progQ->whereIn('department_id', $departmentIds);
-                                     });
-                            });
-                        }
-                    })
-                    ->whereBetween('date', [$startOfWeek, $endOfWeek])
-                    ->count(),
-                'visits_today' => StudentTracking::where('type', 'home_visit')
-                    ->whereHas('student', function($q) use ($user, $departmentIds) {
-                        if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
-                            $q->where(function($subQ) use ($departmentIds) {
-                                $subQ->whereIn('department_id', $departmentIds)
-                                     ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
-                                         $progQ->whereIn('department_id', $departmentIds);
-                                     });
-                            });
-                        }
-                    })
-                    ->whereDate('date', $today)
-                    ->count(),
-                'visits_this_month' => StudentTracking::where('type', 'home_visit')
-                    ->whereHas('student', function($q) use ($user, $departmentIds) {
-                        if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
-                            $q->where(function($subQ) use ($departmentIds) {
-                                $subQ->whereIn('department_id', $departmentIds)
-                                     ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
-                                         $progQ->whereIn('department_id', $departmentIds);
-                                     });
-                            });
-                        }
-                    })
-                    ->whereBetween('date', [$startOfMonth, $today])
-                    ->count(),
+                'completed' => (clone $trackingQuery)->where('status', 'completed')->count(),
+                'processing' => (clone $trackingQuery)->where('status', 'processing')->count(),
+                'to_follow' => (clone $trackingQuery)->where('status', 'to_follow')->count(),
+                'no_answer' => (clone $trackingQuery)->where('status', 'no_answer')->count(),
             ];
 
-            // Get visits by day for the last 7 days (for chart)
-            $visitsByDay = [];
-            for ($i = 6; $i >= 0; $i--) {
-                $date = $today->copy()->subDays($i);
-                $count = StudentTracking::where('type', 'home_visit')
-                    ->whereHas('student', function($q) use ($user, $departmentIds) {
-                        if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
-                            $q->where(function($subQ) use ($departmentIds) {
-                                $subQ->whereIn('department_id', $departmentIds)
-                                     ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
-                                         $progQ->whereIn('department_id', $departmentIds);
-                                     });
-                            });
-                        }
-                    })
-                    ->whereDate('date', $date)
-                    ->count();
-                $visitsByDay[] = [
-                    'date' => $date->format('Y-m-d'),
-                    'label' => $date->format('M d'),
-                    'count' => $count,
-                ];
-            }
+            $weeklyLabels = [];
+            $studentsNeedingByWeek = [];
+            $statusTrendByWeek = [
+                'completed' => [],
+                'processing' => [],
+                'to_follow' => [],
+                'no_answer' => [],
+            ];
+            $statusKeys = array_keys($statusTrendByWeek);
 
-            // Get visits by status
-            $visitsByStatus = StudentTracking::where('type', 'home_visit')
-                ->whereHas('student', function($q) use ($user, $departmentIds) {
-                    if (!$user->hasRole('Super Admin') && !empty($departmentIds)) {
-                        $q->where(function($subQ) use ($departmentIds) {
-                            $subQ->whereIn('department_id', $departmentIds)
-                                 ->orWhereHas('section.program', function($progQ) use ($departmentIds) {
-                                     $progQ->whereIn('department_id', $departmentIds);
-                                 });
-                        });
-                    }
-                })
-                ->whereBetween('date', [$startOfMonth, $today])
-                ->selectRaw('status, count(*) as count')
-                ->groupBy('status')
-                ->pluck('count', 'status')
-                ->toArray();
+            for ($i = 6; $i >= 0; $i--) {
+                $weekStart = $today->copy()->startOfWeek()->subWeeks($i);
+                $weekEnd = $weekStart->copy()->endOfWeek();
+                $weeklyLabels[] = $weekStart->format('M d');
+
+                $studentsNeedingByWeek[] = (clone $trackingQuery)
+                    ->whereBetween('date', [$weekStart->toDateString(), $weekEnd->toDateString()])
+                    ->distinct('student_id')
+                    ->count('student_id');
+
+                foreach ($statusKeys as $statusKey) {
+                    $statusTrendByWeek[$statusKey][] = (clone $trackingQuery)
+                        ->where('status', $statusKey)
+                        ->whereBetween('created_at', [$weekStart->startOfDay(), $weekEnd->endOfDay()])
+                        ->count();
+                }
+            }
 
             return response()->json([
                 'studentsNeedingVisits' => $studentsNeedingVisits,
                 'stats' => $stats,
-                'visitsByDay' => $visitsByDay,
-                'visitsByStatus' => $visitsByStatus,
+                'visitsByWeek' => [
+                    'labels' => $weeklyLabels,
+                    'needing' => $studentsNeedingByWeek,
+                ],
+                'statusTrendByWeek' => [
+                    'labels' => $weeklyLabels,
+                    'series' => $statusTrendByWeek,
+                ],
                 'timestamp' => now()->toISOString(),
             ]);
         } catch (\Exception $e) {
@@ -434,14 +386,24 @@ class DashboardController extends Controller
                 'error' => 'Failed to fetch live data',
                 'studentsNeedingVisits' => [],
                 'stats' => [
-                    'students_needing_visits' => 0,
-                    'total_tracked_today' => 0,
-                    'total_tracked_this_week' => 0,
-                    'visits_today' => 0,
-                    'visits_this_month' => 0,
+                    'completed' => 0,
+                    'processing' => 0,
+                    'to_follow' => 0,
+                    'no_answer' => 0,
                 ],
-                'visitsByDay' => [],
-                'visitsByStatus' => [],
+                'visitsByWeek' => [
+                    'labels' => [],
+                    'needing' => [],
+                ],
+                'statusTrendByWeek' => [
+                    'labels' => [],
+                    'series' => [
+                        'completed' => [],
+                        'processing' => [],
+                        'to_follow' => [],
+                        'no_answer' => [],
+                    ],
+                ],
                 'timestamp' => now()->toISOString(),
             ], 500);
         }

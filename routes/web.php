@@ -79,6 +79,7 @@ Route::middleware(['auth', \App\Http\Middleware\RequirePasswordChange::class])->
         // Student Tracking (replaces Interventions)
         Route::get('/tracking', [AdminTrackingController::class, 'index'])->name('tracking');
         Route::post('/tracking/track-student', [AdminTrackingController::class, 'trackStudent'])->name('tracking.track-student');
+        Route::get('/tracking/records', [AdminTrackingController::class, 'getTrackingRecords'])->name('tracking.get-tracking');
         Route::get('/tracking/archived', [AdminTrackingController::class, 'getArchivedTracking'])->name('tracking.archived-tracking');
         Route::get('/tracking/deleted', [AdminTrackingController::class, 'getDeletedTracking'])->name('tracking.deleted-tracking');
         Route::get('/tracking/export', [AdminTrackingController::class, 'exportTracking'])->name('tracking.export-tracking');

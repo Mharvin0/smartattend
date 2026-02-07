@@ -11,6 +11,7 @@ use App\Models\Subject;
 use App\Models\Schedule;
 use App\Models\AttendanceRecord;
 use App\Models\Intervention;
+use App\Models\StudentTracking;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -91,55 +92,107 @@ class AdminPageController extends Controller
         // Get all schedules with relationships
         $schedules = Schedule::with(['section.program.department', 'subject'])->get();
 
-        // Get today's live attendance statistics
+        // Get today's live attendance statistics (filtered by admin departments)
         $today = Carbon::today();
+        $departmentIds = $user->getAssignedDepartmentIds();
+        $programIds = Program::whereIn('department_id', $departmentIds)
+            ->pluck('id')
+            ->toArray();
+
+        $todayRecordsQuery = AttendanceRecord::whereDate('date', $today)
+            ->whereHas('student', function($q) use ($programIds) {
+                if (!empty($programIds)) {
+                    $q->whereHas('section', function($sectionQ) use ($programIds) {
+                        $sectionQ->whereIn('program_id', $programIds);
+                    });
+                } else {
+                    $q->whereRaw('1 = 0');
+                }
+            });
+
         $todayStats = [
-            'present' => AttendanceRecord::whereDate('date', $today)
-                ->where('status', 'present')->count(),
-            'absent' => AttendanceRecord::whereDate('date', $today)
-                ->where('status', 'absent')->count(),
-            'late' => AttendanceRecord::whereDate('date', $today)
-                ->where('status', 'late')->count(),
-            'excused' => AttendanceRecord::whereDate('date', $today)
-                ->where('status', 'excused')->count(),
-            'total' => AttendanceRecord::whereDate('date', $today)->count(),
+            'present' => (clone $todayRecordsQuery)->where('status', 'present')->count(),
+            'absent' => (clone $todayRecordsQuery)->where('status', 'absent')->count(),
+            'late' => (clone $todayRecordsQuery)->where('status', 'late')->count(),
+            'excused' => (clone $todayRecordsQuery)->where('status', 'excused')->count(),
+            'total' => (clone $todayRecordsQuery)->count(),
         ];
 
-        // Calculate live attendance rate
-        $totalRecords = AttendanceRecord::count();
-        $presentRecords = AttendanceRecord::where('status', 'present')->count();
-        $attendanceRate = $totalRecords > 0 ? round(($presentRecords / $totalRecords) * 100, 1) : 0;
+        // Calculate live attendance rate (today only)
+        $attendanceRate = $todayStats['total'] > 0
+            ? round(($todayStats['present'] / $todayStats['total']) * 100, 1)
+            : 0;
 
-        // Get recent attendance records with live data
-        $recentRecords = AttendanceRecord::with(['student.section.program.department', 'schedule.subject'])
-            ->whereHas('student')
+        $totalStudentsCount = Student::forUser($user)->count();
+        $pnsCount = Student::forUser($user)->where('priority', 'PNS')->count();
+        $callNeededCount = Student::forUser($user)->where('priority', 'Call Needed')->count();
+        $atRiskCount = $pnsCount + $callNeededCount;
+
+        // Recent activity: super admin sends + admin actions, filtered by admin's departments
+        $departmentIds = $user->getAssignedDepartmentIds();
+        $programIds = Program::whereIn('department_id', $departmentIds)
+            ->pluck('id')
+            ->toArray();
+
+        $baseTrackingQuery = StudentTracking::with(['student.section.program.department', 'trackedBy.roles'])
+            ->whereHas('student', function($q) use ($programIds) {
+                if (!empty($programIds)) {
+                    $q->whereHas('section', function($sectionQ) use ($programIds) {
+                        $sectionQ->whereIn('program_id', $programIds);
+                    });
+                } else {
+                    $q->whereRaw('1 = 0');
+                }
+            })
+            ->where('archived', false);
+
+        $superAdminTracking = (clone $baseTrackingQuery)
+            ->whereHas('trackedBy.roles', function ($q) {
+                $q->where('name', 'Super Admin');
+            })
             ->orderBy('created_at', 'desc')
             ->limit(10)
-            ->get()
-            ->map(function ($record) {
-                return [
-                    'id' => $record->id,
-                    'status' => $record->status,
-                    'date' => $record->date,
-                    'time' => $record->created_at->format('H:i'),
-                    'student' => [
-                        'first_name' => $record->student?->first_name ?? '',
-                        'last_name' => $record->student?->last_name ?? '',
-                        'student_number' => $record->student?->student_number ?? '',
-                        'section' => [
-                            'name' => $record->student?->section?->name ?? '',
-                            'program' => $record->student?->section?->program?->name ?? '',
-                            'department' => $record->student?->section?->program?->department?->name ?? '',
-                        ],
-                    ],
-                    'schedule' => [
-                        'subject' => $record->schedule?->subject?->name ?? '',
-                        'time_start' => $record->schedule?->time_start ?? '',
-                        'time_end' => $record->schedule?->time_end ?? '',
-                    ],
-                ];
-            })
-            ->filter(fn($record) => $record['student']['first_name'] !== '' || $record['student']['last_name'] !== '');
+            ->get();
+
+        $adminTracking = (clone $baseTrackingQuery)
+            ->where('tracked_by', $user->id)
+            ->orderBy('created_at', 'desc')
+            ->limit(10)
+            ->get();
+
+        $recentActivity = $superAdminTracking->map(function ($tracking) {
+            return [
+                'id' => 'super_' . $tracking->id,
+                'source' => 'super_admin',
+                'source_label' => 'From Super Admin',
+                'action' => $tracking->type === 'call' ? 'Call' : 'Home Visit',
+                'status' => $tracking->status,
+                'time' => $tracking->created_at?->format('H:i'),
+                'created_at' => $tracking->created_at?->toIso8601String(),
+                'student' => [
+                    'name' => $tracking->student ? ($tracking->student->first_name . ' ' . $tracking->student->last_name) : 'Unknown Student',
+                    'section' => $tracking->student?->section?->name ?? 'N/A',
+                    'program' => $tracking->student?->section?->program?->name ?? 'N/A',
+                    'department' => $tracking->student?->section?->program?->department?->name ?? 'N/A',
+                ],
+            ];
+        })->merge($adminTracking->map(function ($tracking) {
+            return [
+                'id' => 'admin_' . $tracking->id,
+                'source' => 'admin',
+                'source_label' => 'Your Activity',
+                'action' => $tracking->type === 'call' ? 'Call' : 'Home Visit',
+                'status' => $tracking->status,
+                'time' => $tracking->created_at?->format('H:i'),
+                'created_at' => $tracking->created_at?->toIso8601String(),
+                'student' => [
+                    'name' => $tracking->student ? ($tracking->student->first_name . ' ' . $tracking->student->last_name) : 'Unknown Student',
+                    'section' => $tracking->student?->section?->name ?? 'N/A',
+                    'program' => $tracking->student?->section?->program?->name ?? 'N/A',
+                    'department' => $tracking->student?->section?->program?->department?->name ?? 'N/A',
+                ],
+            ];
+        }))->sortByDesc('created_at')->values()->take(10);
 
         // Get live analytics data
         $analytics = [
@@ -159,7 +212,13 @@ class AdminPageController extends Controller
             'schedules' => $schedules,
             'todayStats' => $todayStats,
             'attendanceRate' => $attendanceRate,
-            'recentRecords' => $recentRecords,
+            'recentActivity' => $recentActivity,
+            'dashboardCounts' => [
+                'at_risk' => $atRiskCount,
+                'pns' => $pnsCount,
+                'call_needed' => $callNeededCount,
+                'total_students' => $totalStudentsCount,
+            ],
             'analytics' => $analytics,
         ]);
     }
@@ -168,37 +227,112 @@ class AdminPageController extends Controller
     {
         $today = Carbon::today();
         
-        // Real-time statistics
+        // Real-time statistics (filtered by admin departments)
+        $user = auth()->user();
+        $departmentIds = $user->getAssignedDepartmentIds();
+        $programIds = Program::whereIn('department_id', $departmentIds)
+            ->pluck('id')
+            ->toArray();
+
+        $todayRecordsQuery = AttendanceRecord::whereDate('date', $today)
+            ->whereHas('student', function($q) use ($programIds) {
+                if (!empty($programIds)) {
+                    $q->whereHas('section', function($sectionQ) use ($programIds) {
+                        $sectionQ->whereIn('program_id', $programIds);
+                    });
+                } else {
+                    $q->whereRaw('1 = 0');
+                }
+            });
+
         $stats = [
-            'present' => AttendanceRecord::whereDate('date', $today)->where('status', 'present')->count(),
-            'absent' => AttendanceRecord::whereDate('date', $today)->where('status', 'absent')->count(),
-            'late' => AttendanceRecord::whereDate('date', $today)->where('status', 'late')->count(),
-            'excused' => AttendanceRecord::whereDate('date', $today)->where('status', 'excused')->count(),
-            'total' => AttendanceRecord::whereDate('date', $today)->count(),
+            'present' => (clone $todayRecordsQuery)->where('status', 'present')->count(),
+            'absent' => (clone $todayRecordsQuery)->where('status', 'absent')->count(),
+            'late' => (clone $todayRecordsQuery)->where('status', 'late')->count(),
+            'excused' => (clone $todayRecordsQuery)->where('status', 'excused')->count(),
+            'total' => (clone $todayRecordsQuery)->count(),
         ];
 
-        // Recent activity
-        $recentActivity = AttendanceRecord::with(['student.section.program.department'])
-            ->whereHas('student')
+        $totalStudentsCount = Student::forUser($user)->count();
+        $pnsCount = Student::forUser($user)->where('priority', 'PNS')->count();
+        $callNeededCount = Student::forUser($user)->where('priority', 'Call Needed')->count();
+        $atRiskCount = $pnsCount + $callNeededCount;
+
+        // Recent activity (filtered by admin's departments)
+        $user = auth()->user();
+        $departmentIds = $user->getAssignedDepartmentIds();
+        $programIds = Program::whereIn('department_id', $departmentIds)
+            ->pluck('id')
+            ->toArray();
+
+        $baseTrackingQuery = StudentTracking::with(['student.section.program.department', 'trackedBy.roles'])
+            ->whereHas('student', function($q) use ($programIds) {
+                if (!empty($programIds)) {
+                    $q->whereHas('section', function($sectionQ) use ($programIds) {
+                        $sectionQ->whereIn('program_id', $programIds);
+                    });
+                } else {
+                    $q->whereRaw('1 = 0');
+                }
+            })
+            ->where('archived', false);
+
+        $superAdminTracking = (clone $baseTrackingQuery)
+            ->whereHas('trackedBy.roles', function ($q) {
+                $q->where('name', 'Super Admin');
+            })
             ->orderBy('created_at', 'desc')
             ->limit(5)
-            ->get()
-            ->map(function ($record) {
-                return [
-                    'id' => $record->id,
-                    'status' => $record->status,
-                    'time' => $record->created_at->format('H:i'),
-                    'student' => [
-                        'name' => ($record->student?->first_name ?? '') . ' ' . ($record->student?->last_name ?? ''),
-                        'section' => $record->student?->section?->name ?? 'N/A',
-                        'department' => $record->student?->section?->program?->department?->name ?? 'N/A',
-                    ],
-                ];
-            })
-            ->filter(fn($activity) => !empty($activity['student']['name']));
+            ->get();
+
+        $adminTracking = (clone $baseTrackingQuery)
+            ->where('tracked_by', $user->id)
+            ->orderBy('created_at', 'desc')
+            ->limit(5)
+            ->get();
+
+        $recentActivity = $superAdminTracking->map(function ($tracking) {
+            return [
+                'id' => 'super_' . $tracking->id,
+                'source' => 'super_admin',
+                'source_label' => 'From Super Admin',
+                'action' => $tracking->type === 'call' ? 'Call' : 'Home Visit',
+                'status' => $tracking->status,
+                'time' => $tracking->created_at?->format('H:i'),
+                'created_at' => $tracking->created_at?->toIso8601String(),
+                'student' => [
+                    'name' => $tracking->student ? ($tracking->student->first_name . ' ' . $tracking->student->last_name) : 'Unknown Student',
+                    'section' => $tracking->student?->section?->name ?? 'N/A',
+                    'program' => $tracking->student?->section?->program?->name ?? 'N/A',
+                    'department' => $tracking->student?->section?->program?->department?->name ?? 'N/A',
+                ],
+            ];
+        })->merge($adminTracking->map(function ($tracking) {
+            return [
+                'id' => 'admin_' . $tracking->id,
+                'source' => 'admin',
+                'source_label' => 'Your Activity',
+                'action' => $tracking->type === 'call' ? 'Call' : 'Home Visit',
+                'status' => $tracking->status,
+                'time' => $tracking->created_at?->format('H:i'),
+                'created_at' => $tracking->created_at?->toIso8601String(),
+                'student' => [
+                    'name' => $tracking->student ? ($tracking->student->first_name . ' ' . $tracking->student->last_name) : 'Unknown Student',
+                    'section' => $tracking->student?->section?->name ?? 'N/A',
+                    'program' => $tracking->student?->section?->program?->name ?? 'N/A',
+                    'department' => $tracking->student?->section?->program?->department?->name ?? 'N/A',
+                ],
+            ];
+        }))->sortByDesc('created_at')->values()->take(5);
 
         return response()->json([
             'stats' => $stats,
+            'dashboardCounts' => [
+                'at_risk' => $atRiskCount,
+                'pns' => $pnsCount,
+                'call_needed' => $callNeededCount,
+                'total_students' => $totalStudentsCount,
+            ],
             'recentActivity' => $recentActivity,
             'timestamp' => now()->toISOString(),
         ]);
