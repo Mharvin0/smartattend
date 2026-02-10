@@ -16,14 +16,10 @@ class UserController extends Controller
 	public function index()
 	{
 		// Exclude users with Teacher role - teachers are managed separately in the Teachers tab
-		// Exclude Super Admin - they don't need to see themselves in the list
 		// Exclude soft-deleted (deactivated) users - they are shown in the Deactivated tab
 		$users = User::with(['roles:name', 'department', 'optionalDepartment'])
 			->whereDoesntHave('roles', function($query) {
 				$query->where('name', 'Teacher');
-			})
-			->whereDoesntHave('roles', function($query) {
-				$query->where('name', 'Super Admin');
 			})
 			->whereNull('deleted_at') // Only show active users
 			->orderBy('name')
@@ -43,8 +39,7 @@ class UserController extends Controller
 		return Inertia::render('Super/Users', [
 			'users' => $users,
 			'deactivatedCount' => $deactivatedCount,
-			// Super Admin should not be creatable/promotable from the Users tab UI.
-			'roles' => ['Admin','CSDL'],
+			'roles' => ['Admin','CSDL','Super Admin'],
 			'departments' => \App\Models\Department::orderBy('name')->get(['id', 'name']),
 		]);
 	}
@@ -88,8 +83,7 @@ class UserController extends Controller
 		$validated = $request->validate([
 			'name' => ['required','string','max:255'],
 			'email' => ['required','email','max:255','unique:users,email'],
-			// Only Admin and CSDL accounts can be created from this screen.
-			'role' => ['required','in:Admin,CSDL'],
+			'role' => ['required','in:Admin,CSDL,Super Admin'],
 			'department_id' => ['nullable','exists:departments,id'],
 			'optional_department_id' => ['nullable','exists:departments,id','different:department_id'],
 		]);

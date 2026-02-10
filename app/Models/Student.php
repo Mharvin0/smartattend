@@ -249,9 +249,13 @@ class Student extends Model
         }
         
         // Get all attendance records for this student with their schedules and subjects
-        $attendanceRecords = $this->attendanceRecords()
-            ->with('schedule.subject')
-            ->get();
+        if ($this->relationLoaded('attendanceRecords')) {
+            $attendanceRecords = $this->attendanceRecords;
+            $attendanceRecords->loadMissing('schedule.subject');
+        } else {
+            $this->loadMissing('attendanceRecords.schedule.subject');
+            $attendanceRecords = $this->attendanceRecords;
+        }
         
         // If no attendance records but absence_count > 0, there's a data inconsistency
         // Trust absence_count: if >= 8 it's PNS, if < 4 it's Normal, otherwise it might be SLIP

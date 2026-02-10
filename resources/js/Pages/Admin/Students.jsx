@@ -1,10 +1,15 @@
 import React, { useState } from 'react';
-import { Head, router } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import SecondaryButton from '@/Components/SecondaryButton';
+import InputError from '@/Components/InputError';
 import { Download } from 'lucide-react';
 
 export default function Students({ students = [], departments = [], programs = [], sections = [], statuses = [], priorities = [], stats = {}, filters = {} }) {
+    const studentsData = Array.isArray(students) ? students : (students?.data || []);
+    const studentsMeta = Array.isArray(students) ? null : students?.meta;
+    const studentsLinks = Array.isArray(students) ? [] : (students?.links || []);
+    const { flash = {} } = usePage().props;
     const [searchTerm, setSearchTerm] = useState(filters.search || '');
     const [selectedDepartment, setSelectedDepartment] = useState(filters.department || '');
     const [selectedProgram, setSelectedProgram] = useState(filters.program || '');
@@ -31,6 +36,7 @@ export default function Students({ students = [], departments = [], programs = [
         guardian_name: '',
         guardian_contact: ''
     });
+    const [studentFormErrors, setStudentFormErrors] = useState({});
     const [showSendToCSDLModal, setShowSendToCSDLModal] = useState(false);
     const [selectedStudentForCSDL, setSelectedStudentForCSDL] = useState(null);
     const [csdlForm, setCsdlForm] = useState({
@@ -43,28 +49,49 @@ export default function Students({ students = [], departments = [], programs = [
         ? programs.filter(p => p.department_id == selectedDepartment)
         : programs;
 
-    // Filter students client-side - matching System Admin structure
-    const filteredStudents = students.filter(student => {
-        const matchesDepartment = !selectedDepartment || student.section?.program?.department_id == selectedDepartment || student.department_id == selectedDepartment;
-        const matchesProgram = !selectedProgram || student.section?.program_id == selectedProgram || student.program_id == selectedProgram;
-        const matchesYearLevel = !selectedYearLevel || student.year_level == selectedYearLevel || student.section?.year_level == selectedYearLevel;
-        const matchesStatus = !selectedStatus || student.attendance_status == selectedStatus;
-        const matchesSearch = !searchTerm || 
-            (student.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            student.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            student.student_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            student.name?.toLowerCase().includes(searchTerm.toLowerCase()));
-        
-        return matchesDepartment && matchesProgram && matchesYearLevel && matchesStatus && matchesSearch;
-    });
-
     const clearFilters = () => {
         setSearchTerm('');
         setSelectedDepartment('');
         setSelectedProgram('');
         setSelectedYearLevel('');
         setSelectedStatus('');
+        router.get(route('admin.students'), {}, { preserveState: true, replace: true, preserveScroll: true });
     };
+
+    const applyFilters = () => {
+        const query = {
+            department: selectedDepartment || undefined,
+            program: selectedProgram || undefined,
+            year_level: selectedYearLevel || undefined,
+            status: selectedStatus || undefined,
+            search: searchTerm || undefined,
+        };
+        router.get(route('admin.students'), query, { preserveState: true, replace: true, preserveScroll: true });
+    };
+
+    const normalizeEmail = (value) => (value ?? '').toString().trim().toLowerCase();
+    const normalizeStudentNumber = (value) => (
+        (value ?? '')
+            .toString()
+            .trim()
+            .toLowerCase()
+            .replace(/[-\s]/g, '')
+    );
+    const duplicateStudentNumber = studentsData.find((student) => (
+        normalizeStudentNumber(student.student_number || student.student_id) === normalizeStudentNumber(studentForm.student_number)
+    ));
+    const duplicateStudentEmail = studentsData.find((student) => (
+        normalizeEmail(student.email) && normalizeEmail(student.email) === normalizeEmail(studentForm.email)
+    ));
+    const totalStudents = studentsMeta?.total ?? studentsData.length;
+    const showingFrom = studentsMeta?.from ?? (studentsData.length ? 1 : 0);
+    const showingTo = studentsMeta?.to ?? studentsData.length;
+    const formatPaginationLabel = (label) => (
+        String(label)
+            .replace(/&laquo;|&raquo;/g, '')
+            .replace(/<[^>]+>/g, '')
+            .trim()
+    );
 
     const handleViewStudent = (student) => {
         setSelectedStudent(student);
@@ -95,10 +122,21 @@ export default function Students({ students = [], departments = [], programs = [
                     guardian_name: '',
                     guardian_contact: ''
                 });
+                setStudentFormErrors({});
                 router.reload();
             },
-            onError: () => {
-                setIsSubmitting(false);
+            onError: (errors) => {
+                const fieldErrors = {};
+                if (errors && typeof errors === 'object') {
+                    Object.keys(errors).forEach((key) => {
+                        if (Array.isArray(errors[key]) && errors[key].length > 0) {
+                            fieldErrors[key] = errors[key][0];
+                        } else if (typeof errors[key] === 'string') {
+                            fieldErrors[key] = errors[key];
+                        }
+                    });
+                }
+                setStudentFormErrors(fieldErrors);
             },
             onFinish: () => {
                 setIsSubmitting(false);
@@ -132,7 +170,7 @@ export default function Students({ students = [], departments = [], programs = [
     };
 
     const handleExportStudents = () => {
-        const studentsToExport = filteredStudents?.length ? filteredStudents : (students || []);
+        const studentsToExport = studentsData?.length ? studentsData : [];
 
         const printRootId = 'admin-students-print-root';
         const styleId = 'admin-students-print-style';
@@ -291,6 +329,22 @@ export default function Students({ students = [], departments = [], programs = [
 
             <div className="min-h-screen bg-gradient-to-br from-slate-50/80 via-gray-50/60 to-zinc-50/70 py-8">
                 <div className="w-full px-6 py-8 space-y-6">
+                    {flash.success && (
+                        <div className="pointer-events-none fixed right-6 top-6 z-50 flex items-center gap-3 rounded-lg bg-green-600 px-4 py-3 text-sm text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">
+                            <svg className="h-5 w-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            <span>{flash.success}</span>
+                        </div>
+                    )}
+                    {flash.error && (
+                        <div className="pointer-events-none fixed right-6 top-6 z-50 flex items-center gap-3 rounded-lg bg-red-600 px-4 py-3 text-sm text-white shadow-lg animate-[fade-in_0.2s_ease-out_forwards]">
+                            <svg className="h-5 w-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                            <span>{flash.error}</span>
+                        </div>
+                    )}
                     {/* Header */}
                     <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 border border-white/20">
                         <div className="flex items-center justify-between">
@@ -332,7 +386,7 @@ export default function Students({ students = [], departments = [], programs = [
                                     <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                                     </svg>
-                                    {filteredStudents.length} Students
+                                    {totalStudents} Students
                                 </span>
                             </div>
                         </div>
@@ -434,7 +488,7 @@ export default function Students({ students = [], departments = [], programs = [
                         </div>
                     )}
 
-                    <div className="mt-4 flex justify-between">
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                         <button
                             onClick={clearFilters}
                             className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -442,8 +496,14 @@ export default function Students({ students = [], departments = [], programs = [
                         >
                             Clear Filters
                         </button>
+                        <button
+                            onClick={applyFilters}
+                            className="inline-flex items-center px-4 py-2 rounded-md bg-blue-600 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        >
+                            Apply Filters
+                        </button>
                         <div className="text-sm text-gray-500">
-                            Showing {filteredStudents.length} of {students?.length || 0} students
+                            Showing {showingFrom}-{showingTo} of {totalStudents} students
                         </div>
                     </div>
                 </div>
@@ -495,7 +555,7 @@ export default function Students({ students = [], departments = [], programs = [
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-200 bg-white">
-                                    {filteredStudents.length === 0 ? (
+                                    {studentsData.length === 0 ? (
                                         <tr>
                                             <td colSpan="11" className="px-6 py-12 text-center text-sm text-gray-500">
                                                 <div className="flex flex-col items-center">
@@ -508,7 +568,7 @@ export default function Students({ students = [], departments = [], programs = [
                                             </td>
                                         </tr>
                                     ) : (
-                                        filteredStudents.map((student) => (
+                                        studentsData.map((student) => (
                                             <tr key={student.id} className="hover:bg-gray-50 transition-colors duration-150">
                                                 <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                                     {student.student_id || student.student_number}
@@ -629,6 +689,37 @@ export default function Students({ students = [], departments = [], programs = [
                                 </div>
                             </div>
                         </div>
+                        {studentsLinks.length > 0 && (
+                            <div className="flex flex-col gap-3 border-t border-gray-200 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="text-sm text-gray-500">
+                                    Page {studentsMeta?.current_page || 1} of {studentsMeta?.last_page || 1}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    {studentsLinks.map((link, index) => {
+                                        const label = formatPaginationLabel(link.label);
+                                        return (
+                                            <button
+                                                key={`${label}-${index}`}
+                                                type="button"
+                                                onClick={() => {
+                                                    if (link.url) {
+                                                        router.get(link.url, {}, { preserveState: true, replace: true, preserveScroll: true });
+                                                    }
+                                                }}
+                                                disabled={!link.url}
+                                                className={`rounded-md px-3 py-1 text-sm font-medium transition ${
+                                                    link.active
+                                                        ? 'bg-blue-600 text-white'
+                                                        : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                                                } ${!link.url ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                            >
+                                                {label || '...'}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -755,6 +846,7 @@ export default function Students({ students = [], departments = [], programs = [
                     onClick={(e) => {
                         if (e.target === e.currentTarget) {
                             setShowAddStudentModal(false);
+                            setStudentFormErrors({});
                         }
                     }}
                 >
@@ -763,7 +855,10 @@ export default function Students({ students = [], departments = [], programs = [
                             <div className="flex items-center justify-between mb-6">
                                 <h2 className="text-2xl font-bold text-gray-900">Add New Student</h2>
                                 <button
-                                    onClick={() => setShowAddStudentModal(false)}
+                                    onClick={() => {
+                                        setShowAddStudentModal(false);
+                                        setStudentFormErrors({});
+                                    }}
                                     className="text-gray-400 hover:text-gray-600 transition-colors"
                                 >
                                     <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -772,6 +867,22 @@ export default function Students({ students = [], departments = [], programs = [
                                 </button>
                             </div>
                             <form onSubmit={handleAddStudent} className="space-y-4">
+                                {(duplicateStudentNumber || duplicateStudentEmail) && (
+                                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                                        <div className="font-semibold">Student already exists</div>
+                                        {duplicateStudentNumber && (
+                                            <div className="mt-1">Student number matches an existing student.</div>
+                                        )}
+                                        {duplicateStudentEmail && (
+                                            <div className="mt-1">Email matches an existing student.</div>
+                                        )}
+                                    </div>
+                                )}
+                                {(studentFormErrors.student_number || studentFormErrors.email) && (
+                                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                                        Duplicate entry detected. Please use a unique student number and email.
+                                    </div>
+                                )}
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
@@ -779,9 +890,15 @@ export default function Students({ students = [], departments = [], programs = [
                                             type="text"
                                             required
                                             value={studentForm.first_name}
-                                            onChange={(e) => setStudentForm({...studentForm, first_name: e.target.value})}
+                                            onChange={(e) => {
+                                                if (studentFormErrors.first_name) {
+                                                    setStudentFormErrors({ ...studentFormErrors, first_name: null });
+                                                }
+                                                setStudentForm({...studentForm, first_name: e.target.value});
+                                            }}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
+                                        <InputError message={studentFormErrors.first_name} className="mt-1" />
                                     </div>
                                     <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
@@ -789,9 +906,15 @@ export default function Students({ students = [], departments = [], programs = [
                                             type="text"
                                             required
                                             value={studentForm.last_name}
-                                            onChange={(e) => setStudentForm({...studentForm, last_name: e.target.value})}
+                                            onChange={(e) => {
+                                                if (studentFormErrors.last_name) {
+                                                    setStudentFormErrors({ ...studentFormErrors, last_name: null });
+                                                }
+                                                setStudentForm({...studentForm, last_name: e.target.value});
+                                            }}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
+                                        <InputError message={studentFormErrors.last_name} className="mt-1" />
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
@@ -805,10 +928,14 @@ export default function Students({ students = [], departments = [], programs = [
                                             value={studentForm.student_number}
                                             onChange={(e) => {
                                                 const sanitized = e.target.value.replace(/[^0-9-]/g, '');
+                                                if (studentFormErrors.student_number) {
+                                                    setStudentFormErrors({ ...studentFormErrors, student_number: null });
+                                                }
                                                 setStudentForm({...studentForm, student_number: sanitized});
                                             }}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${studentFormErrors.student_number ? 'border-red-400' : 'border-gray-300'}`}
                                         />
+                                        <InputError message={studentFormErrors.student_number} className="mt-1" />
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
@@ -816,9 +943,15 @@ export default function Students({ students = [], departments = [], programs = [
                                             type="email"
                                             required
                                             value={studentForm.email}
-                                            onChange={(e) => setStudentForm({...studentForm, email: e.target.value})}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            onChange={(e) => {
+                                                if (studentFormErrors.email) {
+                                                    setStudentFormErrors({ ...studentFormErrors, email: null });
+                                                }
+                                                setStudentForm({...studentForm, email: e.target.value});
+                                            }}
+                                            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${studentFormErrors.email ? 'border-red-400' : 'border-gray-300'}`}
                                         />
+                                        <InputError message={studentFormErrors.email} className="mt-1" />
                                     </div>
                                 </div>
                                 <div>
@@ -831,18 +964,27 @@ export default function Students({ students = [], departments = [], programs = [
                                         value={studentForm.phone}
                                         onChange={(e) => {
                                             const sanitized = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
+                                            if (studentFormErrors.phone) {
+                                                setStudentFormErrors({ ...studentFormErrors, phone: null });
+                                            }
                                             setStudentForm({...studentForm, phone: sanitized});
                                         }}
                                         placeholder="e.g. 09123456789"
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                     />
+                                    <InputError message={studentFormErrors.phone} className="mt-1" />
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Section</label>
                                         <select
                                             value={studentForm.section_id}
-                                            onChange={(e) => setStudentForm({...studentForm, section_id: e.target.value})}
+                                            onChange={(e) => {
+                                                if (studentFormErrors.section_id) {
+                                                    setStudentFormErrors({ ...studentFormErrors, section_id: null });
+                                                }
+                                                setStudentForm({...studentForm, section_id: e.target.value});
+                                            }}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         >
                                             <option value="">Select Section</option>
@@ -855,7 +997,12 @@ export default function Students({ students = [], departments = [], programs = [
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Year Level</label>
                                         <select
                                             value={studentForm.year_level}
-                                            onChange={(e) => setStudentForm({...studentForm, year_level: e.target.value})}
+                                            onChange={(e) => {
+                                                if (studentFormErrors.year_level) {
+                                                    setStudentFormErrors({ ...studentFormErrors, year_level: null });
+                                                }
+                                                setStudentForm({...studentForm, year_level: e.target.value});
+                                            }}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         >
                                             <option value="">Select Year Level</option>
@@ -871,7 +1018,12 @@ export default function Students({ students = [], departments = [], programs = [
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
                                         <select
                                             value={studentForm.gender}
-                                            onChange={(e) => setStudentForm({...studentForm, gender: e.target.value})}
+                                            onChange={(e) => {
+                                                if (studentFormErrors.gender) {
+                                                    setStudentFormErrors({ ...studentFormErrors, gender: null });
+                                                }
+                                                setStudentForm({...studentForm, gender: e.target.value});
+                                            }}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         >
                                             <option value="">Select Gender</option>
@@ -884,9 +1036,15 @@ export default function Students({ students = [], departments = [], programs = [
                                         <input
                                             type="date"
                                             value={studentForm.birth_date}
-                                            onChange={(e) => setStudentForm({...studentForm, birth_date: e.target.value})}
+                                            onChange={(e) => {
+                                                if (studentFormErrors.birth_date) {
+                                                    setStudentFormErrors({ ...studentFormErrors, birth_date: null });
+                                                }
+                                                setStudentForm({...studentForm, birth_date: e.target.value});
+                                            }}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
+                                        <InputError message={studentFormErrors.birth_date} className="mt-1" />
                                     </div>
                                 </div>
                                 <div>
@@ -894,9 +1052,15 @@ export default function Students({ students = [], departments = [], programs = [
                                     <input
                                         type="text"
                                         value={studentForm.guardian_name}
-                                        onChange={(e) => setStudentForm({...studentForm, guardian_name: e.target.value})}
+                                        onChange={(e) => {
+                                            if (studentFormErrors.guardian_name) {
+                                                setStudentFormErrors({ ...studentFormErrors, guardian_name: null });
+                                            }
+                                            setStudentForm({...studentForm, guardian_name: e.target.value});
+                                        }}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                     />
+                                    <InputError message={studentFormErrors.guardian_name} className="mt-1" />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Guardian Contact</label>
@@ -908,10 +1072,14 @@ export default function Students({ students = [], departments = [], programs = [
                                         value={studentForm.guardian_contact}
                                         onChange={(e) => {
                                             const sanitized = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
+                                            if (studentFormErrors.guardian_contact) {
+                                                setStudentFormErrors({ ...studentFormErrors, guardian_contact: null });
+                                            }
                                             setStudentForm({...studentForm, guardian_contact: sanitized});
                                         }}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                     />
+                                    <InputError message={studentFormErrors.guardian_contact} className="mt-1" />
                                 </div>
                                 <div className="flex justify-end space-x-3 pt-4">
                                     <SecondaryButton type="button" onClick={() => setShowAddStudentModal(false)}>
@@ -919,7 +1087,7 @@ export default function Students({ students = [], departments = [], programs = [
                                     </SecondaryButton>
                                     <button
                                         type="submit"
-                                        disabled={isSubmitting}
+                                        disabled={isSubmitting || duplicateStudentNumber || duplicateStudentEmail}
                                         className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                                     >
                                         {isSubmitting ? 'Adding...' : 'Add Student'}
@@ -955,6 +1123,16 @@ export default function Students({ students = [], departments = [], programs = [
                                 </button>
                             </div>
                             <form onSubmit={handleImportStudents} className="space-y-4">
+                                {Array.isArray(flash.import_errors) && flash.import_errors.length > 0 && (
+                                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                                        <div className="font-semibold">Some rows failed to import</div>
+                                        <ul className="mt-2 max-h-40 list-disc space-y-1 overflow-y-auto pl-5">
+                                            {flash.import_errors.map((error, index) => (
+                                                <li key={`${error}-${index}`}>{error}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-2">File Type</label>
                                     <select

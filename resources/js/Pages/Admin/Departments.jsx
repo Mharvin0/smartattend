@@ -1,16 +1,33 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import InputError from '@/Components/InputError';
 import { Head, useForm, usePage, router } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
 
 export default function Departments({ departments }) {
-	const { data: departmentData, setData: setDepartmentData, post: postDepartment, patch: patchDepartment, processing: departmentProcessing, reset: resetDepartment } = useForm({
+	const {
+		data: departmentData,
+		setData: setDepartmentData,
+		post: postDepartment,
+		patch: patchDepartment,
+		processing: departmentProcessing,
+		reset: resetDepartment,
+		errors: departmentErrors,
+	} = useForm({
 		name: '',
 		code: '',
 		description: '',
 		is_active: true,
 	});
 
-	const { data: programData, setData: setProgramData, post: postProgram, patch: patchProgram, processing: programProcessing, reset: resetProgram } = useForm({
+	const {
+		data: programData,
+		setData: setProgramData,
+		post: postProgram,
+		patch: patchProgram,
+		processing: programProcessing,
+		reset: resetProgram,
+		errors: programErrors,
+	} = useForm({
 		department_id: '',
 		name: '',
 		code: '',
@@ -26,6 +43,28 @@ export default function Departments({ departments }) {
 	const [selectedDepartment, setSelectedDepartment] = useState(null);
 
 	const flash = usePage().props.flash || {};
+	const normalizeValue = (value) => (value ?? '').toString().trim().toLowerCase();
+	const findDuplicateDepartment = (field, value) => {
+		const normalizedValue = normalizeValue(value);
+		if (!normalizedValue) return null;
+		return departments.find((department) => (
+			normalizeValue(department[field]) === normalizedValue
+			&& department.id !== editingDepartment?.id
+		));
+	};
+	const duplicateNameDepartment = findDuplicateDepartment('name', departmentData.name);
+	const duplicateCodeDepartment = findDuplicateDepartment('code', departmentData.code);
+	const allPrograms = (departments || []).flatMap((department) => department.programs || []);
+	const findDuplicateProgram = (field, value) => {
+		const normalizedValue = normalizeValue(value);
+		if (!normalizedValue) return null;
+		return allPrograms.find((program) => (
+			normalizeValue(program[field]) === normalizedValue
+			&& program.id !== editingProgram?.id
+		));
+	};
+	const duplicateNameProgram = findDuplicateProgram('name', programData.name);
+	const duplicateCodeProgram = findDuplicateProgram('code', programData.code);
 
 	useEffect(() => {
 		if (flash.success || flash.error) {
@@ -44,14 +83,20 @@ export default function Departments({ departments }) {
 					resetDepartment();
 					setEditingDepartment(null);
 					setShowDepartmentForm(false);
-				}
+				},
+				onError: () => {
+					setShowDepartmentForm(true);
+				},
 			});
 		} else {
 			postDepartment(route('super.departments.store'), {
 				onSuccess: () => {
 					resetDepartment();
 					setShowDepartmentForm(false);
-				}
+				},
+				onError: () => {
+					setShowDepartmentForm(true);
+				},
 			});
 		}
 	};
@@ -64,14 +109,20 @@ export default function Departments({ departments }) {
 					resetProgram();
 					setEditingProgram(null);
 					setShowProgramForm(false);
-				}
+				},
+				onError: () => {
+					setShowProgramForm(true);
+				},
 			});
 		} else {
 			postProgram(route('super.programs.store'), {
 				onSuccess: () => {
 					resetProgram();
 					setShowProgramForm(false);
-				}
+				},
+				onError: () => {
+					setShowProgramForm(true);
+				},
 			});
 		}
 	};
@@ -167,75 +218,13 @@ export default function Departments({ departments }) {
 								onClick={() => {
 									resetDepartment();
 									setEditingDepartment(null);
-									setShowDepartmentForm(!showDepartmentForm);
+									setShowDepartmentForm(true);
 								}}
 								className="btn-primary"
 							>
-								{showDepartmentForm ? 'Cancel' : 'Add Department'}
+								Add Department
 							</button>
 						</div>
-
-						{showDepartmentForm && (
-							<form onSubmit={submitDepartment} className="border-b border-gray-200 p-6">
-								<div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-									<div>
-										<label className="block text-sm font-medium text-gray-700">Name</label>
-										<input
-											type="text"
-											value={departmentData.name}
-											onChange={(e) => setDepartmentData('name', e.target.value)}
-											className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary"
-											required
-										/>
-									</div>
-									<div>
-										<label className="block text-sm font-medium text-gray-700">Code</label>
-										<input
-											type="text"
-											value={departmentData.code}
-											onChange={(e) => setDepartmentData('code', e.target.value.toUpperCase())}
-											className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary"
-											required
-											maxLength="10"
-										/>
-									</div>
-									<div className="sm:col-span-2">
-										<label className="block text-sm font-medium text-gray-700">Description</label>
-										<textarea
-											value={departmentData.description}
-											onChange={(e) => setDepartmentData('description', e.target.value)}
-											rows={3}
-											className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary"
-										/>
-									</div>
-									<div className="flex items-center">
-										<input
-											type="checkbox"
-											checked={departmentData.is_active}
-											onChange={(e) => setDepartmentData('is_active', e.target.checked)}
-											className="h-4 w-4 text-brand-primary focus:ring-brand-primary border-gray-300 rounded"
-										/>
-										<label className="ml-2 block text-sm text-gray-900">Active</label>
-									</div>
-								</div>
-								<div className="mt-6 flex justify-end space-x-3">
-									<button
-										type="button"
-										onClick={() => {
-											resetDepartment();
-											setEditingDepartment(null);
-											setShowDepartmentForm(false);
-										}}
-										className="btn-secondary"
-									>
-										Cancel
-									</button>
-									<button type="submit" disabled={departmentProcessing} className="btn-primary">
-										{editingDepartment ? 'Update' : 'Create'} Department
-									</button>
-								</div>
-							</form>
-						)}
 
 						<div className="p-6">
 							<div className="space-y-4">
@@ -337,6 +326,119 @@ export default function Departments({ departments }) {
 						</div>
 					</div>
 
+					{/* Department Form Modal */}
+					{showDepartmentForm && (
+						<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-6">
+							<div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/5 max-h-[90vh] overflow-y-auto">
+								<div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-6 py-5">
+									<div>
+										<h3 className="text-xl font-bold text-gray-900">
+											{editingDepartment ? 'Edit Department' : 'Add Department'}
+										</h3>
+										<p className="mt-0.5 text-sm text-gray-500">Define department details and status.</p>
+									</div>
+									<button
+										onClick={() => {
+											resetDepartment();
+											setEditingDepartment(null);
+											setShowDepartmentForm(false);
+										}}
+										className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus:ring-4 focus:ring-brand-primary/10"
+										aria-label="Close"
+									>
+										<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+										</svg>
+									</button>
+								</div>
+								<form onSubmit={submitDepartment}>
+									<div className="p-6">
+										{(duplicateNameDepartment || duplicateCodeDepartment) && (
+											<div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+												<div className="font-semibold">Department already exists</div>
+												<div className="mt-1 space-y-1">
+													{duplicateNameDepartment && (
+														<div>Name matches: {duplicateNameDepartment.name}</div>
+													)}
+													{duplicateCodeDepartment && (
+														<div>Code matches: {duplicateCodeDepartment.code}</div>
+													)}
+												</div>
+											</div>
+										)}
+										{(departmentErrors.name || departmentErrors.code) && (
+											<div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+												Department already exists. Please use a different name or code.
+											</div>
+										)}
+										<div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+											<div>
+												<label className="block text-sm font-medium text-gray-700">Name</label>
+												<input
+													type="text"
+													value={departmentData.name}
+													onChange={(e) => setDepartmentData('name', e.target.value)}
+													className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+													required
+												/>
+												<InputError message={departmentErrors.name} className="mt-2" />
+											</div>
+											<div>
+												<label className="block text-sm font-medium text-gray-700">Code</label>
+												<input
+													type="text"
+													value={departmentData.code}
+													onChange={(e) => setDepartmentData('code', e.target.value.toUpperCase())}
+													className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+													required
+													maxLength="10"
+												/>
+												<InputError message={departmentErrors.code} className="mt-2" />
+											</div>
+											<div className="sm:col-span-2">
+												<label className="block text-sm font-medium text-gray-700">Description</label>
+												<textarea
+													value={departmentData.description}
+													onChange={(e) => setDepartmentData('description', e.target.value)}
+													rows={3}
+													className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+												/>
+												<InputError message={departmentErrors.description} className="mt-2" />
+											</div>
+											<div className="flex items-center">
+												<input
+													type="checkbox"
+													checked={departmentData.is_active}
+													onChange={(e) => setDepartmentData('is_active', e.target.checked)}
+													className="h-4 w-4 text-brand-primary focus:ring-brand-primary border-gray-300 rounded"
+												/>
+												<label className="ml-2 block text-sm text-gray-900">Active</label>
+											</div>
+										</div>
+									</div>
+									<div className="sticky bottom-0 border-t border-gray-200 bg-white px-6 py-4">
+										<div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+											<button
+												type="button"
+												onClick={() => {
+													resetDepartment();
+													setEditingDepartment(null);
+													setShowDepartmentForm(false);
+												}}
+												className="btn-secondary"
+											>
+												Cancel
+											</button>
+											<button type="submit" disabled={departmentProcessing || duplicateNameDepartment || duplicateCodeDepartment} className="btn-primary">
+												{editingDepartment ? 'Update' : 'Create'} Department
+											</button>
+										</div>
+									</div>
+								</form>
+							</div>
+						</div>
+					)}
+
 					{/* Program Form Modal */}
 					{showProgramForm && (
 						<div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
@@ -345,6 +447,24 @@ export default function Departments({ departments }) {
 									{editingProgram ? 'Edit Program' : 'Add Program'}
 								</h3>
 								<form onSubmit={submitProgram}>
+									{(duplicateNameProgram || duplicateCodeProgram) && (
+										<div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+											<div className="font-semibold">Program already exists</div>
+											<div className="mt-1 space-y-1">
+												{duplicateNameProgram && (
+													<div>Name matches: {duplicateNameProgram.name}</div>
+												)}
+												{duplicateCodeProgram && (
+													<div>Code matches: {duplicateCodeProgram.code}</div>
+												)}
+											</div>
+										</div>
+									)}
+									{(programErrors.name || programErrors.code) && (
+										<div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+											Program already exists. Please use a different name or code.
+										</div>
+									)}
 									<div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
 										<div className="sm:col-span-2">
 											<label className="block text-sm font-medium text-gray-700">Department</label>
@@ -359,6 +479,7 @@ export default function Departments({ departments }) {
 													<option key={dept.id} value={dept.id}>{dept.name}</option>
 												))}
 											</select>
+											<InputError message={programErrors.department_id} className="mt-2" />
 										</div>
 										<div>
 											<label className="block text-sm font-medium text-gray-700">Name</label>
@@ -369,6 +490,7 @@ export default function Departments({ departments }) {
 												className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary"
 												required
 											/>
+											<InputError message={programErrors.name} className="mt-2" />
 										</div>
 										<div>
 											<label className="block text-sm font-medium text-gray-700">Code</label>
@@ -380,6 +502,7 @@ export default function Departments({ departments }) {
 												required
 												maxLength="10"
 											/>
+											<InputError message={programErrors.code} className="mt-2" />
 										</div>
 										<div>
 											<label className="block text-sm font-medium text-gray-700">Duration (Years)</label>
@@ -392,6 +515,7 @@ export default function Departments({ departments }) {
 												max="10"
 												required
 											/>
+											<InputError message={programErrors.duration_years} className="mt-2" />
 										</div>
 										<div className="sm:col-span-2">
 											<label className="block text-sm font-medium text-gray-700">Description</label>
@@ -401,6 +525,7 @@ export default function Departments({ departments }) {
 												rows={3}
 												className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary"
 											/>
+											<InputError message={programErrors.description} className="mt-2" />
 										</div>
 										<div className="flex items-center">
 											<input
@@ -425,7 +550,7 @@ export default function Departments({ departments }) {
 										>
 											Cancel
 										</button>
-										<button type="submit" disabled={programProcessing} className="btn-primary">
+										<button type="submit" disabled={programProcessing || duplicateNameProgram || duplicateCodeProgram} className="btn-primary">
 											{editingProgram ? 'Update' : 'Create'} Program
 										</button>
 									</div>

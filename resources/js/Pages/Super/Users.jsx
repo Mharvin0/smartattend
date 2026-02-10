@@ -1,9 +1,10 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import InputError from '@/Components/InputError';
 import { Head, useForm, usePage, router } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
 
 export default function Users({ users, deactivatedCount = 0, roles, departments = [] }) {
-	const { data, setData, post, processing } = useForm({
+	const { data, setData, post, processing, errors } = useForm({
 		name: '', email: '', role: 'Admin', department_id: '', optional_department_id: '',
 	});
 	const flash = usePage().props.flash || {};
@@ -26,8 +27,18 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 	const [deactivatedUsers, setDeactivatedUsers] = useState([]);
 	const [isLoadingDeactivated, setIsLoadingDeactivated] = useState(false);
 
-	// Only Admin + CSDL can be created/promoted from this screen (never Super Admin).
-	const allowedRoleOptions = (roles || []).filter((r) => ['Admin', 'CSDL'].includes(r));
+	const allowedCreateRoleOptions = (roles || []).filter((r) => ['Admin', 'CSDL', 'Super Admin'].includes(r));
+	const allowedEditRoleOptions = (roles || []).filter((r) => ['Admin', 'CSDL'].includes(r));
+	const normalizeEmail = (value) => (value ?? '').toString().trim().toLowerCase();
+	const knownUsers = [...(users || []), ...(deactivatedUsers || [])];
+	const duplicateCreateEmail = knownUsers.find((user) => (
+		normalizeEmail(user.email) && normalizeEmail(user.email) === normalizeEmail(data.email)
+	));
+	const duplicateEditEmail = knownUsers.find((user) => (
+		normalizeEmail(user.email)
+		&& normalizeEmail(user.email) === normalizeEmail(editForm.data.email)
+		&& user.id !== editingUser?.id
+	));
 
 	const submitCreate = (e) => {
 		e.preventDefault();
@@ -175,6 +186,16 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 								<h3 className="text-2xl font-bold text-gray-900 mb-2">Create New User</h3>
 								<p className="text-gray-600">Add a new administrator to the system</p>
 								<p className="text-sm text-gray-500 mt-1">Password will be auto-generated as: {new Date().getFullYear()}{data.name.replace(/\s+/g, '') || 'FullName'}</p>
+								{duplicateCreateEmail && (
+									<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+										Email already exists. Account was not created.
+									</div>
+								)}
+								{errors.email && (
+									<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+										Email already exists. Account was not created.
+									</div>
+								)}
 							</div>
 							<form onSubmit={submitCreate} className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
 								<div>
@@ -186,6 +207,7 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 										onChange={(e) => setData('name', e.target.value)} 
 										required
 									/>
+									<InputError message={errors.name} className="mt-2" />
 								</div>
 								<div>
 									<label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
@@ -197,6 +219,7 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 										onChange={(e) => setData('email', e.target.value)} 
 										required
 									/>
+									<InputError message={errors.email} className="mt-2" />
 								</div>
 								<div>
 									<label className="block text-sm font-semibold text-gray-700 mb-2">Role</label>
@@ -205,8 +228,9 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 										value={data.role} 
 										onChange={(e) => setData('role', e.target.value)}
 									>
-										{allowedRoleOptions.map((r) => <option key={r} value={r}>{r}</option>)}
+										{allowedCreateRoleOptions.map((r) => <option key={r} value={r}>{r}</option>)}
 									</select>
+									<InputError message={errors.role} className="mt-2" />
 								</div>
 								<div>
 									<label className="block text-sm font-semibold text-gray-700 mb-2">Department</label>
@@ -220,6 +244,7 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 											<option key={dept.id} value={dept.id}>{dept.name}</option>
 										))}
 									</select>
+									<InputError message={errors.department_id} className="mt-2" />
 								</div>
 								<div>
 									<label className="block text-sm font-semibold text-gray-700 mb-2">Optional Department</label>
@@ -233,10 +258,11 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 											<option key={dept.id} value={dept.id}>{dept.name}</option>
 										))}
 									</select>
+									<InputError message={errors.optional_department_id} className="mt-2" />
 								</div>
 								<div className="md:col-span-2 lg:col-span-3">
 									<button 
-										disabled={processing} 
+										disabled={processing || !!duplicateCreateEmail} 
 										className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-brand-primary to-emerald-600 px-8 py-4 text-lg font-bold text-white shadow-lg transition-all duration-200 hover:from-brand-primary/90 hover:to-emerald-600/90 hover:shadow-xl hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-brand-primary/20 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
 									>
 										{processing ? (
@@ -457,6 +483,16 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 								</div>
 								<form onSubmit={submitEdit}>
 									<div className="p-6">
+										{duplicateEditEmail && (
+											<div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+												Email already exists. Changes were not saved.
+											</div>
+										)}
+										{editForm.errors.email && (
+											<div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+												Email already exists. Changes were not saved.
+											</div>
+										)}
 										<div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
 											<div className="sm:col-span-2">
 										<label className="block text-sm font-semibold text-gray-700 mb-2">Full Name</label>
@@ -467,6 +503,7 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 											onChange={(e) => editForm.setData('name', e.target.value)} 
 											required
 										/>
+										<InputError message={editForm.errors.name} className="mt-2" />
 									</div>
 											<div className="sm:col-span-2">
 										<label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
@@ -478,6 +515,7 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 											onChange={(e) => editForm.setData('email', e.target.value)} 
 											required
 										/>
+										<InputError message={editForm.errors.email} className="mt-2" />
 									</div>
 											<div className="sm:col-span-1">
 										<label className="block text-sm font-semibold text-gray-700 mb-2">Role</label>
@@ -494,9 +532,10 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 												value={editForm.data.role} 
 												onChange={(e) => editForm.setData('role', e.target.value)}
 											>
-												{allowedRoleOptions.map((r) => <option key={r} value={r}>{r}</option>)}
+												{allowedEditRoleOptions.map((r) => <option key={r} value={r}>{r}</option>)}
 											</select>
 										)}
+										<InputError message={editForm.errors.role} className="mt-2" />
 									</div>
 											<div className="sm:col-span-1">
 										<label className="block text-sm font-semibold text-gray-700 mb-2">Department</label>
@@ -510,6 +549,7 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 												<option key={dept.id} value={dept.id}>{dept.name}</option>
 											))}
 										</select>
+										<InputError message={editForm.errors.department_id} className="mt-2" />
 									</div>
 											<div className="sm:col-span-2">
 										<label className="block text-sm font-semibold text-gray-700 mb-2">Optional Department</label>
@@ -523,6 +563,7 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 												<option key={dept.id} value={dept.id}>{dept.name}</option>
 											))}
 										</select>
+										<InputError message={editForm.errors.optional_department_id} className="mt-2" />
 									</div>
 										</div>
 									</div>
@@ -541,7 +582,7 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 										</button>
 										<button
 											type="submit"
-											disabled={editForm.processing}
+											disabled={editForm.processing || !!duplicateEditEmail}
 											className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-brand-primary to-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-lg transition hover:from-brand-primary/90 hover:to-emerald-600/90 focus:outline-none focus:ring-4 focus:ring-brand-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
 										>
 											{editForm.processing ? 'Saving...' : 'Save Changes'}

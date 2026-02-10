@@ -45,40 +45,36 @@ class StudentController extends Controller
     public function index(Request $request)
     {
         $user = auth()->user();
-        
-        // Get all students with their sections and priority information - matching System Admin structure
-        $studentsQuery = Student::forUser($user)
-            ->select('students.*')
-            ->with(['section.program.department', 'department', 'weeklySummaries', 'schedules.subject', 'attendanceRecords'])
-            ->orderBy('last_name')
-            ->orderBy('first_name');
+        $perPage = 20;
+        $statusFilter = $request->status;
+
+        $baseQuery = Student::forUser($user)->select('students.*');
 
         // Apply filters
         if ($request->filled('department')) {
-            $studentsQuery->whereHas('section.program', function ($q) use ($request) {
+            $baseQuery->whereHas('section.program', function ($q) use ($request) {
                 $q->where('department_id', $request->department);
             });
         }
 
         if ($request->filled('program')) {
-            $studentsQuery->whereHas('section', function ($q) use ($request) {
+            $baseQuery->whereHas('section', function ($q) use ($request) {
                 $q->where('program_id', $request->program);
             });
         }
 
         if ($request->filled('year_level')) {
-            $studentsQuery->where('year_level', $request->year_level);
+            $baseQuery->where('year_level', $request->year_level);
         }
 
-        // Note: Status filter will be applied in the frontend after calculating attendance_status
-        // We keep priority filter for backward compatibility but will use status in frontend
+        // Keep priority filter for backward compatibility
         if ($request->filled('priority')) {
-            $studentsQuery->where('priority', $request->priority);
+            $baseQuery->where('priority', $request->priority);
         }
 
         if ($request->filled('search')) {
             $searchTerm = $request->search;
-            $studentsQuery->where(function ($query) use ($searchTerm) {
+            $baseQuery->where(function ($query) use ($searchTerm) {
                 $query->where('first_name', 'like', "%{$searchTerm}%")
                       ->orWhere('last_name', 'like', "%{$searchTerm}%")
                       ->orWhere('student_number', 'like', "%{$searchTerm}%")
@@ -86,13 +82,31 @@ class StudentController extends Controller
             });
         }
 
-        $students = $studentsQuery->get()->map(function ($student) {
-            // Refresh the model to get the latest saved values
-            $student->refresh();
-            // attendance_status is now automatically available via the accessor and $appends
-            // Don't call updatePriority() to preserve manually set absence_count values
-            return $student;
-        });
+        $studentsQuery = (clone $baseQuery)
+            ->with(['section.program.department', 'department', 'weeklySummaries', 'schedules.subject', 'attendanceRecords'])
+            ->orderBy('last_name')
+            ->orderBy('first_name');
+
+        if (!empty($statusFilter)) {
+            $studentsCollection = $studentsQuery->get();
+            $studentsFiltered = $studentsCollection->filter(function ($student) use ($statusFilter) {
+                return $student->attendance_status === $statusFilter;
+            })->values();
+
+            $currentPage = \Illuminate\Pagination\LengthAwarePaginator::resolveCurrentPage();
+            $students = new \Illuminate\Pagination\LengthAwarePaginator(
+                $studentsFiltered->forPage($currentPage, $perPage)->values(),
+                $studentsFiltered->count(),
+                $perPage,
+                $currentPage,
+                [
+                    'path' => $request->url(),
+                    'query' => $request->query(),
+                ]
+            );
+        } else {
+            $students = $studentsQuery->paginate($perPage)->withQueryString();
+        }
 
         // Get departments for filter dropdown
         $departments = \App\Models\Department::select('id', 'name')->orderBy('name')->get();
@@ -110,24 +124,34 @@ class StudentController extends Controller
         $priorities = ['Safe', 'Call Needed', 'PNS'];
 
         // Calculate statistics based on attendance status - matching System Admin
-        $normalCount = $students->where('attendance_status', 'Normal')->count();
-        $slipCount = $students->where('attendance_status', 'SLIP')->count();
-        $pnsCount = $students->where('attendance_status', 'PNS')->count();
-
-        // Get statistics
         $stats = [
-            'total_students' => $students->count(),
-            'normal_count' => $normalCount,
-            'slip_count' => $slipCount,
-            'pns_count' => $pnsCount,
+            'total_students' => 0,
+            'normal_count' => 0,
+            'slip_count' => 0,
+            'pns_count' => 0,
         ];
 
-        // Ensure students have attendance_status calculated
-        // Don't call updatePriority() to preserve manually set absence_count values
-        $students = $students->map(function ($student) {
-            $student->refresh();
-            return $student;
-        });
+        if (!empty($statusFilter)) {
+            $stats['total_students'] = $studentsFiltered->count();
+            $stats['normal_count'] = $studentsFiltered->where('attendance_status', 'Normal')->count();
+            $stats['slip_count'] = $studentsFiltered->where('attendance_status', 'SLIP')->count();
+            $stats['pns_count'] = $studentsFiltered->where('attendance_status', 'PNS')->count();
+        } else {
+            $statsQuery = (clone $baseQuery)->with(['attendanceRecords.schedule.subject']);
+            $statsQuery->chunkById(200, function ($chunk) use (&$stats) {
+                foreach ($chunk as $student) {
+                    $stats['total_students']++;
+                    $status = $student->attendance_status;
+                    if ($status === 'Normal') {
+                        $stats['normal_count']++;
+                    } elseif ($status === 'SLIP') {
+                        $stats['slip_count']++;
+                    } elseif ($status === 'PNS') {
+                        $stats['pns_count']++;
+                    }
+                }
+            });
+        }
 
         return Inertia::render('Admin/Students', [
             'students' => $students,
@@ -377,7 +401,11 @@ class StudentController extends Controller
                 $message .= " " . count($errors) . " errors occurred.";
             }
 
-            return redirect()->route('admin.students')->with('success', $message)->with('errors', $errors);
+            return redirect()
+                ->route('admin.students')
+                ->with('success', $message)
+                ->with('error', count($errors) > 0 ? 'Some rows failed to import.' : null)
+                ->with('import_errors', $errors);
         } catch (\Exception $e) {
             return redirect()->route('admin.students')->with('error', 'Import failed: ' . $e->getMessage());
         }
@@ -394,6 +422,7 @@ class StudentController extends Controller
     public function export(Request $request)
     {
         try {
+            $user = auth()->user();
             // Handle both FormData and JSON requests
             // Convert empty strings to null for nullable fields
             $input = $request->all();
@@ -428,7 +457,9 @@ class StudentController extends Controller
             }
 
             // Build query with filters
-            $query = Student::with(['section.program.department']);
+            $query = Student::forUser($user)->with(['section.program.department']);
+            $statusFilter = $validated['status'] ?? null;
+            $shouldUpdatePriority = empty($statusFilter);
 
             // If exporting a single student, filter by student_id
             if (!empty($validated['student_id'])) {
@@ -456,37 +487,40 @@ class StudentController extends Controller
                 }
             }
 
-            $students = $query->get();
-            
-            // Apply status filter after calculating attendance status
-            if (!empty($validated['status'])) {
-                $students = $students->filter(function($student) use ($validated) {
-                    $student->updatePriority();
-                    $student->refresh();
-                    // attendance_status is now automatically available via the accessor and $appends
-                    return $student->attendance_status === $validated['status'];
+            if (!empty($statusFilter)) {
+                $matchedCount = 0;
+                $countQuery = (clone $query)->with(['attendanceRecords.schedule.subject']);
+                $countQuery->chunkById(200, function ($students) use (&$matchedCount, $statusFilter) {
+                    foreach ($students as $student) {
+                        $student->updatePriority();
+                        $student->refresh();
+                        if ($student->attendance_status === $statusFilter) {
+                            $matchedCount++;
+                        }
+                    }
                 });
+
+                if ($matchedCount === 0) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'No students found matching the criteria.'
+                    ], 404);
+                }
+
+                $query->with(['attendanceRecords.schedule.subject']);
             } else {
-                // Update priority for all students
-                $students = $students->map(function($student) {
-                    $student->updatePriority();
-                    $student->refresh();
-                    // attendance_status is now automatically available via the accessor and $appends
-                    return $student;
-                });
-            }
-            
-            if ($students->isEmpty()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'No students found matching the criteria.'
-                ], 404);
+                if (!(clone $query)->exists()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'No students found matching the criteria.'
+                    ], 404);
+                }
             }
 
             if ($validated['format'] === 'csv') {
-                return $this->exportStudentsToCsv($students, $validated['student_id'] ?? null);
+                return $this->exportStudentsToCsv($query, $validated['student_id'] ?? null, $statusFilter, $shouldUpdatePriority);
             } else {
-                return $this->exportStudentsToXml($students, $validated['student_id'] ?? null);
+                return $this->exportStudentsToXml($query, $validated['student_id'] ?? null, $statusFilter, $shouldUpdatePriority);
             }
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -520,11 +554,11 @@ class StudentController extends Controller
         }
     }
 
-    private function exportStudentsToCsv($students, $studentId = null)
+    private function exportStudentsToCsv($query, $studentId = null, $statusFilter = null, $shouldUpdatePriority = true)
     {
         try {
             if ($studentId) {
-                $student = $students->first();
+                $student = (clone $query)->first();
                 $filename = 'student_' . ($student->student_number ?? $student->id) . '_' . date('Y-m-d_H-i-s') . '.csv';
             } else {
                 $filename = 'student_records_' . date('Y-m-d_H-i-s') . '.csv';
@@ -535,7 +569,7 @@ class StudentController extends Controller
                 'Content-Disposition' => 'attachment; filename="' . $filename . '"',
             ];
 
-            $callback = function() use ($students) {
+            $callback = function() use ($query, $statusFilter, $shouldUpdatePriority) {
                 $file = fopen('php://output', 'w');
                 
                 if ($file === false) {
@@ -565,38 +599,50 @@ class StudentController extends Controller
                     'Updated At',
                 ]);
 
-                foreach ($students as $student) {
-                    try {
-                        $birthDate = $student->birth_date ? (is_string($student->birth_date) ? $student->birth_date : $student->birth_date->format('Y-m-d')) : '';
-                        $createdAt = $student->created_at ? (is_string($student->created_at) ? $student->created_at : $student->created_at->format('Y-m-d H:i:s')) : '';
-                        $updatedAt = $student->updated_at ? (is_string($student->updated_at) ? $student->updated_at : $student->updated_at->format('Y-m-d H:i:s')) : '';
-                        
-                        fputcsv($file, [
-                            isset($student->student_id) ? $student->student_id : '',
-                            isset($student->student_number) ? $student->student_number : '',
-                            isset($student->first_name) ? $student->first_name : '',
-                            isset($student->last_name) ? $student->last_name : '',
-                            isset($student->email) ? $student->email : '',
-                            isset($student->phone) ? $student->phone : '',
-                            isset($student->gender) ? $student->gender : '',
-                            $birthDate,
-                            $student->section?->program?->department?->name ?? '',
-                            $student->section?->program?->name ?? '',
-                            $student->section?->name ?? '',
-                            isset($student->year_level) ? $student->year_level : '',
-                            isset($student->guardian_name) ? $student->guardian_name : '',
-                            isset($student->guardian_contact) ? $student->guardian_contact : '',
-                            isset($student->status) ? $student->status : '',
-                            isset($student->priority) ? $student->priority : '',
-                            isset($student->absence_count) ? $student->absence_count : 0,
-                            $createdAt,
-                            $updatedAt,
-                        ]);
-                    } catch (\Exception $e) {
-                        \Log::warning('Failed to export student ' . ($student->id ?? 'unknown') . ': ' . $e->getMessage());
-                        continue;
+                $exportQuery = (clone $query);
+                $exportQuery->chunkById(200, function ($students) use ($file, $statusFilter, $shouldUpdatePriority) {
+                    foreach ($students as $student) {
+                        try {
+                            if ($shouldUpdatePriority) {
+                                $student->updatePriority();
+                                $student->refresh();
+                            }
+
+                            if (!empty($statusFilter) && $student->attendance_status !== $statusFilter) {
+                                continue;
+                            }
+
+                            $birthDate = $student->birth_date ? (is_string($student->birth_date) ? $student->birth_date : $student->birth_date->format('Y-m-d')) : '';
+                            $createdAt = $student->created_at ? (is_string($student->created_at) ? $student->created_at : $student->created_at->format('Y-m-d H:i:s')) : '';
+                            $updatedAt = $student->updated_at ? (is_string($student->updated_at) ? $student->updated_at : $student->updated_at->format('Y-m-d H:i:s')) : '';
+                            
+                            fputcsv($file, [
+                                isset($student->student_id) ? $student->student_id : '',
+                                isset($student->student_number) ? $student->student_number : '',
+                                isset($student->first_name) ? $student->first_name : '',
+                                isset($student->last_name) ? $student->last_name : '',
+                                isset($student->email) ? $student->email : '',
+                                isset($student->phone) ? $student->phone : '',
+                                isset($student->gender) ? $student->gender : '',
+                                $birthDate,
+                                $student->section?->program?->department?->name ?? '',
+                                $student->section?->program?->name ?? '',
+                                $student->section?->name ?? '',
+                                isset($student->year_level) ? $student->year_level : '',
+                                isset($student->guardian_name) ? $student->guardian_name : '',
+                                isset($student->guardian_contact) ? $student->guardian_contact : '',
+                                isset($student->status) ? $student->status : '',
+                                isset($student->priority) ? $student->priority : '',
+                                isset($student->absence_count) ? $student->absence_count : 0,
+                                $createdAt,
+                                $updatedAt,
+                            ]);
+                        } catch (\Exception $e) {
+                            \Log::warning('Failed to export student ' . ($student->id ?? 'unknown') . ': ' . $e->getMessage());
+                            continue;
+                        }
                     }
-                }
+                });
 
                 fclose($file);
             };
@@ -611,49 +657,78 @@ class StudentController extends Controller
         }
     }
 
-    private function exportStudentsToXml($students, $studentId = null)
+    private function exportStudentsToXml($query, $studentId = null, $statusFilter = null, $shouldUpdatePriority = true)
     {
         try {
             if ($studentId) {
-                $student = $students->first();
+                $student = (clone $query)->first();
                 $filename = 'student_' . ($student->student_number ?? $student->id) . '_' . date('Y-m-d_H-i-s') . '.xml';
             } else {
                 $filename = 'student_records_' . date('Y-m-d_H-i-s') . '.xml';
             }
+            
+            $headers = [
+                'Content-Type' => 'application/xml; charset=UTF-8',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            ];
 
-            $xml = new \SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?><students></students>');
+            $callback = function() use ($query, $statusFilter, $shouldUpdatePriority) {
+                $escape = function ($value) {
+                    return htmlspecialchars((string) $value, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+                };
 
-            foreach ($students as $student) {
-                try {
-                    $studentXml = $xml->addChild('student');
-                    $studentXml->addChild('student_id', isset($student->student_id) ? htmlspecialchars($student->student_id) : '');
-                    $studentXml->addChild('student_number', isset($student->student_number) ? htmlspecialchars($student->student_number) : '');
-                    $studentXml->addChild('first_name', isset($student->first_name) ? htmlspecialchars($student->first_name) : '');
-                    $studentXml->addChild('last_name', isset($student->last_name) ? htmlspecialchars($student->last_name) : '');
-                    $studentXml->addChild('email', isset($student->email) ? htmlspecialchars($student->email) : '');
-                    $studentXml->addChild('phone', isset($student->phone) ? htmlspecialchars($student->phone) : '');
-                    $studentXml->addChild('gender', isset($student->gender) ? htmlspecialchars($student->gender) : '');
-                    $studentXml->addChild('birth_date', $student->birth_date ? (is_string($student->birth_date) ? $student->birth_date : $student->birth_date->format('Y-m-d')) : '');
-                    $studentXml->addChild('department', htmlspecialchars($student->section?->program?->department?->name ?? ''));
-                    $studentXml->addChild('program', htmlspecialchars($student->section?->program?->name ?? ''));
-                    $studentXml->addChild('section', htmlspecialchars($student->section?->name ?? ''));
-                    $studentXml->addChild('year_level', isset($student->year_level) ? htmlspecialchars($student->year_level) : '');
-                    $studentXml->addChild('guardian_name', isset($student->guardian_name) ? htmlspecialchars($student->guardian_name) : '');
-                    $studentXml->addChild('guardian_contact', isset($student->guardian_contact) ? htmlspecialchars($student->guardian_contact) : '');
-                    $studentXml->addChild('status', isset($student->status) ? htmlspecialchars($student->status) : '');
-                    $studentXml->addChild('priority', isset($student->priority) ? htmlspecialchars($student->priority) : '');
-                    $studentXml->addChild('absence_count', isset($student->absence_count) ? $student->absence_count : 0);
-                    $studentXml->addChild('created_at', $student->created_at ? (is_string($student->created_at) ? $student->created_at : $student->created_at->format('Y-m-d H:i:s')) : '');
-                    $studentXml->addChild('updated_at', $student->updated_at ? (is_string($student->updated_at) ? $student->updated_at : $student->updated_at->format('Y-m-d H:i:s')) : '');
-                } catch (\Exception $e) {
-                    \Log::warning('Failed to export student ' . ($student->id ?? 'unknown') . ': ' . $e->getMessage());
-                    continue;
-                }
-            }
+                echo '<?xml version="1.0" encoding="UTF-8"?>';
+                echo '<students>';
 
-            return response($xml->asXML(), 200)
-                ->header('Content-Type', 'application/xml; charset=UTF-8')
-                ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
+                $exportQuery = (clone $query);
+                $exportQuery->chunkById(200, function ($students) use ($escape, $statusFilter, $shouldUpdatePriority) {
+                    foreach ($students as $student) {
+                        try {
+                            if ($shouldUpdatePriority) {
+                                $student->updatePriority();
+                                $student->refresh();
+                            }
+
+                            if (!empty($statusFilter) && $student->attendance_status !== $statusFilter) {
+                                continue;
+                            }
+
+                            $birthDate = $student->birth_date ? (is_string($student->birth_date) ? $student->birth_date : $student->birth_date->format('Y-m-d')) : '';
+                            $createdAt = $student->created_at ? (is_string($student->created_at) ? $student->created_at : $student->created_at->format('Y-m-d H:i:s')) : '';
+                            $updatedAt = $student->updated_at ? (is_string($student->updated_at) ? $student->updated_at : $student->updated_at->format('Y-m-d H:i:s')) : '';
+
+                            echo '<student>';
+                            echo '<student_id>' . $escape($student->student_id ?? '') . '</student_id>';
+                            echo '<student_number>' . $escape($student->student_number ?? '') . '</student_number>';
+                            echo '<first_name>' . $escape($student->first_name ?? '') . '</first_name>';
+                            echo '<last_name>' . $escape($student->last_name ?? '') . '</last_name>';
+                            echo '<email>' . $escape($student->email ?? '') . '</email>';
+                            echo '<phone>' . $escape($student->phone ?? '') . '</phone>';
+                            echo '<gender>' . $escape($student->gender ?? '') . '</gender>';
+                            echo '<birth_date>' . $escape($birthDate) . '</birth_date>';
+                            echo '<department>' . $escape($student->section?->program?->department?->name ?? '') . '</department>';
+                            echo '<program>' . $escape($student->section?->program?->name ?? '') . '</program>';
+                            echo '<section>' . $escape($student->section?->name ?? '') . '</section>';
+                            echo '<year_level>' . $escape($student->year_level ?? '') . '</year_level>';
+                            echo '<guardian_name>' . $escape($student->guardian_name ?? '') . '</guardian_name>';
+                            echo '<guardian_contact>' . $escape($student->guardian_contact ?? '') . '</guardian_contact>';
+                            echo '<status>' . $escape($student->status ?? '') . '</status>';
+                            echo '<priority>' . $escape($student->priority ?? '') . '</priority>';
+                            echo '<absence_count>' . $escape($student->absence_count ?? 0) . '</absence_count>';
+                            echo '<created_at>' . $escape($createdAt) . '</created_at>';
+                            echo '<updated_at>' . $escape($updatedAt) . '</updated_at>';
+                            echo '</student>';
+                        } catch (\Exception $e) {
+                            \Log::warning('Failed to export student ' . ($student->id ?? 'unknown') . ': ' . $e->getMessage());
+                            continue;
+                        }
+                    }
+                });
+
+                echo '</students>';
+            };
+
+            return response()->stream($callback, 200, $headers);
         } catch (\Exception $e) {
             \Log::error('XML export failed: ' . $e->getMessage());
             return response()->json([
