@@ -36,7 +36,7 @@ export default function AuthenticatedLayout({ header, children }) {
 				<div className="absolute bottom-0 right-0 h-80 w-80 rounded-full bg-yellow-200/25 blur-2xl" />
 			</div>
 			{/* Sidebar */}
-			<div className={`fixed inset-y-0 z-50 flex w-72 flex-col bg-white transition-transform duration-300 ${
+			<div className={`fixed inset-y-0 z-[200] flex w-72 flex-col bg-white transition-transform duration-300 ${
 				sidebarOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none'
 			} border-r border-gray-200`}>
 				{/* Logo */}
@@ -309,7 +309,7 @@ export default function AuthenticatedLayout({ header, children }) {
 			</div>
 
 			{/* Top Navigation Bar */}
-			<div className={`fixed top-0 right-0 z-40 flex h-20 items-center justify-between bg-white shadow-sm transition-all duration-300 ${
+			<div className={`fixed top-0 right-0 z-[150] flex h-20 items-center justify-between bg-white shadow-sm transition-all duration-300 ${
 				sidebarOpen ? 'left-72' : 'left-0'
 			} border-b border-gray-200`}>
 				<div className="flex items-center gap-4 px-4">
