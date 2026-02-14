@@ -23,11 +23,21 @@ class SecurityAlertService
 
         foreach ($recipients as $recipient) {
             try {
-                Mail::raw($message, static function ($mail) use ($recipient, $subject): void {
-                    $mail
-                        ->to($recipient['email'], $recipient['name'])
-                        ->subject($subject);
-                });
+                // Prefer Brevo API (HTTPS) since SMTP is often blocked on hosts like Railway.
+                $sentViaBrevo = BrevoEmailService::sendTextEmail(
+                    (string) $recipient['email'],
+                    (string) $recipient['name'],
+                    $subject,
+                    $message
+                );
+
+                if (! $sentViaBrevo) {
+                    Mail::raw($message, static function ($mail) use ($recipient, $subject): void {
+                        $mail
+                            ->to($recipient['email'], $recipient['name'])
+                            ->subject($subject);
+                    });
+                }
             } catch (Throwable $e) {
                 report($e);
             }

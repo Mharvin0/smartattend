@@ -897,6 +897,7 @@ export default function Students({ students = [], departments = [], programs = [
                                                 setStudentForm({...studentForm, first_name: e.target.value});
                                             }}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            placeholder="e.g. Juan"
                                         />
                                         <InputError message={studentFormErrors.first_name} className="mt-1" />
                                     </div>
@@ -913,6 +914,7 @@ export default function Students({ students = [], departments = [], programs = [
                                                 setStudentForm({...studentForm, last_name: e.target.value});
                                             }}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            placeholder="e.g. Dela Cruz"
                                         />
                                         <InputError message={studentFormErrors.last_name} className="mt-1" />
                                     </div>
@@ -934,6 +936,7 @@ export default function Students({ students = [], departments = [], programs = [
                                                 setStudentForm({...studentForm, student_number: sanitized});
                                             }}
                                             className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${studentFormErrors.student_number ? 'border-red-400' : 'border-gray-300'}`}
+                                            placeholder="e.g. 2025-00001"
                                         />
                                         <InputError message={studentFormErrors.student_number} className="mt-1" />
                                     </div>
@@ -950,6 +953,7 @@ export default function Students({ students = [], departments = [], programs = [
                                                 setStudentForm({...studentForm, email: e.target.value});
                                             }}
                                             className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${studentFormErrors.email ? 'border-red-400' : 'border-gray-300'}`}
+                                            placeholder="e.g. student@upang.edu.ph"
                                         />
                                         <InputError message={studentFormErrors.email} className="mt-1" />
                                     </div>
@@ -1059,6 +1063,7 @@ export default function Students({ students = [], departments = [], programs = [
                                             setStudentForm({...studentForm, guardian_name: e.target.value});
                                         }}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="e.g. Maria Dela Cruz"
                                     />
                                     <InputError message={studentFormErrors.guardian_name} className="mt-1" />
                                 </div>
@@ -1078,6 +1083,7 @@ export default function Students({ students = [], departments = [], programs = [
                                             setStudentForm({...studentForm, guardian_contact: sanitized});
                                         }}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="e.g. 09123456789"
                                     />
                                     <InputError message={studentFormErrors.guardian_contact} className="mt-1" />
                                 </div>

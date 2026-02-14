@@ -87,6 +87,7 @@ export default function UpdatePasswordForm({ className = '' }) {
                                 setData('current_password', e.target.value)
                             }
                             className="block w-full rounded-xl border-2 border-gray-200 py-3 pl-4 pr-10 shadow-sm transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                            placeholder="Enter your current password"
                             autoComplete="current-password"
                         />
                         <button
@@ -120,6 +121,7 @@ export default function UpdatePasswordForm({ className = '' }) {
                             value={data.password}
                             onChange={(e) => setData('password', e.target.value)}
                             className="block w-full rounded-xl border-2 border-gray-200 py-3 pl-4 pr-10 shadow-sm transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                            placeholder="Enter a new password"
                             autoComplete="new-password"
                         />
                         <button
@@ -154,6 +156,7 @@ export default function UpdatePasswordForm({ className = '' }) {
                                 setData('password_confirmation', e.target.value)
                             }
                             className="block w-full rounded-xl border-2 border-gray-200 py-3 pl-4 pr-10 shadow-sm transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                            placeholder="Confirm your new password"
                             autoComplete="new-password"
                         />
                         <button

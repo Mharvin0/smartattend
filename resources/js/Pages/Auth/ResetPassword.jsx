@@ -39,6 +39,7 @@ export default function ResetPassword({ token, email }) {
                         name="email"
                         value={data.email}
                         className="mt-1 block w-full"
+                        placeholder="Enter your email address"
                         autoComplete="username"
                         onChange={(e) => setData('email', e.target.value)}
                     />
@@ -56,6 +57,7 @@ export default function ResetPassword({ token, email }) {
                             name="password"
                             value={data.password}
                             className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 pr-10"
+                            placeholder="Enter a new password"
                             autoComplete="new-password"
                             autoFocus
                             onChange={(e) => setData('password', e.target.value)}
@@ -90,6 +92,7 @@ export default function ResetPassword({ token, email }) {
                             name="password_confirmation"
                             value={data.password_confirmation}
                             className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 pr-10"
+                            placeholder="Confirm your new password"
                             autoComplete="new-password"
                             onChange={(e) =>
                                 setData('password_confirmation', e.target.value)

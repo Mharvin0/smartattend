@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\ProfileUpdateRequest;
 use App\Models\AuditLog;
+use App\Services\BrevoEmailService;
 use App\Services\SecurityAlertService;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
@@ -63,16 +64,28 @@ class ProfileController extends Controller
         ]);
 
         try {
-            Mail::raw(
-                "Your SmartAttend verification code is: {$verificationCode}\n\n"
+            $subject = 'SmartAttend email change verification code';
+            $body = "Your SmartAttend verification code is: {$verificationCode}\n\n"
                 . "This code expires in " . self::EMAIL_CHANGE_CODE_TTL_MINUTES . " minutes.\n"
-                . "If you did not request this, please secure your account immediately.",
-                static function ($message) use ($user): void {
-                    $message
-                        ->to($user->email, $user->name)
-                        ->subject('SmartAttend email change verification code');
-                }
+                . "If you did not request this, please secure your account immediately.";
+
+            $sentViaBrevo = BrevoEmailService::sendTextEmail(
+                (string) $user->email,
+                (string) $user->name,
+                $subject,
+                $body
             );
+
+            if (! $sentViaBrevo) {
+                Mail::raw(
+                    $body,
+                    static function ($message) use ($user, $subject): void {
+                        $message
+                            ->to($user->email, $user->name)
+                            ->subject($subject);
+                    }
+                );
+            }
         } catch (Throwable $e) {
             report($e);
             return Redirect::route('profile.edit')->with('status', 'email-change-code-send-failed');
@@ -210,15 +223,27 @@ class ProfileController extends Controller
     private function sendEmailChangedNotice(string $recipientEmail, string $recipientName): void
     {
         try {
-            Mail::raw(
-                "This is a confirmation that your SmartAttend account email was changed.\n\n"
-                . "If you did not perform this action, please reset your password immediately and contact support.",
-                static function ($message) use ($recipientEmail, $recipientName): void {
-                    $message
-                        ->to($recipientEmail, $recipientName)
-                        ->subject('SmartAttend account email change confirmation');
-                }
+            $subject = 'SmartAttend account email change confirmation';
+            $body = "This is a confirmation that your SmartAttend account email was changed.\n\n"
+                . "If you did not perform this action, please reset your password immediately and contact support.";
+
+            $sentViaBrevo = BrevoEmailService::sendTextEmail(
+                $recipientEmail,
+                $recipientName,
+                $subject,
+                $body
             );
+
+            if (! $sentViaBrevo) {
+                Mail::raw(
+                    $body,
+                    static function ($message) use ($recipientEmail, $recipientName, $subject): void {
+                        $message
+                            ->to($recipientEmail, $recipientName)
+                            ->subject($subject);
+                    }
+                );
+            }
         } catch (Throwable $e) {
             report($e);
         }

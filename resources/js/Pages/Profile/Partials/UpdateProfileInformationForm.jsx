@@ -95,6 +95,7 @@ export default function UpdateProfileInformation({
                         className="mt-2 block w-full rounded-xl border-2 border-gray-200 px-4 py-3 shadow-sm transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
                         value={data.name}
                         onChange={(e) => setData('name', e.target.value)}
+                        placeholder="Enter your full name"
                         required
                         isFocused
                         autoComplete="name"
@@ -112,6 +113,7 @@ export default function UpdateProfileInformation({
                         className="mt-2 block w-full rounded-xl border-2 border-gray-200 px-4 py-3 shadow-sm transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
                         value={data.email}
                         onChange={(e) => setData('email', e.target.value)}
+                        placeholder="Enter your email address"
                         required
                         autoComplete="username"
                     />
