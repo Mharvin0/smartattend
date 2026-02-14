@@ -59,11 +59,17 @@ export default function SystemAdmin({
     // Pagination state for "Students Needing Attention" table (Management tab)
     const attentionPerPage = 10;
     const [attentionCurrentPage, setAttentionCurrentPage] = useState(1);
+    // Local state so we can instantly remove entries (e.g. after sending to CSDL)
+    const [attentionStudents, setAttentionStudents] = useState(studentsNeedingCalls || []);
 
     useEffect(() => {
         // Reset to page 1 when the list changes (filtering/reloads)
         setAttentionCurrentPage(1);
-    }, [studentsNeedingCalls?.length]);
+    }, [attentionStudents?.length]);
+
+    useEffect(() => {
+        setAttentionStudents(studentsNeedingCalls || []);
+    }, [studentsNeedingCalls]);
     
     useEffect(() => {
         const interval = setInterval(() => {
@@ -1625,11 +1631,11 @@ export default function SystemAdmin({
     };
 
     const renderManagement = () => {
-        const attentionTotal = studentsNeedingCalls?.length || 0;
+        const attentionTotal = attentionStudents?.length || 0;
         const attentionLastPage = Math.max(1, Math.ceil(attentionTotal / attentionPerPage));
         const attentionStartIdx = (attentionCurrentPage - 1) * attentionPerPage;
         const attentionEndIdx = attentionStartIdx + attentionPerPage;
-        const paginatedAttentionStudents = (studentsNeedingCalls || []).slice(attentionStartIdx, attentionEndIdx);
+        const paginatedAttentionStudents = (attentionStudents || []).slice(attentionStartIdx, attentionEndIdx);
 
         return (
             <div className="space-y-6">
@@ -5286,10 +5292,13 @@ export default function SystemAdmin({
                                     notes: csdlForm.notes
                                 }, {
                                     onSuccess: () => {
+                                        const sentId = selectedStudentForCSDL.id;
+                                        setAttentionStudents((prev) => (prev || []).filter((s) => s.id !== sentId));
+
                                         setShowSendToCSDLModal(false);
                                         setSelectedStudentForCSDL(null);
                                         setCsdlForm({ type: 'home_visit', notes: '' });
-                                        router.reload();
+                                        router.reload({ only: ['studentsNeedingCalls', 'stats', 'recentTracking'] });
                                     },
                                     onError: () => {
                                         alert('Failed to send student to CSDL');
