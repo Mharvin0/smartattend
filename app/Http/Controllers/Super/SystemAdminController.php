@@ -985,6 +985,17 @@ class SystemAdminController extends Controller
                 'optional_department_id' => $request->optional_department_id,
             ]);
 
+            AuditLogService::logUserManagement(
+                AuditLog::TYPE_DATA_CREATE,
+                "Teacher created: {$teacher->email}",
+                [
+                    'teacher_id' => $teacher->id,
+                    'teacher_email' => $teacher->email,
+                    'department_id' => $teacher->department_id,
+                    'optional_department_id' => $teacher->optional_department_id,
+                ]
+            );
+
             return back()->with('success', 'Teacher/Adviser created successfully');
 
         } catch (\Exception $e) {
@@ -996,6 +1007,7 @@ class SystemAdminController extends Controller
     {
         try {
             $teacher = \App\Models\Teacher::findOrFail($id);
+            $original = $teacher->only(['name', 'email', 'department_id', 'optional_department_id']);
 
             $request->validate([
                 'name' => 'required|string|max:255',
@@ -1011,6 +1023,16 @@ class SystemAdminController extends Controller
                 'optional_department_id' => $request->optional_department_id,
             ]);
 
+            AuditLogService::logUserManagement(
+                AuditLog::TYPE_DATA_UPDATE,
+                "Teacher updated: {$teacher->email}",
+                [
+                    'teacher_id' => $teacher->id,
+                    'old_values' => $original,
+                    'new_values' => $teacher->only(['name', 'email', 'department_id', 'optional_department_id']),
+                ]
+            );
+
             return back()->with('success', 'Teacher/Adviser updated successfully');
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -1024,7 +1046,18 @@ class SystemAdminController extends Controller
     {
         try {
             $teacher = \App\Models\Teacher::findOrFail($id);
+            $teacherEmail = $teacher->email;
+            $teacherId = $teacher->id;
             $teacher->delete();
+
+            AuditLogService::logUserManagement(
+                AuditLog::TYPE_DATA_DELETE,
+                "Teacher deleted: {$teacherEmail}",
+                [
+                    'teacher_id' => $teacherId,
+                    'teacher_email' => $teacherEmail,
+                ]
+            );
 
             return back()->with('success', 'Teacher/Adviser deleted successfully');
 
@@ -3536,6 +3569,16 @@ class SystemAdminController extends Controller
             
             // Generate filename
             $filename = 'tracking_records_' . $tab . '_' . date('Y-m-d_His') . '.csv';
+
+            AuditLogService::logReports(
+                AuditLog::TYPE_DATA_EXPORT,
+                "Tracking records exported ({$tab})",
+                [
+                    'tab' => $tab,
+                    'records_count' => $trackings->count(),
+                    'filename' => $filename,
+                ]
+            );
             
             // Return response with Content-Length header
             return response($csvContent, 200, [
@@ -3716,8 +3759,26 @@ class SystemAdminController extends Controller
             }
 
             if ($validated['format'] === 'csv') {
+                AuditLogService::logReports(
+                    AuditLog::TYPE_DATA_EXPORT,
+                    'Student records exported as CSV',
+                    [
+                        'format' => 'csv',
+                        'students_count' => $students->count(),
+                        'filters' => $validated,
+                    ]
+                );
                 return $this->exportStudentsToCsv($students, $validated['student_id'] ?? null);
             } else {
+                AuditLogService::logReports(
+                    AuditLog::TYPE_DATA_EXPORT,
+                    'Student records exported as XML',
+                    [
+                        'format' => 'xml',
+                        'students_count' => $students->count(),
+                        'filters' => $validated,
+                    ]
+                );
                 return $this->exportStudentsToXml($students, $validated['student_id'] ?? null);
             }
 

@@ -34,11 +34,6 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 	const duplicateCreateEmail = knownUsers.find((user) => (
 		normalizeEmail(user.email) && normalizeEmail(user.email) === normalizeEmail(data.email)
 	));
-	const duplicateEditEmail = knownUsers.find((user) => (
-		normalizeEmail(user.email)
-		&& normalizeEmail(user.email) === normalizeEmail(editForm.data.email)
-		&& user.id !== editingUser?.id
-	));
 
 	const submitCreate = (e) => {
 		e.preventDefault();
@@ -483,16 +478,6 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 								</div>
 								<form onSubmit={submitEdit}>
 									<div className="p-6">
-										{duplicateEditEmail && (
-											<div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-												Email already exists. Changes were not saved.
-											</div>
-										)}
-										{editForm.errors.email && (
-											<div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-												Email already exists. Changes were not saved.
-											</div>
-										)}
 										<div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
 											<div className="sm:col-span-2">
 										<label className="block text-sm font-semibold text-gray-700 mb-2">Full Name</label>
@@ -508,13 +493,13 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 											<div className="sm:col-span-2">
 										<label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
 										<input 
-											className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-gray-900 shadow-sm outline-none ring-0 transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10" 
-											placeholder="Enter email address" 
+											className="w-full rounded-xl border-2 border-gray-200 bg-gray-100 px-4 py-3 text-gray-700 shadow-sm outline-none ring-0 cursor-not-allowed" 
 											type="email"
 											value={editForm.data.email} 
-											onChange={(e) => editForm.setData('email', e.target.value)} 
-											required
+											readOnly
+											aria-readonly="true"
 										/>
+										<p className="mt-1 text-xs text-gray-500">Email cannot be changed from Edit User.</p>
 										<InputError message={editForm.errors.email} className="mt-2" />
 									</div>
 											<div className="sm:col-span-1">
@@ -582,7 +567,7 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 										</button>
 										<button
 											type="submit"
-											disabled={editForm.processing || !!duplicateEditEmail}
+											disabled={editForm.processing}
 											className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-brand-primary to-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-lg transition hover:from-brand-primary/90 hover:to-emerald-600/90 focus:outline-none focus:ring-4 focus:ring-brand-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
 										>
 											{editForm.processing ? 'Saving...' : 'Save Changes'}

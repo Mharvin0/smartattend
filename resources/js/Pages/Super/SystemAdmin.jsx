@@ -3,6 +3,7 @@ import { Head, router } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import DataTable from '@/Components/DataTable';
 import { Phone, Home, Users, Calendar, CheckCircle, XCircle, Clock, AlertCircle, Download, ChevronDown } from 'lucide-react';
+import { createPortal } from 'react-dom';
 // route is available globally
 
 export default function SystemAdmin({ 
@@ -241,6 +242,27 @@ export default function SystemAdmin({
         normalizeEmail(teacher.email) && normalizeEmail(teacher.email) === normalizeEmail(teacherForm.email)
         && teacher.id !== selectedTeacher?.id
     ));
+    const closeEditTeacherModal = () => {
+        setShowEditTeacherModal(false);
+        setSelectedTeacher(null);
+        setTeacherFormErrors({});
+        setTeacherForm({
+            name: '',
+            email: '',
+            department_id: '',
+            optional_department_id: '',
+        });
+    };
+    const closeAddTeacherModal = () => {
+        setShowAddTeacherModal(false);
+        setTeacherForm({
+            name: '',
+            email: '',
+            department_id: '',
+            optional_department_id: '',
+        });
+        setTeacherFormErrors({});
+    };
     const [studentFormFilteredPrograms, setStudentFormFilteredPrograms] = useState([]);
     const [studentFormFilteredSections, setStudentFormFilteredSections] = useState([]);
     const [sectionTeachers, setSectionTeachers] = useState([]);
@@ -5870,23 +5892,20 @@ export default function SystemAdmin({
             )}
 
             {/* Add Teacher/Adviser Modal */}
-            {showAddTeacherModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4" onClick={(e) => e.target === e.currentTarget && setShowAddTeacherModal(false)}>
-                    <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative">
+            {showAddTeacherModal && typeof window !== 'undefined' && createPortal((
+                <div
+                    className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+                    onClick={(e) => e.target === e.currentTarget && closeAddTeacherModal()}
+                >
+                    <div className="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white shadow-2xl">
                         <div className="p-8">
                             <div className="flex items-center justify-between mb-6">
-                                <h2 className="text-2xl font-bold text-gray-900">Add New Teacher/Adviser</h2>
+                                <div>
+                                    <p className="text-xs font-semibold uppercase tracking-widest text-brand-primary">Teacher Setup</p>
+                                    <h2 className="text-2xl font-bold text-gray-900">Add New Teacher/Adviser</h2>
+                                </div>
                                 <button
-                                    onClick={() => {
-                                        setShowAddTeacherModal(false);
-                                        setTeacherForm({
-                                            name: '',
-                                            email: '',
-                                            department_id: '',
-                                            optional_department_id: ''
-                                        });
-                                        setTeacherFormErrors({});
-                                    }}
+                                    onClick={closeAddTeacherModal}
                                     className="text-gray-400 hover:text-gray-600 transition-colors"
                                 >
                                     <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -5898,14 +5917,7 @@ export default function SystemAdmin({
                                 e.preventDefault();
                                 router.post(route('super.teachers.store'), teacherForm, {
                                     onSuccess: () => {
-                                        setShowAddTeacherModal(false);
-                                        setTeacherForm({
-                                            name: '',
-                                            email: '',
-                                            department_id: '',
-                                            optional_department_id: ''
-                                        });
-                                        setTeacherFormErrors({});
+                                        closeAddTeacherModal();
                                         router.reload();
                                     },
                                     onError: (errors) => {
@@ -5936,7 +5948,7 @@ export default function SystemAdmin({
                                         Please fill in all required fields marked with *
                                     </p>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <div>
                                         <label className="block text-sm font-semibold text-gray-700 mb-2">Full Name *</label>
                                         <input
@@ -5976,7 +5988,7 @@ export default function SystemAdmin({
                                         )}
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <div>
                                         <label className="block text-sm font-semibold text-gray-700 mb-2">Department *</label>
                                         <select
@@ -6016,16 +6028,7 @@ export default function SystemAdmin({
                                 <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
                                     <button
                                         type="button"
-                                        onClick={() => {
-                                            setShowAddTeacherModal(false);
-                                            setTeacherForm({
-                                                name: '',
-                                                email: '',
-                                                department_id: '',
-                                                optional_department_id: ''
-                                            });
-                                            setTeacherFormErrors({});
-                                        }}
+                                        onClick={closeAddTeacherModal}
                                         className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                                     >
                                         Cancel
@@ -6042,21 +6045,23 @@ export default function SystemAdmin({
                         </div>
                     </div>
                 </div>
-            )}
+            ), document.body)}
 
             {/* Edit Teacher/Adviser Modal */}
-            {showEditTeacherModal && selectedTeacher && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4" onClick={(e) => e.target === e.currentTarget && setShowEditTeacherModal(false)}>
-                    <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative">
+            {showEditTeacherModal && selectedTeacher && typeof window !== 'undefined' && createPortal((
+                <div
+                    className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+                    onClick={(e) => e.target === e.currentTarget && closeEditTeacherModal()}
+                >
+                    <div className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white shadow-2xl">
                         <div className="p-8">
                             <div className="flex items-center justify-between mb-6">
-                                <h2 className="text-2xl font-bold text-gray-900">Edit Teacher/Adviser</h2>
+                                <div>
+                                    <p className="text-xs font-semibold uppercase tracking-widest text-blue-600">Teacher Update</p>
+                                    <h2 className="text-2xl font-bold text-gray-900">Edit Teacher/Adviser</h2>
+                                </div>
                                 <button
-                                    onClick={() => {
-                                        setShowEditTeacherModal(false);
-                                        setSelectedTeacher(null);
-                                        setTeacherFormErrors({});
-                                    }}
+                                    onClick={closeEditTeacherModal}
                                     className="text-gray-400 hover:text-gray-600 transition-colors"
                                 >
                                     <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -6088,12 +6093,20 @@ export default function SystemAdmin({
                                     }
                                 });
                             }} className="space-y-6">
+                                <div className="rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 p-4">
+                                    <p className="flex items-center text-sm text-gray-600">
+                                        <svg className="mr-2 h-4 w-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        Update required fields marked with *.
+                                    </p>
+                                </div>
                                 {(duplicateTeacherEmail || teacherFormErrors.email) && (
                                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                                         Email already exists. Please use a different email.
                                     </div>
                                 )}
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <div>
                                         <label className="block text-sm font-semibold text-gray-700 mb-2">Full Name *</label>
                                         <input
@@ -6107,6 +6120,7 @@ export default function SystemAdmin({
                                                 setTeacherForm({...teacherForm, name: e.target.value});
                                             }}
                                             className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                            placeholder="Enter full name"
                                         />
                                         {teacherFormErrors.name && (
                                             <p className="mt-1 text-sm text-red-600">{teacherFormErrors.name}</p>
@@ -6125,13 +6139,14 @@ export default function SystemAdmin({
                                                 setTeacherForm({...teacherForm, email: e.target.value});
                                             }}
                                             className={`w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all ${teacherFormErrors.email ? 'border-red-400' : 'border-gray-200'}`}
+                                            placeholder="Enter email address"
                                         />
                                         {teacherFormErrors.email && (
                                             <p className="mt-1 text-sm text-red-600">{teacherFormErrors.email}</p>
                                         )}
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <div>
                                         <label className="block text-sm font-semibold text-gray-700 mb-2">Department *</label>
                                         <select
@@ -6162,7 +6177,7 @@ export default function SystemAdmin({
                                             className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                                         >
                                             <option value="">None</option>
-                                            {departments?.filter(d => d.id != teacherForm.department_id && (!teacherForm.optional_department_id || d.id != teacherForm.optional_department_id)).map(dept => (
+                                            {departments?.filter(d => d.id != teacherForm.department_id).map(dept => (
                                                 <option key={dept.id} value={dept.id}>{dept.name}</option>
                                             ))}
                                         </select>
@@ -6171,11 +6186,7 @@ export default function SystemAdmin({
                                 <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
                                     <button
                                         type="button"
-                                        onClick={() => {
-                                            setShowEditTeacherModal(false);
-                                            setSelectedTeacher(null);
-                                            setTeacherFormErrors({});
-                                        }}
+                                        onClick={closeEditTeacherModal}
                                         className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                                     >
                                         Cancel
@@ -6192,7 +6203,7 @@ export default function SystemAdmin({
                         </div>
                     </div>
                 </div>
-            )}
+            ), document.body)}
         </AuthenticatedLayout>
     );
 };

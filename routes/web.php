@@ -29,8 +29,9 @@ Route::get('/', function () {
 
 Route::middleware(['auth', \App\Http\Middleware\RequirePasswordChange::class])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::post('/profile/email-change-code', [ProfileController::class, 'sendEmailChangeCode'])->name('profile.email-change-code.send');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->middleware('password.confirm')->name('profile.destroy');
     
     // Debug route to test authentication
     Route::get('/debug-auth', function () {
@@ -220,7 +221,7 @@ Route::middleware(['auth', \App\Http\Middleware\RequirePasswordChange::class])->
         Route::post('/students/{id}/restore', [SystemAdminController::class, 'restoreStudent'])->name('students.restore');
         Route::delete('/students/{id}', [SystemAdminController::class, 'destroyStudent'])->name('students.destroy');
         Route::post('/students/import', [SystemAdminController::class, 'importStudents'])->name('students.import');
-        Route::post('/students/export', [SystemAdminController::class, 'exportStudents'])->name('students.export');
+        Route::post('/students/export', [SystemAdminController::class, 'exportStudents'])->middleware('password.confirm')->name('students.export');
         Route::get('/departments/{id}/teachers', [SystemAdminController::class, 'getDepartmentTeachers'])->name('departments.get-teachers');
         
         // Cleanup Duplicates
@@ -232,7 +233,7 @@ Route::middleware(['auth', \App\Http\Middleware\RequirePasswordChange::class])->
         Route::get('/management/tracking', [SystemAdminController::class, 'getTrackingRecords'])->name('management.get-tracking');
         Route::get('/management/tracking/archived', [SystemAdminController::class, 'getArchivedTracking'])->name('management.archived-tracking');
         Route::get('/management/tracking/deleted', [SystemAdminController::class, 'getDeletedTracking'])->name('management.deleted-tracking');
-        Route::get('/management/tracking/export', [SystemAdminController::class, 'exportTracking'])->name('management.export-tracking');
+        Route::get('/management/tracking/export', [SystemAdminController::class, 'exportTracking'])->middleware('password.confirm')->name('management.export-tracking');
         Route::get('/management/tracking/{id}', [SystemAdminController::class, 'viewTracking'])->name('management.view-tracking');
         Route::post('/management/tracking/{id}/archive', [SystemAdminController::class, 'archiveTracking'])->name('management.archive-tracking');
         Route::post('/management/tracking/{id}/unarchive', [SystemAdminController::class, 'unarchiveTracking'])->name('management.unarchive-tracking');
@@ -246,9 +247,9 @@ Route::middleware(['auth', \App\Http\Middleware\RequirePasswordChange::class])->
 
         // Teacher/Adviser Management Routes
         Route::get('/teachers', [SystemAdminController::class, 'teachers'])->name('teachers');
-        Route::post('/teachers', [SystemAdminController::class, 'storeTeacher'])->name('teachers.store');
-        Route::put('/teachers/{id}', [SystemAdminController::class, 'updateTeacher'])->name('teachers.update');
-        Route::delete('/teachers/{id}', [SystemAdminController::class, 'destroyTeacher'])->name('teachers.destroy');
+        Route::post('/teachers', [SystemAdminController::class, 'storeTeacher'])->middleware('password.confirm')->name('teachers.store');
+        Route::put('/teachers/{id}', [SystemAdminController::class, 'updateTeacher'])->middleware('password.confirm')->name('teachers.update');
+        Route::delete('/teachers/{id}', [SystemAdminController::class, 'destroyTeacher'])->middleware('password.confirm')->name('teachers.destroy');
         
         // CSDL User Management Routes
         Route::post('/csdl-users', [SystemAdminController::class, 'storeCSDLUser'])->name('csdl-users.store');
@@ -271,10 +272,10 @@ Route::middleware(['auth', \App\Http\Middleware\RequirePasswordChange::class])->
         Route::get('/users', [UserController::class, 'index'])->name('users');
         Route::get('/users/deactivated', [UserController::class, 'getDeactivated'])->name('users.deactivated');
         Route::post('/users', [UserController::class, 'store'])->name('users.store');
-        Route::patch('/users/{user}', [UserController::class, 'update'])->name('users.update');
-        Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
-        Route::post('/users/{id}/restore', [UserController::class, 'restore'])->name('users.restore');
-        Route::delete('/users/{id}/force', [UserController::class, 'forceDestroy'])->name('users.force-destroy');
+        Route::patch('/users/{user}', [UserController::class, 'update'])->middleware('password.confirm')->name('users.update');
+        Route::delete('/users/{user}', [UserController::class, 'destroy'])->middleware('password.confirm')->name('users.destroy');
+        Route::post('/users/{id}/restore', [UserController::class, 'restore'])->middleware('password.confirm')->name('users.restore');
+        Route::delete('/users/{id}/force', [UserController::class, 'forceDestroy'])->middleware('password.confirm')->name('users.force-destroy');
         
         // Departments and Programs
         Route::get('/departments', [DepartmentController::class, 'index'])->name('departments');
@@ -299,7 +300,7 @@ Route::middleware(['auth', \App\Http\Middleware\RequirePasswordChange::class])->
 				// Super Admin Attendance Features
 				Route::get('/attendance/department-rates', [SystemAdminController::class, 'departmentAttendanceRates'])->name('attendance.department-rates');
 				Route::get('/attendance/faculty-compliance', [SystemAdminController::class, 'facultyCompliance'])->name('attendance.faculty-compliance');
-				Route::post('/attendance/generate-report', [SystemAdminController::class, 'generateReport'])->name('attendance.generate-report');
+				Route::post('/attendance/generate-report', [SystemAdminController::class, 'generateReport'])->middleware('password.confirm')->name('attendance.generate-report');
         
     });
 });

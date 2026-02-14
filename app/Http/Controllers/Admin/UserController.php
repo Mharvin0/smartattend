@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\User;
 use App\Notifications\AccountCreatedNotification;
+use App\Services\AuditLogService;
+use App\Services\SecurityAlertService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -75,6 +78,26 @@ class UserController extends Controller
 		}
 		
 		$user->restore();
+
+		AuditLogService::logUserManagement(
+			AuditLog::TYPE_DATA_UPDATE,
+			"User reactivated: {$user->email}",
+			[
+				'target_user_id' => $user->id,
+				'target_email' => $user->email,
+				'action' => 'reactivate',
+			]
+		);
+
+		SecurityAlertService::notifyUserAndAdmins(
+			'SmartAttend security alert: Account reactivated',
+			"Your SmartAttend account was reactivated by an administrator.\n\n"
+			. "If this action was not expected, please contact support immediately.",
+			$user,
+			['event' => 'account_reactivated', 'target_user_id' => $user->id],
+			AuditLog::SEVERITY_WARNING
+		);
+
 		return back()->with('success', 'User reactivated successfully');
 	}
 
@@ -102,6 +125,16 @@ class UserController extends Controller
 			'optional_department_id' => $validated['optional_department_id'] ?? null,
 		]);
 		$user->syncRoles([$validated['role']]);
+
+		AuditLogService::logUserManagement(
+			AuditLog::TYPE_DATA_CREATE,
+			"User account created: {$user->email}",
+			[
+				'target_user_id' => $user->id,
+				'target_email' => $user->email,
+				'role' => $validated['role'],
+			]
+		);
 
 		// Notify newly created user via email (do not block creation if mail fails)
 		try {
@@ -131,6 +164,9 @@ class UserController extends Controller
 
 	public function update(Request $request, User $user)
 	{
+		$originalName = $user->name;
+		$originalRole = $user->roles()->first()?->name;
+
 		$rules = [
 			'name' => ['required','string','max:255'],
 			'email' => ['required','email','max:255','unique:users,email,'.$user->id],
@@ -166,6 +202,41 @@ class UserController extends Controller
 		if (! $user->hasRole('Super Admin')) {
 			$user->syncRoles([$validated['role']]);
 		}
+
+		$newRole = $user->roles()->first()?->name;
+		$roleChanged = $originalRole !== $newRole;
+		$nameChanged = $originalName !== $user->name;
+
+		AuditLogService::logUserManagement(
+			AuditLog::TYPE_DATA_UPDATE,
+			"User updated: {$user->email}",
+			[
+				'target_user_id' => $user->id,
+				'target_email' => $user->email,
+				'changed' => [
+					'name' => $nameChanged,
+					'role' => $roleChanged,
+				],
+				'old_role' => $originalRole,
+				'new_role' => $newRole,
+			]
+		);
+
+		if ($roleChanged) {
+			SecurityAlertService::notifyUserAndAdmins(
+				'SmartAttend security alert: Role changed',
+				"A user role was changed in SmartAttend.\n\n"
+				. "If this action was not authorized, please review admin actions immediately.",
+				$user,
+				[
+					'event' => 'role_changed',
+					'target_user_id' => $user->id,
+					'old_role' => $originalRole,
+					'new_role' => $newRole,
+				],
+				AuditLog::SEVERITY_WARNING
+			);
+		}
 		return back()->with('success','User updated');
 	}
 
@@ -183,6 +254,26 @@ class UserController extends Controller
 		
 		// Soft delete (deactivate) instead of hard delete
 		$user->delete();
+
+		AuditLogService::logUserManagement(
+			AuditLog::TYPE_DATA_DELETE,
+			"User deactivated: {$user->email}",
+			[
+				'target_user_id' => $user->id,
+				'target_email' => $user->email,
+				'action' => 'deactivate',
+			]
+		);
+
+		SecurityAlertService::notifyUserAndAdmins(
+			'SmartAttend security alert: Account deactivated',
+			"Your SmartAttend account was deactivated by an administrator.\n\n"
+			. "If this action was not expected, please contact support immediately.",
+			$user,
+			['event' => 'account_deactivated', 'target_user_id' => $user->id],
+			AuditLog::SEVERITY_WARNING
+		);
+
 		return back()->with('success','User deactivated successfully');
 	}
 
@@ -227,6 +318,25 @@ class UserController extends Controller
 
 			$user->forceDelete();
 		});
+
+		AuditLogService::logUserManagement(
+			AuditLog::TYPE_DATA_DELETE,
+			"User permanently deleted: {$user->email}",
+			[
+				'target_user_id' => $user->id,
+				'target_email' => $user->email,
+				'action' => 'permanent_delete',
+			]
+		);
+
+		SecurityAlertService::notifyUserAndAdmins(
+			'SmartAttend security alert: Account permanently deleted',
+			"A SmartAttend account was permanently deleted by an administrator.\n\n"
+			. "If this action was not authorized, please investigate immediately.",
+			null,
+			['event' => 'account_permanently_deleted', 'target_email' => $user->email],
+			AuditLog::SEVERITY_CRITICAL
+		);
 
 		return back()->with('success', 'User permanently deleted successfully');
 	}

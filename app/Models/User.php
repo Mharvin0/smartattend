@@ -28,6 +28,9 @@ class User extends Authenticatable
         'optional_department_id',
         'program_id',
         'password_changed_at',
+        'last_login_ip',
+        'last_login_user_agent',
+        'last_login_at',
     ];
 
     /**
@@ -51,6 +54,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'password_changed_at' => 'datetime',
+            'last_login_at' => 'datetime',
         ];
     }
 

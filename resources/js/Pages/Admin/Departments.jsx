@@ -138,6 +138,20 @@ export default function Departments({ departments }) {
 		setShowDepartmentForm(true);
 	};
 
+	const closeDepartmentForm = () => {
+		resetDepartment();
+		setEditingDepartment(null);
+		setShowDepartmentForm(false);
+	};
+	const closeProgramForm = () => {
+		resetProgram();
+		setEditingProgram(null);
+		setShowProgramForm(false);
+		setSelectedDepartment(null);
+	};
+	const isEditingDepartment = Boolean(editingDepartment);
+	const isEditingProgram = Boolean(editingProgram);
+
 	const editProgram = (program) => {
 		setProgramData({
 			department_id: program.department_id,
@@ -328,21 +342,22 @@ export default function Departments({ departments }) {
 
 					{/* Department Form Modal */}
 					{showDepartmentForm && (
-						<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-6">
-							<div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/5 max-h-[90vh] overflow-y-auto">
-								<div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-6 py-5">
+						<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-sm sm:p-6">
+							<div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white shadow-2xl ring-1 ring-black/5">
+								<div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white/95 px-6 py-5 backdrop-blur">
 									<div>
+										<p className={`text-xs font-semibold uppercase tracking-widest ${isEditingDepartment ? 'text-blue-600' : 'text-brand-primary'}`}>
+											{isEditingDepartment ? 'Department Update' : 'Department Setup'}
+										</p>
 										<h3 className="text-xl font-bold text-gray-900">
 											{editingDepartment ? 'Edit Department' : 'Add Department'}
 										</h3>
-										<p className="mt-0.5 text-sm text-gray-500">Define department details and status.</p>
+										<p className="mt-0.5 text-sm text-gray-500">
+											{isEditingDepartment ? 'Review and update department details.' : 'Define department details and status.'}
+										</p>
 									</div>
 									<button
-										onClick={() => {
-											resetDepartment();
-											setEditingDepartment(null);
-											setShowDepartmentForm(false);
-										}}
+										onClick={closeDepartmentForm}
 										className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus:ring-4 focus:ring-brand-primary/10"
 										aria-label="Close"
 									>
@@ -352,7 +367,23 @@ export default function Departments({ departments }) {
 									</button>
 								</div>
 								<form onSubmit={submitDepartment}>
-									<div className="p-6">
+									<div className="space-y-5 p-6">
+										{isEditingDepartment && (
+											<div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
+												<div className="flex flex-wrap items-center gap-2 text-sm text-blue-900">
+													<span className="font-semibold">Editing:</span>
+													<span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-blue-800">
+														{editingDepartment?.name || 'Department'}
+													</span>
+													<span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-blue-800">
+														{editingDepartment?.code || 'N/A'}
+													</span>
+													<span className="text-xs text-blue-700">
+														Programs: {editingDepartment?.programs?.length || 0}
+													</span>
+												</div>
+											</div>
+										)}
 										{(duplicateNameDepartment || duplicateCodeDepartment) && (
 											<div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
 												<div className="font-semibold">Department already exists</div>
@@ -371,48 +402,65 @@ export default function Departments({ departments }) {
 												Department already exists. Please use a different name or code.
 											</div>
 										)}
-										<div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+										<div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
 											<div>
-												<label className="block text-sm font-medium text-gray-700">Name</label>
+												<label className="block text-sm font-medium text-gray-700">
+													Name
+												</label>
 												<input
 													type="text"
 													value={departmentData.name}
 													onChange={(e) => setDepartmentData('name', e.target.value)}
-													className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+													className="mt-2 block w-full rounded-xl border-2 border-gray-200 px-4 py-3 shadow-sm transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+													placeholder="e.g. College of Engineering"
 													required
 												/>
 												<InputError message={departmentErrors.name} className="mt-2" />
 											</div>
 											<div>
-												<label className="block text-sm font-medium text-gray-700">Code</label>
+												<label className="block text-sm font-medium text-gray-700">
+													Code
+												</label>
 												<input
 													type="text"
 													value={departmentData.code}
 													onChange={(e) => setDepartmentData('code', e.target.value.toUpperCase())}
-													className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+													className="mt-2 block w-full rounded-xl border-2 border-gray-200 px-4 py-3 shadow-sm transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
 													required
 													maxLength="10"
+													placeholder="e.g. COE"
 												/>
+												<p className="mt-1 text-xs text-gray-500">Use a short unique code (max 10 characters).</p>
 												<InputError message={departmentErrors.code} className="mt-2" />
 											</div>
 											<div className="sm:col-span-2">
-												<label className="block text-sm font-medium text-gray-700">Description</label>
+												<label className="block text-sm font-medium text-gray-700">
+													Description
+												</label>
 												<textarea
 													value={departmentData.description}
 													onChange={(e) => setDepartmentData('description', e.target.value)}
-													rows={3}
-													className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+													rows={4}
+													className="mt-2 block w-full rounded-xl border-2 border-gray-200 px-4 py-3 shadow-sm transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+													placeholder="Optional description about this department..."
 												/>
 												<InputError message={departmentErrors.description} className="mt-2" />
 											</div>
-											<div className="flex items-center">
-												<input
-													type="checkbox"
-													checked={departmentData.is_active}
-													onChange={(e) => setDepartmentData('is_active', e.target.checked)}
-													className="h-4 w-4 text-brand-primary focus:ring-brand-primary border-gray-300 rounded"
-												/>
-												<label className="ml-2 block text-sm text-gray-900">Active</label>
+											<div className="sm:col-span-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+												<label className="flex cursor-pointer items-center gap-3">
+													<input
+														type="checkbox"
+														checked={departmentData.is_active}
+														onChange={(e) => setDepartmentData('is_active', e.target.checked)}
+														className="h-4 w-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary"
+													/>
+													<span className="text-sm font-medium text-gray-900">Department is active</span>
+												</label>
+												<p className="mt-1 text-xs text-gray-500">
+													{isEditingDepartment
+														? 'Turning this off keeps existing records but may remove it from active workflows.'
+														: 'Inactive departments remain in records but can be hidden from active workflows.'}
+												</p>
 											</div>
 										</div>
 									</div>
@@ -420,17 +468,19 @@ export default function Departments({ departments }) {
 										<div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
 											<button
 												type="button"
-												onClick={() => {
-													resetDepartment();
-													setEditingDepartment(null);
-													setShowDepartmentForm(false);
-												}}
-												className="btn-secondary"
+												onClick={closeDepartmentForm}
+												className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 focus:outline-none focus:ring-4 focus:ring-brand-primary/10"
 											>
 												Cancel
 											</button>
-											<button type="submit" disabled={departmentProcessing || duplicateNameDepartment || duplicateCodeDepartment} className="btn-primary">
-												{editingDepartment ? 'Update' : 'Create'} Department
+											<button
+												type="submit"
+												disabled={departmentProcessing || duplicateNameDepartment || duplicateCodeDepartment}
+												className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-brand-primary to-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg transition hover:from-brand-primary/90 hover:to-emerald-600/90 focus:outline-none focus:ring-4 focus:ring-brand-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
+											>
+												{departmentProcessing
+													? (editingDepartment ? 'Updating...' : 'Creating...')
+													: `${editingDepartment ? 'Update' : 'Create'} Department`}
 											</button>
 										</div>
 									</div>
@@ -438,15 +488,53 @@ export default function Departments({ departments }) {
 							</div>
 						</div>
 					)}
-
+ 
 					{/* Program Form Modal */}
 					{showProgramForm && (
-						<div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-							<div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl">
-								<h3 className="mb-4 text-lg font-semibold text-gray-900">
-									{editingProgram ? 'Edit Program' : 'Add Program'}
-								</h3>
+						<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-sm sm:p-6">
+							<div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white shadow-2xl ring-1 ring-black/5">
+								<div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white/95 px-6 py-5 backdrop-blur">
+									<div>
+										<p className={`text-xs font-semibold uppercase tracking-widest ${isEditingProgram ? 'text-blue-600' : 'text-brand-primary'}`}>
+											{isEditingProgram ? 'Program Update' : 'Program Setup'}
+										</p>
+										<h3 className="text-xl font-bold text-gray-900">
+											{editingProgram ? 'Edit Program' : 'Add Program'}
+										</h3>
+										<p className="mt-0.5 text-sm text-gray-500">
+											{isEditingProgram ? 'Review and update program details.' : 'Define program details and status.'}
+										</p>
+									</div>
+									<button
+										onClick={closeProgramForm}
+										className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus:ring-4 focus:ring-brand-primary/10"
+										aria-label="Close"
+									>
+										<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+										</svg>
+									</button>
+								</div>
 								<form onSubmit={submitProgram}>
+									<div className="space-y-5 p-6">
+										{isEditingProgram && (
+											<div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
+												<div className="flex flex-wrap items-center gap-2 text-sm text-blue-900">
+													<span className="font-semibold">Editing:</span>
+													<span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-blue-800">
+														{editingProgram?.name || 'Program'}
+													</span>
+													<span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-blue-800">
+														{editingProgram?.code || 'N/A'}
+													</span>
+													{selectedDepartment?.name && (
+														<span className="text-xs text-blue-700">
+															Department: {selectedDepartment.name}
+														</span>
+													)}
+												</div>
+											</div>
+										)}
 									{(duplicateNameProgram || duplicateCodeProgram) && (
 										<div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
 											<div className="font-semibold">Program already exists</div>
@@ -465,13 +553,13 @@ export default function Departments({ departments }) {
 											Program already exists. Please use a different name or code.
 										</div>
 									)}
-									<div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+									<div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
 										<div className="sm:col-span-2">
 											<label className="block text-sm font-medium text-gray-700">Department</label>
 											<select
 												value={programData.department_id}
 												onChange={(e) => setProgramData('department_id', e.target.value)}
-												className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+												className="mt-2 block w-full rounded-xl border-2 border-gray-200 px-4 py-3 shadow-sm transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
 												required
 											>
 												<option value="">Select Department</option>
@@ -487,8 +575,9 @@ export default function Departments({ departments }) {
 												type="text"
 												value={programData.name}
 												onChange={(e) => setProgramData('name', e.target.value)}
-												className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+												className="mt-2 block w-full rounded-xl border-2 border-gray-200 px-4 py-3 shadow-sm transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
 												required
+												placeholder="e.g. BS Computer Science"
 											/>
 											<InputError message={programErrors.name} className="mt-2" />
 										</div>
@@ -498,10 +587,12 @@ export default function Departments({ departments }) {
 												type="text"
 												value={programData.code}
 												onChange={(e) => setProgramData('code', e.target.value.toUpperCase())}
-												className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+												className="mt-2 block w-full rounded-xl border-2 border-gray-200 px-4 py-3 shadow-sm transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
 												required
 												maxLength="10"
+												placeholder="e.g. BSCS"
 											/>
+											<p className="mt-1 text-xs text-gray-500">Use a short unique code (max 10 characters).</p>
 											<InputError message={programErrors.code} className="mt-2" />
 										</div>
 										<div>
@@ -510,7 +601,7 @@ export default function Departments({ departments }) {
 												type="number"
 												value={programData.duration_years}
 												onChange={(e) => setProgramData('duration_years', parseInt(e.target.value))}
-												className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+												className="mt-2 block w-full rounded-xl border-2 border-gray-200 px-4 py-3 shadow-sm transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
 												min="1"
 												max="10"
 												required
@@ -522,37 +613,49 @@ export default function Departments({ departments }) {
 											<textarea
 												value={programData.description}
 												onChange={(e) => setProgramData('description', e.target.value)}
-												rows={3}
-												className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+												rows={4}
+												className="mt-2 block w-full rounded-xl border-2 border-gray-200 px-4 py-3 shadow-sm transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+												placeholder="Optional description about this program..."
 											/>
 											<InputError message={programErrors.description} className="mt-2" />
 										</div>
-										<div className="flex items-center">
-											<input
-												type="checkbox"
-												checked={programData.is_active}
-												onChange={(e) => setProgramData('is_active', e.target.checked)}
-												className="h-4 w-4 text-brand-primary focus:ring-brand-primary border-gray-300 rounded"
-											/>
-											<label className="ml-2 block text-sm text-gray-900">Active</label>
+										<div className="sm:col-span-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+											<label className="flex cursor-pointer items-center gap-3">
+												<input
+													type="checkbox"
+													checked={programData.is_active}
+													onChange={(e) => setProgramData('is_active', e.target.checked)}
+													className="h-4 w-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary"
+												/>
+												<span className="text-sm font-medium text-gray-900">Program is active</span>
+											</label>
+											<p className="mt-1 text-xs text-gray-500">
+												{isEditingProgram
+													? 'Turning this off keeps existing records but may remove it from active selections.'
+													: 'Inactive programs remain in records but can be hidden from active workflows.'}
+											</p>
 										</div>
 									</div>
-									<div className="mt-6 flex justify-end space-x-3">
-										<button
-											type="button"
-											onClick={() => {
-												resetProgram();
-												setEditingProgram(null);
-												setShowProgramForm(false);
-												setSelectedDepartment(null);
-											}}
-											className="btn-secondary"
-										>
-											Cancel
-										</button>
-										<button type="submit" disabled={programProcessing || duplicateNameProgram || duplicateCodeProgram} className="btn-primary">
-											{editingProgram ? 'Update' : 'Create'} Program
-										</button>
+									</div>
+									<div className="sticky bottom-0 border-t border-gray-200 bg-white px-6 py-4">
+										<div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+											<button
+												type="button"
+												onClick={closeProgramForm}
+												className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 focus:outline-none focus:ring-4 focus:ring-brand-primary/10"
+											>
+												Cancel
+											</button>
+											<button
+												type="submit"
+												disabled={programProcessing || duplicateNameProgram || duplicateCodeProgram}
+												className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-brand-primary to-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg transition hover:from-brand-primary/90 hover:to-emerald-600/90 focus:outline-none focus:ring-4 focus:ring-brand-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
+											>
+												{programProcessing
+													? (editingProgram ? 'Updating...' : 'Creating...')
+													: `${editingProgram ? 'Update' : 'Create'} Program`}
+											</button>
+										</div>
 									</div>
 								</form>
 							</div>

@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
+use App\Services\AuditLogService;
+use App\Services\SecurityAlertService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -48,6 +51,21 @@ class FirstTimePasswordController extends Controller
             'password' => Hash::make($validated['password']),
             'password_changed_at' => now(),
         ]);
+
+        AuditLogService::logSecurity(
+            AuditLog::TYPE_PASSWORD_CHANGE,
+            'First-time password change completed',
+            AuditLog::SEVERITY_INFO
+        );
+
+        SecurityAlertService::notifyUserAndAdmins(
+            'SmartAttend security alert: Password changed',
+            "Your SmartAttend account password was changed successfully.\n\n"
+            . "If this was not you, please reset your password immediately and contact support.",
+            $user,
+            ['event' => 'first_time_password_changed'],
+            AuditLog::SEVERITY_WARNING
+        );
 
         return $this->redirectToDashboard()->with('success', 'Password changed successfully. You can now access the system.');
     }

@@ -5,7 +5,7 @@ import TextInput from '@/Components/TextInput';
 import { Transition } from '@headlessui/react';
 import { useForm } from '@inertiajs/react';
 import { useRef, useState } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Lock, Check } from 'lucide-react';
 
 export default function UpdatePasswordForm({ className = '' }) {
     const [showCurrentPassword, setShowCurrentPassword] = useState(false);
@@ -51,17 +51,26 @@ export default function UpdatePasswordForm({ className = '' }) {
     return (
         <section className={className}>
             <header>
-                <h2 className="text-lg font-medium text-gray-900">
-                    Update Password
-                </h2>
-
-                <p className="mt-1 text-sm text-gray-600">
-                    Ensure your account is using a long, random password to stay
-                    secure.
-                </p>
+                <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+                        <Lock className="h-5 w-5" />
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-medium text-gray-900">
+                            Update Password
+                        </h2>
+                        <p className="mt-0.5 text-sm text-gray-600">
+                            Ensure your account is using a long, random password to stay secure.
+                        </p>
+                    </div>
+                </div>
             </header>
 
             <form onSubmit={updatePassword} className="mt-6 space-y-6">
+                <div className="rounded-xl border border-amber-100 bg-amber-50/60 px-4 py-3 text-xs text-amber-800">
+                    Tip: Use at least 8 characters with a mix of letters, numbers, and symbols.
+                </div>
+
                 <div>
                     <InputLabel
                         htmlFor="current_password"
@@ -77,7 +86,7 @@ export default function UpdatePasswordForm({ className = '' }) {
                             onChange={(e) =>
                                 setData('current_password', e.target.value)
                             }
-                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 pr-10"
+                            className="block w-full rounded-xl border-2 border-gray-200 py-3 pl-4 pr-10 shadow-sm transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
                             autoComplete="current-password"
                         />
                         <button
@@ -110,7 +119,7 @@ export default function UpdatePasswordForm({ className = '' }) {
                             type={showPassword ? 'text' : 'password'}
                             value={data.password}
                             onChange={(e) => setData('password', e.target.value)}
-                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 pr-10"
+                            className="block w-full rounded-xl border-2 border-gray-200 py-3 pl-4 pr-10 shadow-sm transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
                             autoComplete="new-password"
                         />
                         <button
@@ -144,7 +153,7 @@ export default function UpdatePasswordForm({ className = '' }) {
                             onChange={(e) =>
                                 setData('password_confirmation', e.target.value)
                             }
-                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 pr-10"
+                            className="block w-full rounded-xl border-2 border-gray-200 py-3 pl-4 pr-10 shadow-sm transition-all duration-200 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
                             autoComplete="new-password"
                         />
                         <button
@@ -168,18 +177,26 @@ export default function UpdatePasswordForm({ className = '' }) {
                 </div>
 
                 <div className="flex items-center gap-4">
-                    <PrimaryButton disabled={processing}>Save</PrimaryButton>
+                    <PrimaryButton
+                        disabled={processing}
+                        className="rounded-xl bg-gradient-to-r from-brand-primary to-emerald-600 px-5 py-2.5 text-sm font-bold tracking-normal normal-case hover:from-brand-primary/90 hover:to-emerald-600/90 focus:ring-brand-primary"
+                    >
+                        Update password
+                    </PrimaryButton>
 
                     <Transition
                         show={recentlySuccessful}
-                        enter="transition ease-in-out"
-                        enterFrom="opacity-0"
-                        leave="transition ease-in-out"
-                        leaveTo="opacity-0"
+                        enter="transition ease-in-out duration-200"
+                        enterFrom="opacity-0 scale-95"
+                        enterTo="opacity-100 scale-100"
+                        leave="transition ease-in-out duration-200"
+                        leaveFrom="opacity-100 scale-100"
+                        leaveTo="opacity-0 scale-95"
                     >
-                        <p className="text-sm text-gray-600">
-                            Saved.
-                        </p>
+                        <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
+                            <Check className="h-4 w-4" />
+                            Saved
+                        </span>
                     </Transition>
                 </div>
             </form>

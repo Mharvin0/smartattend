@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Models\AuditLog;
+use App\Services\AuditLogService;
+use App\Services\SecurityAlertService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -35,6 +38,40 @@ class AuthenticatedSessionController extends Controller
 
         // Redirect based on user role (check Super Admin first, as they may have multiple roles)
         $user = Auth::user();
+        $previousIp = (string) ($user->last_login_ip ?? '');
+        $previousUserAgent = (string) ($user->last_login_user_agent ?? '');
+        $currentIp = (string) $request->ip();
+        $currentUserAgent = (string) ($request->userAgent() ?? 'unknown');
+        $isNewDeviceOrIp = (
+            ($previousIp !== '' || $previousUserAgent !== '')
+            && ($previousIp !== $currentIp || $previousUserAgent !== $currentUserAgent)
+        );
+
+        $user->last_login_ip = $currentIp;
+        $user->last_login_user_agent = $currentUserAgent;
+        $user->last_login_at = now();
+        $user->save();
+
+        AuditLogService::logAuthentication(
+            AuditLog::TYPE_USER_LOGIN,
+            "User login successful for {$user->email}",
+            true
+        );
+
+        if ($isNewDeviceOrIp) {
+            SecurityAlertService::notifyUserAndAdmins(
+                'SmartAttend security alert: New login detected',
+                "A new login to your SmartAttend account was detected from a new device or IP.\n\n"
+                . "If this was not you, please reset your password immediately and contact support.",
+                $user,
+                [
+                    'event' => 'new_device_or_ip_login',
+                    'ip_address' => $currentIp,
+                    'user_agent' => $currentUserAgent,
+                ],
+                AuditLog::SEVERITY_WARNING
+            );
+        }
         
         // Check if password needs to be changed on first login
         if ($user->password_changed_at === null) {
@@ -60,6 +97,12 @@ class AuthenticatedSessionController extends Controller
      */
     public function destroy(Request $request): RedirectResponse
     {
+        AuditLogService::logAuthentication(
+            AuditLog::TYPE_USER_LOGOUT,
+            'User logout successful',
+            true
+        );
+
         Auth::guard('web')->logout();
 
         $request->session()->invalidate();
