@@ -70,7 +70,26 @@ export default function SystemAdmin({
     }, [attentionStudents?.length]);
 
     useEffect(() => {
-        setAttentionStudents(studentsNeedingCalls || []);
+        const next = studentsNeedingCalls || [];
+        // Inertia/React can provide a new array reference on re-render; avoid
+        // setting state unless the list actually changed to prevent update loops.
+        setAttentionStudents((prev) => {
+            if (!Array.isArray(prev) || prev.length !== next.length) {
+                return next;
+            }
+
+            for (let i = 0; i < prev.length; i++) {
+                const a = prev[i];
+                const b = next[i];
+                if (!a || !b) return next;
+                if (a.id !== b.id) return next;
+                if (a.tracking_status !== b.tracking_status) return next;
+                if (a.priority !== b.priority) return next;
+                if (a.absence_count !== b.absence_count) return next;
+            }
+
+            return prev;
+        });
     }, [studentsNeedingCalls]);
     
     useEffect(() => {
