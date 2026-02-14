@@ -34,8 +34,10 @@ export default function SystemAdmin({
     pageTitle = 'System Admin Control',
     availableMonths = []
 }) {
-    const [activeTab, setActiveTab] = useState(initialActiveTab);
-    const [currentTime, setCurrentTime] = useState(new Date());
+    // IMPORTANT: This page is reused across multiple `/super/*` routes.
+    // Do not store `activeTab` in state, otherwise it can get "stuck" when Inertia
+    // reuses the same component and only updates props.
+    const activeTab = initialActiveTab;
     const [showLogs, setShowLogs] = useState(false);
     const [systemLogs, setSystemLogs] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -406,14 +408,6 @@ export default function SystemAdmin({
         year_level: '',
         academic_year: ''
     });
-
-    // Update time every second
-    useEffect(() => {
-        const timer = setInterval(() => {
-            setCurrentTime(new Date());
-        }, 1000);
-        return () => clearInterval(timer);
-    }, []);
 
 
     // Filter programs by department
@@ -4230,17 +4224,16 @@ export default function SystemAdmin({
             )}
 
             {/* Intervention Modal */}
-            {console.log('Modal state:', { 
-                showInterventionModal, 
-                viewingIntervention: viewingIntervention ? 'has data' : 'null', 
-                editingIntervention: editingIntervention ? 'has data' : 'null' 
-            })}
             {showInterventionModal && (
-                console.log('Rendering modal with data:', { viewingIntervention, editingIntervention })
-            )}
-            {showInterventionModal && (
-                <div className="fixed inset-0 bg-red-500 bg-opacity-90 overflow-y-auto h-full w-full z-[9999]" style={{zIndex: 9999}}>
-                    <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white" style={{backgroundColor: 'white', border: '2px solid red'}}>
+                <div
+                    className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                            setShowInterventionModal(false);
+                        }
+                    }}
+                >
+                    <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl ring-1 ring-black/5">
                         <div className="mt-3">
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="text-lg font-medium text-gray-900">
@@ -4248,7 +4241,6 @@ export default function SystemAdmin({
                                 </h3>
                                 <button
                                     onClick={() => {
-                                        console.log('Closing intervention modal');
                                         setShowInterventionModal(false);
                                     }}
                                     className="text-gray-400 hover:text-gray-600"
@@ -4258,16 +4250,7 @@ export default function SystemAdmin({
                                     </svg>
                                 </button>
                             </div>
-                            
-                            {/* Test Content */}
-                            <div className="p-4 bg-yellow-100 border-2 border-yellow-500">
-                                <h4 className="text-lg font-bold text-red-600">MODAL IS WORKING!</h4>
-                                <p>If you can see this, the modal is rendering correctly.</p>
-                                <p>showInterventionModal: {showInterventionModal ? 'true' : 'false'}</p>
-                                <p>viewingIntervention: {viewingIntervention ? 'has data' : 'null'}</p>
-                                <p>editingIntervention: {editingIntervention ? 'has data' : 'null'}</p>
-                            </div>
-                            
+
                             {viewingIntervention ? (
                                 // View Mode with Status Update
                                 <div className="space-y-4">
