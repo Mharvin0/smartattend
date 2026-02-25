@@ -17,7 +17,7 @@ export default function TransferSuperAdminOwnershipForm({
     const [showConfirm, setShowConfirm] = useState(false);
     const [isSendingCode, setIsSendingCode] = useState(false);
 
-    const { data, setData, processing, errors, reset, clearErrors } = useForm({
+    const { data, setData, processing, errors, reset, clearErrors, post } = useForm({
         new_superadmin_email: '',
         superadmin_transfer_code: '',
     });
@@ -35,7 +35,7 @@ export default function TransferSuperAdminOwnershipForm({
 
     const sendCode = () => {
         clearErrors();
-        router.post(
+        post(
             route('profile.superadmin-transfer-code.send'),
             { new_superadmin_email: data.new_superadmin_email },
             {
@@ -49,7 +49,7 @@ export default function TransferSuperAdminOwnershipForm({
 
     const confirmTransfer = () => {
         clearErrors();
-        router.post(
+        post(
             route('profile.superadmin-transfer.confirm'),
             {
                 new_superadmin_email: data.new_superadmin_email,
