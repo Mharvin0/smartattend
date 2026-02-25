@@ -6,6 +6,8 @@
 ############################
 # 1) Build frontend assets
 ############################
+# Set BUILD_SHA in Railway Variables to force fresh frontend build when needed
+ARG BUILD_SHA
 FROM node:20-alpine AS frontend
 WORKDIR /app
 
@@ -13,8 +15,9 @@ COPY package.json package-lock.json vite.config.js postcss.config.js tailwind.co
 COPY resources ./resources
 COPY public ./public
 
+# Clean install + build (BUILD_SHA busts cache when set in Railway)
 RUN npm ci --no-audit --no-fund
-RUN npm run build
+RUN echo "Build: ${BUILD_SHA:-$(date -Iseconds)}" && npm run build
 
 
 ############################
