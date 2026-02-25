@@ -1,6 +1,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, useForm, usePage, router } from '@inertiajs/react';
 import DataTable from '@/Components/DataTable';
+import Modal from '@/Components/Modal';
 import { useState, useEffect } from 'react';
 
 export default function Schedules({ schedules, departments, programs, sections, subjects, days, filters }) {
@@ -13,6 +14,28 @@ export default function Schedules({ schedules, departments, programs, sections, 
 		time_start: '08:00', 
 		time_end: '09:00' 
 	});
+
+	const {
+		data: editData,
+		setData: setEditData,
+		patch: patchSchedule,
+		processing: editProcessing,
+		errors: editErrors,
+		clearErrors: clearEditErrors,
+		reset: resetEditForm,
+	} = useForm({
+		department_id: '',
+		program_id: '',
+		section_id: '',
+		subject_id: '',
+		day: '',
+		time_start: '08:00',
+		time_end: '09:00',
+	});
+
+	const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+	const [editingSchedule, setEditingSchedule] = useState(null);
+	const [isDeletingId, setIsDeletingId] = useState(null);
 	
 	const [filterData, setFilterData] = useState({
 		department_id: filters.department_id || '',
@@ -140,7 +163,13 @@ export default function Schedules({ schedules, departments, programs, sections, 
 
 	const submit = (e) => { 
 		e.preventDefault(); 
-		post(route('admin.schedules.store')); 
+		post(route('admin.schedules.store', undefined, false), {
+			preserveScroll: true,
+			onSuccess: () => {
+				// Ensure the table reflects the latest server state
+				router.reload({ only: ['schedules'], preserveScroll: true });
+			},
+		}); 
 	};
 
 	const handleFilterChange = (key, value) => {
@@ -153,7 +182,7 @@ export default function Schedules({ schedules, departments, programs, sections, 
 			if (v) queryParams.append(k, v);
 		});
 		
-		router.get(route('admin.schedules'), Object.fromEntries(queryParams), {
+		router.get(route('admin.schedules', undefined, false), Object.fromEntries(queryParams), {
 			preserveState: true,
 			replace: true
 		});
@@ -168,8 +197,64 @@ export default function Schedules({ schedules, departments, programs, sections, 
 			day: '',
 			search: '',
 		});
-		router.get(route('admin.schedules'));
+		router.get(route('admin.schedules', undefined, false));
 	};
+
+	const openEditModal = (schedule) => {
+		clearEditErrors();
+		setEditingSchedule(schedule);
+
+		const departmentId = schedule.department_id || schedule.department?.id || '';
+		const programId = schedule.program_id || schedule.program?.id || '';
+		const sectionId = schedule.section_id || schedule.section?.id || '';
+		const subjectId = schedule.subject_id || schedule.subject?.id || '';
+
+		setEditData({
+			department_id: String(departmentId || ''),
+			program_id: String(programId || ''),
+			section_id: String(sectionId || ''),
+			subject_id: String(subjectId || ''),
+			day: schedule.day || '',
+			time_start: schedule.time_start || '08:00',
+			time_end: schedule.time_end || '09:00',
+		});
+
+		setIsEditModalOpen(true);
+	};
+
+	const closeEditModal = () => {
+		setIsEditModalOpen(false);
+		setEditingSchedule(null);
+		clearEditErrors();
+		resetEditForm();
+	};
+
+	const handleDeleteSchedule = (schedule) => {
+		if (!confirm('Delete this schedule? This action cannot be undone.')) return;
+		setIsDeletingId(schedule.id);
+
+		router.delete(route('admin.schedules.destroy', schedule.id, false), {
+			preserveScroll: true,
+			onSuccess: () => {
+				// If deleting from within the edit modal, close it
+				if (editingSchedule?.id === schedule.id) {
+					closeEditModal();
+				}
+				router.reload({ only: ['schedules'], preserveScroll: true });
+			},
+			onFinish: () => setIsDeletingId(null),
+		});
+	};
+
+	const editFilteredPrograms = editData.department_id
+		? programs.filter((p) => String(p.department_id) === String(editData.department_id))
+		: programs;
+	const editFilteredSections = editData.program_id
+		? sections.filter((s) => String(s.program_id) === String(editData.program_id) || (s.program && String(s.program.id) === String(editData.program_id)))
+		: sections;
+	const editFilteredSubjects = editData.program_id
+		? subjects.filter((s) => String(s.program_id) === String(editData.program_id) || (s.program && String(s.program.id) === String(editData.program_id)))
+		: subjects;
 
 	return (
 		<AuthenticatedLayout>
@@ -491,10 +576,199 @@ export default function Schedules({ schedules, departments, programs, sections, 
 							]}
 							data={schedules}
 							actions={true}
+							onEdit={openEditModal}
+							onDelete={handleDeleteSchedule}
 						/>
 					</div>
 				</div>
 			</div>
+
+			<Modal show={isEditModalOpen && !!editingSchedule} onClose={closeEditModal} maxWidth="2xl">
+				{editingSchedule && (
+					<form
+						onSubmit={(e) => {
+							e.preventDefault();
+							patchSchedule(route('admin.schedules.update', editingSchedule.id, false), {
+								preserveScroll: true,
+								onSuccess: () => {
+									closeEditModal();
+									router.reload({ only: ['schedules'], preserveScroll: true });
+								},
+							});
+						}}
+					>
+						<div className="flex items-start justify-between border-b border-gray-100 px-6 py-4">
+							<div className="min-w-0">
+								<h3 className="truncate text-lg font-semibold text-gray-900">Edit Schedule</h3>
+								<p className="mt-1 text-sm text-gray-500 truncate">
+									{editingSchedule.section?.name ? `Section: ${editingSchedule.section.name}` : 'Update schedule details'}
+								</p>
+							</div>
+							<button
+								type="button"
+								onClick={closeEditModal}
+								className="rounded-lg p-2 text-gray-400 hover:bg-gray-50 hover:text-gray-600"
+								aria-label="Close"
+							>
+								<svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+								</svg>
+							</button>
+						</div>
+
+						<div className="space-y-4 px-6 py-5">
+							<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+								<div>
+									<label className="block text-sm font-medium text-gray-700">Department *</label>
+									<select
+										className="mt-1 block w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+										value={editData.department_id}
+										onChange={(e) => {
+											setEditData('department_id', e.target.value);
+											setEditData('program_id', '');
+											setEditData('section_id', '');
+											setEditData('subject_id', '');
+										}}
+										required
+									>
+										<option value="">Select Department</option>
+										{departments.map((d) => (
+											<option key={d.id} value={d.id}>{d.name}</option>
+										))}
+									</select>
+									{editErrors.department_id && <p className="mt-1 text-sm text-red-600">{editErrors.department_id}</p>}
+								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-gray-700">Program *</label>
+									<select
+										className="mt-1 block w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm shadow-sm focus:border-brand-primary focus:ring-brand-primary disabled:bg-gray-100 disabled:cursor-not-allowed"
+										value={editData.program_id}
+										onChange={(e) => {
+											setEditData('program_id', e.target.value);
+											setEditData('section_id', '');
+											setEditData('subject_id', '');
+										}}
+										required
+										disabled={!editData.department_id}
+									>
+										<option value="">{editData.department_id ? 'Select Program' : 'Select Department first'}</option>
+										{editFilteredPrograms.map((p) => (
+											<option key={p.id} value={p.id}>{p.name}</option>
+										))}
+									</select>
+									{editErrors.program_id && <p className="mt-1 text-sm text-red-600">{editErrors.program_id}</p>}
+								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-gray-700">Section *</label>
+									<select
+										className="mt-1 block w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm shadow-sm focus:border-brand-primary focus:ring-brand-primary disabled:bg-gray-100 disabled:cursor-not-allowed"
+										value={editData.section_id}
+										onChange={(e) => setEditData('section_id', e.target.value)}
+										required
+										disabled={!editData.program_id}
+									>
+										<option value="">{editData.program_id ? 'Select Section' : 'Select Program first'}</option>
+										{editFilteredSections.map((s) => (
+											<option key={s.id} value={s.id}>{s.name}</option>
+										))}
+									</select>
+									{editErrors.section_id && <p className="mt-1 text-sm text-red-600">{editErrors.section_id}</p>}
+								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-gray-700">Subject *</label>
+									<select
+										className="mt-1 block w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm shadow-sm focus:border-brand-primary focus:ring-brand-primary disabled:bg-gray-100 disabled:cursor-not-allowed"
+										value={editData.subject_id}
+										onChange={(e) => setEditData('subject_id', e.target.value)}
+										required
+										disabled={!editData.program_id}
+									>
+										<option value="">{editData.program_id ? 'Select Subject' : 'Select Program first'}</option>
+										{editFilteredSubjects.map((s) => (
+											<option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+										))}
+									</select>
+									{editErrors.subject_id && <p className="mt-1 text-sm text-red-600">{editErrors.subject_id}</p>}
+								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-gray-700">Day *</label>
+									<select
+										className="mt-1 block w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+										value={editData.day}
+										onChange={(e) => setEditData('day', e.target.value)}
+										required
+									>
+										<option value="">Select Day</option>
+										{Object.entries(days).map(([key, value]) => (
+											<option key={key} value={key}>{value}</option>
+										))}
+									</select>
+									{editErrors.day && <p className="mt-1 text-sm text-red-600">{editErrors.day}</p>}
+								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-gray-700">Start Time *</label>
+									<input
+										type="time"
+										className="mt-1 block w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+										value={editData.time_start}
+										onChange={(e) => setEditData('time_start', e.target.value)}
+										required
+									/>
+									{editErrors.time_start && <p className="mt-1 text-sm text-red-600">{editErrors.time_start}</p>}
+								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-gray-700">End Time *</label>
+									<input
+										type="time"
+										className="mt-1 block w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+										value={editData.time_end}
+										onChange={(e) => setEditData('time_end', e.target.value)}
+										required
+									/>
+									{editErrors.time_end && <p className="mt-1 text-sm text-red-600">{editErrors.time_end}</p>}
+								</div>
+							</div>
+						</div>
+
+						<div className="flex items-center justify-between gap-3 border-t border-gray-100 bg-gray-50/50 px-6 py-4">
+							<button
+								type="button"
+								onClick={() => {
+									if (!editingSchedule?.id) return;
+									handleDeleteSchedule(editingSchedule);
+								}}
+								disabled={isDeletingId === editingSchedule.id}
+								className="rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-50 disabled:opacity-50"
+							>
+								{isDeletingId === editingSchedule.id ? 'Deleting…' : 'Delete'}
+							</button>
+
+							<div className="flex items-center gap-3">
+								<button
+									type="button"
+									onClick={closeEditModal}
+									className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+								>
+									Cancel
+								</button>
+								<button
+									type="submit"
+									disabled={editProcessing}
+									className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-primary/90 disabled:opacity-50"
+								>
+									{editProcessing ? 'Saving…' : 'Save Changes'}
+								</button>
+							</div>
+						</div>
+					</form>
+				)}
+			</Modal>
 		</AuthenticatedLayout>
 	);
 }

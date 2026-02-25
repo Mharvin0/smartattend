@@ -2,10 +2,11 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, usePage } from '@inertiajs/react';
 import { User, Mail, ShieldCheck, ShieldAlert } from 'lucide-react';
 import DeleteUserForm from './Partials/DeleteUserForm';
+import TransferSuperAdminOwnershipForm from './Partials/TransferSuperAdminOwnershipForm';
 import UpdatePasswordForm from './Partials/UpdatePasswordForm';
 import UpdateProfileInformationForm from './Partials/UpdateProfileInformationForm';
 
-export default function Edit({ mustVerifyEmail, status, emailChangeCodeTtlMinutes }) {
+export default function Edit({ mustVerifyEmail, status, emailChangeCodeTtlMinutes, superAdminTransferCodeTtlMinutes }) {
     const { auth } = usePage().props;
     const user = auth?.user;
     const roles = auth?.roles || [];
@@ -82,6 +83,16 @@ export default function Edit({ mustVerifyEmail, status, emailChangeCodeTtlMinute
                             <UpdatePasswordForm className="max-w-none" />
                         </div>
                     </div>
+
+                    {isSuperAdmin && (
+                        <div className="rounded-2xl border border-purple-100 bg-white p-5 shadow-sm sm:p-7">
+                            <TransferSuperAdminOwnershipForm
+                                status={status}
+                                superAdminTransferCodeTtlMinutes={superAdminTransferCodeTtlMinutes}
+                                className="max-w-none"
+                            />
+                        </div>
+                    )}
 
                     {!isSuperAdmin && (
                         <div className="rounded-2xl border border-red-100 bg-white p-5 shadow-sm sm:p-7">

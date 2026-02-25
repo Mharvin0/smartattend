@@ -102,8 +102,9 @@ export default function SystemAdmin({
 
     const loadDepartmentRates = async () => {
         try {
-            const response = await fetch(route('super.attendance.department-rates'), {
+            const response = await fetch(route('super.attendance.department-rates', undefined, false), {
                 method: 'GET',
+                credentials: 'same-origin',
                 headers: {
                     'Accept': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -131,8 +132,9 @@ export default function SystemAdmin({
         if (activeTab !== 'attendance') return;
         
         try {
-            const response = await fetch(route('super.attendance.live-data'), {
+            const response = await fetch(route('super.attendance.live-data', undefined, false), {
                 method: 'GET',
+                credentials: 'same-origin',
                 headers: {
                     'Accept': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -164,8 +166,9 @@ export default function SystemAdmin({
 
     const refreshDashboardData = async () => {
         try {
-            const response = await fetch(route('super.dashboard.refresh'), {
+            const response = await fetch(route('super.dashboard.refresh', undefined, false), {
                 method: 'GET',
+                credentials: 'same-origin',
                 headers: {
                     'Accept': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -323,8 +326,9 @@ export default function SystemAdmin({
 
     useEffect(() => {
         if (studentForm.department_id) {
-            fetch(route('super.departments.get-teachers', { id: studentForm.department_id }), {
+            fetch(route('super.departments.get-teachers', { id: studentForm.department_id }, false), {
                 method: 'GET',
+                credentials: 'same-origin',
                 headers: {
                     'Accept': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
@@ -428,6 +432,11 @@ export default function SystemAdmin({
         academic_year: ''
     });
 
+    // Keep local sections table data in sync with Inertia props
+    useEffect(() => {
+        setSectionsData(sections || []);
+    }, [sections]);
+
 
     // Filter programs by department
     const filteredPrograms = selectedDepartment 
@@ -497,8 +506,9 @@ export default function SystemAdmin({
     const handleCreateIntervention = async () => {
         setIsLoading(true);
         try {
-            const response = await fetch(route('super.interventions.store'), {
+            const response = await fetch(route('super.interventions.store', undefined, false), {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
@@ -538,8 +548,9 @@ export default function SystemAdmin({
         
         setIsLoading(true);
         try {
-            const response = await fetch(route('super.interventions.update', editingIntervention.id), {
+            const response = await fetch(route('super.interventions.update', editingIntervention.id, false), {
                 method: 'PUT',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
@@ -581,7 +592,7 @@ export default function SystemAdmin({
         setIsLoading(true);
         try {
             // Use Inertia router for better CSRF handling
-            router.delete(route('super.interventions.destroy', interventionId), {
+            router.delete(route('super.interventions.destroy', interventionId, false), {
                 onSuccess: (page) => {
                     // Remove the intervention from local state
                     setInterventionsData(interventionsData.filter(i => i.id !== interventionId));
@@ -608,8 +619,9 @@ export default function SystemAdmin({
     const handleUpdateInterventionStatus = async (interventionId, newStatus) => {
         setIsLoading(true);
         try {
-            const response = await fetch(route('super.interventions.update', interventionId), {
+            const response = await fetch(route('super.interventions.update', interventionId, false), {
                 method: 'PUT',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
@@ -723,8 +735,9 @@ export default function SystemAdmin({
                 max_students: sectionForm.max_students ? parseInt(sectionForm.max_students) : null
             };
 
-            const response = await fetch(route('super.sections.store'), {
+            const response = await fetch(route('super.sections.store', undefined, false), {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
@@ -781,10 +794,23 @@ export default function SystemAdmin({
         
         setIsLoading(true);
         try {
+            // Convert year_level from "1" to "1st Year" format if needed (keep DB/display consistent)
+            let yearLevel = sectionForm.year_level;
+            if (yearLevel && !String(yearLevel).includes('Year')) {
+                const yearMap = {
+                    '1': '1st Year',
+                    '2': '2nd Year',
+                    '3': '3rd Year',
+                    '4': '4th Year',
+                    '5': '5th Year'
+                };
+                yearLevel = yearMap[String(yearLevel)] || yearLevel;
+            }
+
             // Prepare payload with proper data types
             const payload = {
                 name: sectionForm.name.trim(),
-                year_level: sectionForm.year_level,
+                year_level: yearLevel,
                 academic_year: sectionForm.academic_year,
                 semester: sectionForm.semester,
                 adviser_name: sectionForm.adviser_name || null,
@@ -793,8 +819,9 @@ export default function SystemAdmin({
                 max_students: sectionForm.max_students ? parseInt(sectionForm.max_students) : null
             };
 
-            const response = await fetch(route('super.sections.update', editingSection.id), {
+            const response = await fetch(route('super.sections.update', editingSection.id, false), {
                 method: 'PUT',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
@@ -806,8 +833,14 @@ export default function SystemAdmin({
             const result = await response.json();
 
             if (response.ok && result.success) {
-                // Reload the page to get updated data with proper relationships
-                router.reload();
+                setShowSectionModal(false);
+                setEditingSection(null);
+                // Update table immediately using the updated section returned by the API
+                if (result.section) {
+                    setSectionsData((prev) =>
+                        (prev || []).map((s) => (s.id === editingSection.id ? result.section : s))
+                    );
+                }
                 setNotification({ type: 'success', message: result.message || 'Section updated successfully!' });
             } else {
                 // Handle validation errors
@@ -832,8 +865,9 @@ export default function SystemAdmin({
 
         setIsLoading(true);
         try {
-            const response = await fetch(route('super.sections.destroy', sectionId), {
+            const response = await fetch(route('super.sections.destroy', sectionId, false), {
                 method: 'DELETE',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
@@ -928,8 +962,9 @@ export default function SystemAdmin({
             
             switch (action) {
                 case 'clear-cache':
-                    response = await fetch(route('super.system-admin.clear-cache'), {
+                    response = await fetch(route('super.system-admin.clear-cache', undefined, false), {
                         method: 'POST',
+                        credentials: 'same-origin',
                         headers: {
                             'Content-Type': 'application/json',
                             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
@@ -945,8 +980,9 @@ export default function SystemAdmin({
                     break;
                     
                 case 'optimize':
-                    response = await fetch(route('super.system-admin.optimize'), {
+                    response = await fetch(route('super.system-admin.optimize', undefined, false), {
                         method: 'POST',
+                        credentials: 'same-origin',
                         headers: {
                             'Content-Type': 'application/json',
                             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
@@ -962,8 +998,9 @@ export default function SystemAdmin({
                     break;
                     
                 case 'backup':
-                    response = await fetch(route('super.system-admin.backup'), {
+                    response = await fetch(route('super.system-admin.backup', undefined, false), {
                         method: 'POST',
+                        credentials: 'same-origin',
                         headers: {
                             'Content-Type': 'application/json',
                             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
@@ -979,8 +1016,9 @@ export default function SystemAdmin({
                     break;
                     
                 case 'maintenance':
-                    response = await fetch(route('super.system-admin.maintenance'), {
+                    response = await fetch(route('super.system-admin.maintenance', undefined, false), {
                         method: 'POST',
+                        credentials: 'same-origin',
                         headers: {
                             'Content-Type': 'application/json',
                             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
@@ -996,8 +1034,9 @@ export default function SystemAdmin({
                     break;
                     
                 case 'view-logs':
-                    response = await fetch(route('super.system-admin.logs'), {
+                    response = await fetch(route('super.system-admin.logs', undefined, false), {
                         method: 'GET',
+                        credentials: 'same-origin',
                         headers: {
                             'Content-Type': 'application/json',
                             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
@@ -1294,7 +1333,7 @@ export default function SystemAdmin({
                     : 'super.management.get-tracking';
             
             // Test if route exists
-            route(routeName);
+            route(routeName, undefined, false);
         } catch (error) {
             console.error('Route not found:', routeName, error);
             setIsLoadingTracking(false);
@@ -1305,8 +1344,9 @@ export default function SystemAdmin({
             return;
         }
         
-        fetch(`${route(routeName)}?${params.toString()}`, {
+        fetch(`${route(routeName, undefined, false)}?${params.toString()}`, {
             method: 'GET',
+            credentials: 'same-origin',
             headers: {
                 'Accept': 'application/json',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -1440,7 +1480,7 @@ export default function SystemAdmin({
     const handleStatusUpdate = (studentId, trackingId, newStatus) => {
         if (trackingId) {
             // Update existing tracking record
-            router.put(route('super.management.update-tracking', trackingId), {
+            router.put(route('super.management.update-tracking', trackingId, false), {
                 status: newStatus,
             }, {
                 preserveScroll: true,
@@ -1450,7 +1490,7 @@ export default function SystemAdmin({
             });
         } else {
             // Create new tracking record
-            router.post(route('super.management.track-student'), {
+            router.post(route('super.management.track-student', undefined, false), {
                 student_id: studentId,
                 type: 'call',
                 date: new Date().toISOString().split('T')[0],
@@ -1816,7 +1856,7 @@ export default function SystemAdmin({
                                                     <button
                                                         onClick={() => {
                                                             if (confirm('Are you sure you want to archive this student from the attention list?')) {
-                                                                router.post(route('super.management.archive-student-from-attention', student.id), {}, {
+                                                                router.post(route('super.management.archive-student-from-attention', student.id, false), {}, {
                                                                     preserveScroll: true,
                                                                     onSuccess: () => {
                                                                         router.reload({ only: ['studentsNeedingCalls'] });
@@ -2090,8 +2130,9 @@ export default function SystemAdmin({
                                             <div className="flex items-center gap-2 no-print">
                                                 <button
                                                     onClick={() => {
-                                                        fetch(route('super.management.view-tracking', tracking.id), {
+                                                        fetch(route('super.management.view-tracking', tracking.id, false), {
                                                             method: 'GET',
+                                                            credentials: 'same-origin',
                                                             headers: {
                                                                 'Accept': 'application/json',
                                                                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -2118,7 +2159,7 @@ export default function SystemAdmin({
                                                         <button
                                                             onClick={() => {
                                                             if (confirm('Are you sure you want to unarchive this tracking record?')) {
-                                                                router.post(route('super.management.unarchive-tracking', tracking.id), {}, {
+                                                                router.post(route('super.management.unarchive-tracking', tracking.id, false), {}, {
                                                                         preserveScroll: true,
                                                                         onSuccess: () => {
                                                                         fetchTrackingRecords(trackingPagination.current_page, trackingFilters);
@@ -2139,7 +2180,7 @@ export default function SystemAdmin({
                                                         <button
                                                             onClick={() => {
                                                             if (confirm('Are you sure you want to restore this tracking record?')) {
-                                                                router.post(route('super.management.restore-tracking', tracking.id), {}, {
+                                                                router.post(route('super.management.restore-tracking', tracking.id, false), {}, {
                                                                         preserveScroll: true,
                                                                         onSuccess: () => {
                                                                         fetchTrackingRecords(trackingPagination.current_page, trackingFilters);
@@ -2239,7 +2280,7 @@ export default function SystemAdmin({
                                             <button
                                                 onClick={() => {
                                                     if (confirm('Are you sure you want to archive this tracking record?')) {
-                                                        router.post(route('super.management.archive-tracking', editingTracking.id), {}, {
+                                                        router.post(route('super.management.archive-tracking', editingTracking.id, false), {}, {
                                                             preserveScroll: true,
                                                             onSuccess: () => {
                                                                 setShowTrackingModal(false);
@@ -2555,7 +2596,7 @@ export default function SystemAdmin({
                                         <button
                                             onClick={() => {
                                                 if (confirm('Are you sure you want to archive this tracking record?')) {
-                                                    router.post(route('super.management.archive-tracking', viewingTracking.id), {}, {
+                                                    router.post(route('super.management.archive-tracking', viewingTracking.id, false), {}, {
                                                         preserveScroll: true,
                                                         onSuccess: () => {
                                                             setShowViewTrackingModal(false);
@@ -3267,7 +3308,7 @@ export default function SystemAdmin({
     const handleAddStudent = async (e) => {
         e.preventDefault();
         setIsSubmitting(true);
-        router.post(route('super.students.store'), studentForm, {
+        router.post(route('super.students.store', undefined, false), studentForm, {
             onSuccess: () => {
                 setShowAddStudentModal(false);
                 setStudentForm({
@@ -3320,7 +3361,7 @@ export default function SystemAdmin({
         formData.append('file', importFile);
         formData.append('type', importType);
         
-        router.post(route('super.students.import'), formData, {
+        router.post(route('super.students.import', undefined, false), formData, {
             forceFormData: true,
             onSuccess: () => {
                 setShowImportModal(false);
@@ -3602,7 +3643,7 @@ export default function SystemAdmin({
                                                             <button
                                                                 onClick={() => {
                                                                     if (confirm(`Are you sure you want to delete ${teacher.name}?`)) {
-                                                                        router.delete(route('super.teachers.destroy', teacher.id), {
+                                                                        router.delete(route('super.teachers.destroy', teacher.id, false), {
                                                                             onSuccess: () => {
                                                                                 router.reload();
                                                                             },
@@ -5289,7 +5330,7 @@ export default function SystemAdmin({
                             </div>
                             <form onSubmit={(e) => {
                                 e.preventDefault();
-                                router.post(route('super.students.send-to-csdl', selectedStudentForCSDL.id), {
+                                router.post(route('super.students.send-to-csdl', selectedStudentForCSDL.id, false), {
                                     type: 'home_visit',
                                     notes: csdlForm.notes
                                 }, {
@@ -5530,7 +5571,7 @@ export default function SystemAdmin({
             absence_count: absCount,
             tracking_status: editStudentForm.status, // Send tracking status separately
         };
-        router.patch(route('super.students.update', selectedStudent.id), formData, {
+        router.patch(route('super.students.update', selectedStudent.id, false), formData, {
             onSuccess: (page) => {
                 setIsSavingStudent(false);
                 setStudentFormErrors({});
@@ -5929,7 +5970,7 @@ export default function SystemAdmin({
                             </div>
                             <form onSubmit={(e) => {
                                 e.preventDefault();
-                                router.post(route('super.teachers.store'), teacherForm, {
+                                router.post(route('super.teachers.store', undefined, false), teacherForm, {
                                     onSuccess: () => {
                                         closeAddTeacherModal();
                                         router.reload();
@@ -6085,7 +6126,7 @@ export default function SystemAdmin({
                             </div>
                             <form onSubmit={(e) => {
                                 e.preventDefault();
-                                router.put(route('super.teachers.update', selectedTeacher.id), teacherForm, {
+                                router.put(route('super.teachers.update', selectedTeacher.id, false), teacherForm, {
                                     onSuccess: () => {
                                         setShowEditTeacherModal(false);
                                         setSelectedTeacher(null);

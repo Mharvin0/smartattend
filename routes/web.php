@@ -30,6 +30,8 @@ Route::get('/', function () {
 Route::middleware(['auth', \App\Http\Middleware\RequirePasswordChange::class])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::post('/profile/email-change-code', [ProfileController::class, 'sendEmailChangeCode'])->name('profile.email-change-code.send');
+    Route::post('/profile/superadmin-transfer-code', [ProfileController::class, 'sendSuperAdminTransferCode'])->name('profile.superadmin-transfer-code.send');
+    Route::post('/profile/superadmin-transfer', [ProfileController::class, 'confirmSuperAdminTransfer'])->name('profile.superadmin-transfer.confirm');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->middleware('password.confirm')->name('profile.destroy');
     

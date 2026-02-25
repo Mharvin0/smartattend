@@ -4,13 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\ProfileUpdateRequest;
 use App\Models\AuditLog;
+use App\Models\User;
 use App\Services\BrevoEmailService;
+use App\Services\AuditLogService;
 use App\Services\SecurityAlertService;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -24,6 +28,11 @@ class ProfileController extends Controller
     private const EMAIL_CHANGE_CODE_RESEND_COOLDOWN_SECONDS = 60;
     private const EMAIL_CHANGE_CODE_MAX_FAILED_ATTEMPTS = 5;
 
+    private const SUPERADMIN_TRANSFER_CODE_SESSION_KEY = 'profile.superadmin_transfer_verification';
+    private const SUPERADMIN_TRANSFER_CODE_TTL_MINUTES = 5;
+    private const SUPERADMIN_TRANSFER_CODE_RESEND_COOLDOWN_SECONDS = 60;
+    private const SUPERADMIN_TRANSFER_CODE_MAX_FAILED_ATTEMPTS = 5;
+
     /**
      * Display the user's profile form.
      */
@@ -33,7 +42,190 @@ class ProfileController extends Controller
             'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
             'status' => session('status'),
             'emailChangeCodeTtlMinutes' => self::EMAIL_CHANGE_CODE_TTL_MINUTES,
+            'superAdminTransferCodeTtlMinutes' => self::SUPERADMIN_TRANSFER_CODE_TTL_MINUTES,
         ]);
+    }
+
+    /**
+     * Send a one-time verification code to the current Super Admin email to confirm ownership transfer.
+     */
+    public function sendSuperAdminTransferCode(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        if (! $user || ! $user->hasRole('Super Admin')) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'new_superadmin_email' => ['required', 'email'],
+        ]);
+
+        $targetEmail = strtolower(trim((string) $validated['new_superadmin_email']));
+        $currentEmail = strtolower((string) $user->email);
+
+        if ($targetEmail === '' || $targetEmail === $currentEmail) {
+            throw ValidationException::withMessages([
+                'new_superadmin_email' => 'Please enter a different, valid email address.',
+            ]);
+        }
+
+        $targetUser = User::whereRaw('LOWER(email) = ?', [$targetEmail])->first();
+        if (! $targetUser) {
+            throw ValidationException::withMessages([
+                'new_superadmin_email' => 'No user was found with that email.',
+            ]);
+        }
+
+        if (method_exists($targetUser, 'trashed') && $targetUser->trashed()) {
+            throw ValidationException::withMessages([
+                'new_superadmin_email' => 'That user account is deactivated. Reactivate it first, then try again.',
+            ]);
+        }
+
+        if ($targetUser->hasRole('Super Admin')) {
+            throw ValidationException::withMessages([
+                'new_superadmin_email' => 'That user is already a Super Admin.',
+            ]);
+        }
+
+        $existingPayload = (array) $request->session()->get(self::SUPERADMIN_TRANSFER_CODE_SESSION_KEY, []);
+        $sentAt = (int) ($existingPayload['sent_at'] ?? 0);
+
+        if ($sentAt > 0) {
+            $cooldownEndsAt = $sentAt + self::SUPERADMIN_TRANSFER_CODE_RESEND_COOLDOWN_SECONDS;
+            if (now()->timestamp < $cooldownEndsAt) {
+                $remaining = $cooldownEndsAt - now()->timestamp;
+                return Redirect::route('profile.edit')->with('status', "superadmin-transfer-code-cooldown:{$remaining}");
+            }
+        }
+
+        $verificationCode = (string) random_int(100000, 999999);
+
+        $request->session()->put(self::SUPERADMIN_TRANSFER_CODE_SESSION_KEY, [
+            'hash' => hash('sha256', $verificationCode),
+            'expires_at' => now()->addMinutes(self::SUPERADMIN_TRANSFER_CODE_TTL_MINUTES)->timestamp,
+            'current_email' => $currentEmail,
+            'target_email' => $targetEmail,
+            'attempts' => 0,
+            'sent_at' => now()->timestamp,
+        ]);
+
+        try {
+            $subject = 'SmartAttend Super Admin transfer verification code';
+            $body = "You requested to transfer Super Admin ownership.\n\n"
+                . "Verification code: {$verificationCode}\n"
+                . "Expires in " . self::SUPERADMIN_TRANSFER_CODE_TTL_MINUTES . " minutes.\n\n"
+                . "If you did not request this, secure your account immediately.";
+
+            $sentViaBrevo = BrevoEmailService::sendTextEmail(
+                (string) $user->email,
+                (string) $user->name,
+                $subject,
+                $body
+            );
+
+            if (! $sentViaBrevo) {
+                Mail::raw($body, static function ($message) use ($user, $subject): void {
+                    $message->to($user->email, $user->name)->subject($subject);
+                });
+            }
+        } catch (Throwable $e) {
+            report($e);
+            return Redirect::route('profile.edit')->with('status', 'superadmin-transfer-code-send-failed');
+        }
+
+        return Redirect::route('profile.edit')->with('status', 'superadmin-transfer-code-sent');
+    }
+
+    /**
+     * Confirm and execute Super Admin ownership transfer.
+     */
+    public function confirmSuperAdminTransfer(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        if (! $user || ! $user->hasRole('Super Admin')) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'new_superadmin_email' => ['required', 'email'],
+            'superadmin_transfer_code' => ['required', 'string'],
+        ]);
+
+        $targetEmail = strtolower(trim((string) $validated['new_superadmin_email']));
+        $currentEmail = strtolower((string) $user->email);
+
+        $this->assertSuperAdminTransferCodeIsValid($request, $currentEmail, $targetEmail);
+        $request->session()->forget(self::SUPERADMIN_TRANSFER_CODE_SESSION_KEY);
+
+        /** @var User|null $targetUser */
+        $targetUser = User::whereRaw('LOWER(email) = ?', [$targetEmail])->first();
+        if (! $targetUser) {
+            throw ValidationException::withMessages([
+                'new_superadmin_email' => 'No user was found with that email.',
+            ]);
+        }
+
+        DB::transaction(function () use ($user, $targetUser, $request): void {
+            $userId = (int) $user->id;
+            $targetId = (int) $targetUser->id;
+
+            // Give Super Admin to the new owner.
+            $targetUser->assignRole('Super Admin');
+
+            // Remove Super Admin from the current owner.
+            $user->removeRole('Super Admin');
+            if ($user->roles()->count() === 0) {
+                $user->assignRole('Admin');
+            }
+
+            AuditLogService::logUserManagement(
+                AuditLog::TYPE_DATA_UPDATE,
+                'Super Admin ownership transferred',
+                [
+                    'event' => 'superadmin_ownership_transferred',
+                    'from_user_id' => $userId,
+                    'to_user_id' => $targetId,
+                ]
+            );
+
+            // Send new owner an email + password reset link (no old password required).
+            try {
+                $token = Password::broker()->createToken($targetUser);
+                $resetUrl = url(route('password.reset', ['token' => $token, 'email' => $targetUser->email], false));
+
+                $subject = 'You are now the SmartAttend Super Admin';
+                $body = "Your SmartAttend account has been granted Super Admin ownership.\n\n"
+                    . "To secure the account, please reset your password using this link:\n{$resetUrl}\n\n"
+                    . "This reset does not require your current password — you will set a new one.\n\n"
+                    . "If you did not expect this, contact support immediately.";
+
+                BrevoEmailService::sendTextEmail((string) $targetUser->email, (string) $targetUser->name, $subject, $body);
+            } catch (Throwable $e) {
+                report($e);
+            }
+
+            // Security alert (generic; do not include emails).
+            try {
+                SecurityAlertService::notifyUserAndAdmins(
+                    'SmartAttend security alert: Super Admin ownership transferred',
+                    "Super Admin ownership was transferred.\n\nIf you did not authorize this action, contact support immediately.",
+                    $targetUser,
+                    [
+                        'event' => 'superadmin_ownership_transferred',
+                        'from_user_id' => $userId,
+                        'to_user_id' => $targetId,
+                    ],
+                    AuditLog::SEVERITY_CRITICAL
+                );
+            } catch (Throwable $e) {
+                report($e);
+            }
+        });
+
+        return Redirect::route('profile.edit')->with('status', 'superadmin-ownership-transferred');
     }
 
     /**
@@ -216,6 +408,72 @@ class ProfileController extends Controller
 
             throw ValidationException::withMessages([
                 'email_change_code' => 'Invalid verification code. Please try again.',
+            ]);
+        }
+    }
+
+    private function assertSuperAdminTransferCodeIsValid(Request $request, string $expectedCurrentEmail, string $expectedTargetEmail): void
+    {
+        $submittedCode = (string) $request->input('superadmin_transfer_code', '');
+        $payload = (array) $request->session()->get(self::SUPERADMIN_TRANSFER_CODE_SESSION_KEY, []);
+
+        if ($submittedCode === '') {
+            throw ValidationException::withMessages([
+                'superadmin_transfer_code' => 'Verification code is required to transfer Super Admin ownership.',
+            ]);
+        }
+
+        if (!preg_match('/^\d{6}$/', $submittedCode)) {
+            throw ValidationException::withMessages([
+                'superadmin_transfer_code' => 'Verification code must be a 6-digit number.',
+            ]);
+        }
+
+        $payloadCurrentEmail = strtolower((string) ($payload['current_email'] ?? ''));
+        $payloadTargetEmail = strtolower((string) ($payload['target_email'] ?? ''));
+
+        if (
+            empty($payload['hash'])
+            || empty($payload['expires_at'])
+            || $payloadCurrentEmail === ''
+            || $payloadTargetEmail === ''
+            || $payloadCurrentEmail !== strtolower($expectedCurrentEmail)
+            || $payloadTargetEmail !== strtolower($expectedTargetEmail)
+        ) {
+            throw ValidationException::withMessages([
+                'superadmin_transfer_code' => 'Request a new transfer verification code and try again.',
+            ]);
+        }
+
+        if ((int) $payload['expires_at'] < now()->timestamp) {
+            $request->session()->forget(self::SUPERADMIN_TRANSFER_CODE_SESSION_KEY);
+            throw ValidationException::withMessages([
+                'superadmin_transfer_code' => 'Verification code expired. Request a new one and try again.',
+            ]);
+        }
+
+        $attempts = (int) ($payload['attempts'] ?? 0);
+        if ($attempts >= self::SUPERADMIN_TRANSFER_CODE_MAX_FAILED_ATTEMPTS) {
+            $request->session()->forget(self::SUPERADMIN_TRANSFER_CODE_SESSION_KEY);
+            throw ValidationException::withMessages([
+                'superadmin_transfer_code' => 'Too many failed attempts. Request a new transfer verification code.',
+            ]);
+        }
+
+        $submittedHash = hash('sha256', $submittedCode);
+        if (!hash_equals((string) $payload['hash'], $submittedHash)) {
+            $payload['attempts'] = $attempts + 1;
+            $request->session()->put(self::SUPERADMIN_TRANSFER_CODE_SESSION_KEY, $payload);
+
+            if ($payload['attempts'] >= self::SUPERADMIN_TRANSFER_CODE_MAX_FAILED_ATTEMPTS) {
+                $request->session()->forget(self::SUPERADMIN_TRANSFER_CODE_SESSION_KEY);
+                throw ValidationException::withMessages([
+                    'superadmin_transfer_code' => 'Too many failed attempts. Request a new transfer verification code.',
+                ]);
+            }
+
+            throw ValidationException::withMessages([
+                'superadmin_transfer_code' => 'Invalid verification code. Please try again.',
             ]);
         }
     }

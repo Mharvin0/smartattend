@@ -1,6 +1,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, useForm, usePage, router } from '@inertiajs/react';
 import DataTable from '@/Components/DataTable';
+import Modal from '@/Components/Modal';
 import { useState, useEffect } from 'react';
 
 export default function Subjects({ subjects, sections, departments, programs, teachers = [], yearLevels, semesters }) {
@@ -17,8 +18,10 @@ export default function Subjects({ subjects, sections, departments, programs, te
 		program_id: ''
 	});
 	const flash = usePage().props.flash || {};
+	const [createErrors, setCreateErrors] = useState({});
 	const submit = (e) => { 
 		e.preventDefault();
+		setCreateErrors({});
 		
 		// Convert program code to program name for backend
 		const programName = data.program ? availablePrograms[data.program] || data.program : '';
@@ -27,7 +30,7 @@ export default function Subjects({ subjects, sections, departments, programs, te
 		const adviserValue = data.adviser && data.adviser.trim() !== '' ? data.adviser : null;
 		
 		// Submit with transformed data using router.post directly
-		router.post(route('admin.subjects.store'), {
+		router.post(route('admin.subjects.store', undefined, false), {
 			...data,
 			program: programName,
 			adviser: adviserValue,
@@ -35,11 +38,15 @@ export default function Subjects({ subjects, sections, departments, programs, te
 			preserveState: false,
 			onSuccess: () => {
 				reset();
+				setCreateErrors({});
 				setAvailablePrograms({});
 				setAvailableSections(sections);
+				// Ensure the table reflects the latest server state
+				router.reload({ only: ['subjects'], preserveScroll: true });
 			},
 			onError: (errors) => {
 				console.error('Validation errors:', errors);
+				setCreateErrors(errors || {});
 			}
 		});
 	};
@@ -60,6 +67,7 @@ export default function Subjects({ subjects, sections, departments, programs, te
 	const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 	const [editingSubject, setEditingSubject] = useState(null);
 	const [isLoading, setIsLoading] = useState(false);
+	const [editErrors, setEditErrors] = useState({});
 
 	// Filter programs based on selected department
 	const handleDepartmentChange = (departmentName) => {
@@ -199,6 +207,7 @@ export default function Subjects({ subjects, sections, departments, programs, te
 	// Handle edit subject
 	const handleEditSubject = (subject) => {
 		setEditingSubject(subject);
+		setEditErrors({});
 		setIsEditModalOpen(true);
 	};
 
@@ -207,9 +216,10 @@ export default function Subjects({ subjects, sections, departments, programs, te
 		if (confirm(`Are you sure you want to delete "${subject.name}"? This action cannot be undone.`)) {
 			setIsLoading(true);
 			try {
-				router.delete(route('admin.subjects.destroy', subject.id), {
+				router.delete(route('admin.subjects.destroy', subject.id, false), {
 					onSuccess: () => {
 						setIsLoading(false);
+						router.reload({ only: ['subjects'], preserveScroll: true });
 					},
 					onError: () => {
 						setIsLoading(false);
@@ -226,6 +236,7 @@ export default function Subjects({ subjects, sections, departments, programs, te
 	const closeEditModal = () => {
 		setIsEditModalOpen(false);
 		setEditingSubject(null);
+		setEditErrors({});
 	};
 
 	return (
@@ -262,13 +273,17 @@ export default function Subjects({ subjects, sections, departments, programs, te
 								<select
 									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
 									value={data.department}
-									onChange={(e) => handleDepartmentChange(e.target.value)}
+									onChange={(e) => {
+										if (createErrors.department) setCreateErrors((prev) => ({ ...prev, department: undefined }));
+										handleDepartmentChange(e.target.value);
+									}}
 								>
 									<option value="">Select Department</option>
 									{departments.map((dept) => (
 										<option key={dept.id} value={dept.name}>{dept.name}</option>
 									))}
 								</select>
+								{createErrors.department && <p className="mt-1 text-sm text-red-600">{createErrors.department}</p>}
 							</div>
 
 							<div>
@@ -278,6 +293,7 @@ export default function Subjects({ subjects, sections, departments, programs, te
 									value={data.program}
 									onChange={(e) => {
 										const programCode = e.target.value;
+										if (createErrors.program) setCreateErrors((prev) => ({ ...prev, program: undefined }));
 										setData('program', programCode);
 										
 										// Find program ID from the programs list
@@ -291,6 +307,7 @@ export default function Subjects({ subjects, sections, departments, programs, te
 										<option key={code} value={code}>{code} - {name}</option>
 									))}
 								</select>
+								{createErrors.program && <p className="mt-1 text-sm text-red-600">{createErrors.program}</p>}
 							</div>
 
 							<div>
@@ -298,13 +315,17 @@ export default function Subjects({ subjects, sections, departments, programs, te
 								<select
 									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
 									value={data.year_level}
-									onChange={(e) => setData('year_level', e.target.value)}
+									onChange={(e) => {
+										if (createErrors.year_level) setCreateErrors((prev) => ({ ...prev, year_level: undefined }));
+										setData('year_level', e.target.value);
+									}}
 								>
 									<option value="">Select Year Level</option>
 									{yearLevels.map((year) => (
 										<option key={year} value={year}>{year}</option>
 									))}
 								</select>
+								{createErrors.year_level && <p className="mt-1 text-sm text-red-600">{createErrors.year_level}</p>}
 							</div>
 
 							<div>
@@ -312,13 +333,17 @@ export default function Subjects({ subjects, sections, departments, programs, te
 								<select
 									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
 									value={data.semester}
-									onChange={(e) => setData('semester', e.target.value)}
+									onChange={(e) => {
+										if (createErrors.semester) setCreateErrors((prev) => ({ ...prev, semester: undefined }));
+										setData('semester', e.target.value);
+									}}
 								>
 									<option value="">Select Semester</option>
 									{semesters.map((sem) => (
 										<option key={sem} value={sem}>{sem}</option>
 									))}
 								</select>
+								{createErrors.semester && <p className="mt-1 text-sm text-red-600">{createErrors.semester}</p>}
 							</div>
 
 							<div>
@@ -328,8 +353,12 @@ export default function Subjects({ subjects, sections, departments, programs, te
 									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
 									placeholder="e.g. MATH101"
 									value={data.code}
-									onChange={(e) => setData('code', e.target.value)}
+									onChange={(e) => {
+										if (createErrors.code) setCreateErrors((prev) => ({ ...prev, code: undefined }));
+										setData('code', e.target.value);
+									}}
 								/>
+								{createErrors.code && <p className="mt-1 text-sm text-red-600">{createErrors.code}</p>}
 							</div>
 
 							<div>
@@ -339,8 +368,12 @@ export default function Subjects({ subjects, sections, departments, programs, te
 									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
 									placeholder="e.g. Mathematics"
 									value={data.name}
-									onChange={(e) => setData('name', e.target.value)}
+									onChange={(e) => {
+										if (createErrors.name) setCreateErrors((prev) => ({ ...prev, name: undefined }));
+										setData('name', e.target.value);
+									}}
 								/>
+								{createErrors.name && <p className="mt-1 text-sm text-red-600">{createErrors.name}</p>}
 							</div>
 
 							<div>
@@ -348,13 +381,17 @@ export default function Subjects({ subjects, sections, departments, programs, te
 								<select
 									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
 									value={data.section_id}
-									onChange={(e) => setData('section_id', e.target.value)}
+									onChange={(e) => {
+										if (createErrors.section_id) setCreateErrors((prev) => ({ ...prev, section_id: undefined }));
+										setData('section_id', e.target.value);
+									}}
 								>
 									<option value="">Select Section</option>
 									{availableSections.map((s) => (
 										<option key={s.id} value={s.id}>{s.name}</option>
 									))}
 								</select>
+								{createErrors.section_id && <p className="mt-1 text-sm text-red-600">{createErrors.section_id}</p>}
 							</div>
 
 							<div>
@@ -362,13 +399,17 @@ export default function Subjects({ subjects, sections, departments, programs, te
 								<select
 									className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary sm:text-sm"
 									value={data.adviser || ''}
-									onChange={(e) => setData('adviser', e.target.value)}
+									onChange={(e) => {
+										if (createErrors.adviser) setCreateErrors((prev) => ({ ...prev, adviser: undefined }));
+										setData('adviser', e.target.value);
+									}}
 								>
 									<option value="">Select Adviser</option>
 									{teachers.map((teacher) => (
 										<option key={teacher.id} value={teacher.name}>{teacher.name}</option>
 									))}
 								</select>
+								{createErrors.adviser && <p className="mt-1 text-sm text-red-600">{createErrors.adviser}</p>}
 							</div>
 
 							<div className="md:col-span-2 lg:col-span-4">
@@ -545,163 +586,210 @@ export default function Subjects({ subjects, sections, departments, programs, te
 				</div>
 			</div>
 
-			{/* Edit Subject Modal */}
-			{isEditModalOpen && editingSubject && (
-				<div className="fixed inset-0 z-50 overflow-y-auto">
-					<div className="flex min-h-screen items-center justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-						<div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={closeEditModal}></div>
-						
-						<div className="inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:align-middle">
-							<div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-								<div className="sm:flex sm:items-start">
-									<div className="mt-3 text-center sm:mt-0 sm:text-left w-full">
-										<h3 className="text-lg font-medium leading-6 text-gray-900 mb-4">
-											Edit Subject: {editingSubject.name}
-										</h3>
-										
-										<form onSubmit={(e) => {
-											e.preventDefault();
-											setIsLoading(true);
-											router.patch(route('admin.subjects.update', editingSubject.id), {
-												code: editingSubject.code,
-												name: editingSubject.name,
-												department: editingSubject.department,
-												program: editingSubject.program,
-												year_level: editingSubject.year_level,
-												semester: editingSubject.semester,
-												adviser: editingSubject.adviser && editingSubject.adviser.trim() !== '' ? editingSubject.adviser : null,
-												section_id: editingSubject.section_id
-											}, {
-												onSuccess: () => {
-													setIsLoading(false);
-													closeEditModal();
-												},
-												onError: () => {
-													setIsLoading(false);
-												}
-											});
-										}} className="space-y-4">
-											<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-												<div>
-													<label className="block text-sm font-medium text-gray-700 mb-2">Subject Code</label>
-													<input
-														type="text"
-														value={editingSubject.code || ''}
-														onChange={(e) => setEditingSubject({...editingSubject, code: e.target.value})}
-														className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-														required
-													/>
-												</div>
-												<div>
-													<label className="block text-sm font-medium text-gray-700 mb-2">Subject Name</label>
-													<input
-														type="text"
-														value={editingSubject.name || ''}
-														onChange={(e) => setEditingSubject({...editingSubject, name: e.target.value})}
-														className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-														required
-													/>
-												</div>
-												<div>
-													<label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
-													<input
-														type="text"
-														value={editingSubject.department || ''}
-														onChange={(e) => setEditingSubject({...editingSubject, department: e.target.value})}
-														className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-														required
-													/>
-												</div>
-												<div>
-													<label className="block text-sm font-medium text-gray-700 mb-2">Program</label>
-													<input
-														type="text"
-														value={editingSubject.program || ''}
-														onChange={(e) => setEditingSubject({...editingSubject, program: e.target.value})}
-														className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-														required
-													/>
-												</div>
-												<div>
-													<label className="block text-sm font-medium text-gray-700 mb-2">Year Level</label>
-													<select
-														value={editingSubject.year_level || ''}
-														onChange={(e) => setEditingSubject({...editingSubject, year_level: e.target.value})}
-														className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-														required
-													>
-														<option value="">Select Year Level</option>
-														{yearLevels.map((year) => (
-															<option key={year} value={year}>{year}</option>
-														))}
-													</select>
-												</div>
-												<div>
-													<label className="block text-sm font-medium text-gray-700 mb-2">Semester</label>
-													<select
-														value={editingSubject.semester || ''}
-														onChange={(e) => setEditingSubject({...editingSubject, semester: e.target.value})}
-														className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-														required
-													>
-														<option value="">Select Semester</option>
-														{semesters.map((sem) => (
-															<option key={sem} value={sem}>{sem}</option>
-														))}
-													</select>
-												</div>
-												<div>
-													<label className="block text-sm font-medium text-gray-700 mb-2">Section</label>
-													<select
-														value={editingSubject.section_id || ''}
-														onChange={(e) => setEditingSubject({...editingSubject, section_id: e.target.value})}
-														className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-													>
-														<option value="">Select Section</option>
-														{sections.map((s) => (
-															<option key={s.id} value={s.id}>{s.name}</option>
-														))}
-													</select>
-												</div>
-												<div>
-													<label className="block text-sm font-medium text-gray-700 mb-2">Adviser</label>
-													<select
-														value={editingSubject.adviser || ''}
-														onChange={(e) => setEditingSubject({...editingSubject, adviser: e.target.value})}
-														className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-													>
-														<option value="">Select Adviser</option>
-														{teachers.map((teacher) => (
-															<option key={teacher.id} value={teacher.name}>{teacher.name}</option>
-														))}
-													</select>
-												</div>
-											</div>
-											
-											<div className="flex items-center justify-end space-x-3 pt-4">
-												<button
-													type="button"
-													onClick={closeEditModal}
-													className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-												>
-													Cancel
-												</button>
-												<button
-													type="submit"
-													disabled={isLoading}
-													className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-												>
-													{isLoading ? 'Saving...' : 'Save Changes'}
-												</button>
-											</div>
-										</form>
-									</div>
+			<Modal show={isEditModalOpen && !!editingSubject} onClose={closeEditModal} maxWidth="2xl">
+				{editingSubject && (
+					<form
+						onSubmit={(e) => {
+							e.preventDefault();
+							setIsLoading(true);
+							setEditErrors({});
+
+							router.patch(route('admin.subjects.update', editingSubject.id, false), {
+								code: editingSubject.code,
+								name: editingSubject.name,
+								department: editingSubject.department,
+								program: editingSubject.program,
+								year_level: editingSubject.year_level,
+								semester: editingSubject.semester,
+								adviser: editingSubject.adviser && editingSubject.adviser.trim() !== '' ? editingSubject.adviser : null,
+								section_id: editingSubject.section_id,
+							}, {
+								onSuccess: () => {
+									setIsLoading(false);
+									closeEditModal();
+									router.reload({ only: ['subjects'], preserveScroll: true });
+								},
+								onError: (errors) => {
+									setIsLoading(false);
+									setEditErrors(errors || {});
+								},
+							});
+						}}
+					>
+						<div className="flex items-start justify-between border-b border-gray-100 px-6 py-4">
+							<div className="min-w-0">
+								<h3 className="truncate text-lg font-semibold text-gray-900">Edit Subject</h3>
+								<p className="mt-1 text-sm text-gray-500 truncate">{editingSubject.name}</p>
+							</div>
+							<button
+								type="button"
+								onClick={closeEditModal}
+								className="rounded-lg p-2 text-gray-400 hover:bg-gray-50 hover:text-gray-600"
+								aria-label="Close"
+							>
+								<svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+								</svg>
+							</button>
+						</div>
+
+						<div className="space-y-4 px-6 py-5">
+							<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+								<div>
+									<label className="block text-sm font-medium text-gray-700 mb-2">Subject Code</label>
+									<input
+										type="text"
+										value={editingSubject.code || ''}
+										onChange={(e) => {
+											if (editErrors.code) setEditErrors((prev) => ({ ...prev, code: undefined }));
+											setEditingSubject({ ...editingSubject, code: e.target.value });
+										}}
+										className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+										required
+									/>
+									{editErrors.code && <p className="mt-1 text-sm text-red-600">{editErrors.code}</p>}
+								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-gray-700 mb-2">Subject Name</label>
+									<input
+										type="text"
+										value={editingSubject.name || ''}
+										onChange={(e) => {
+											if (editErrors.name) setEditErrors((prev) => ({ ...prev, name: undefined }));
+											setEditingSubject({ ...editingSubject, name: e.target.value });
+										}}
+										className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+										required
+									/>
+									{editErrors.name && <p className="mt-1 text-sm text-red-600">{editErrors.name}</p>}
+								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
+									<input
+										type="text"
+										value={editingSubject.department || ''}
+										onChange={(e) => {
+											if (editErrors.department) setEditErrors((prev) => ({ ...prev, department: undefined }));
+											setEditingSubject({ ...editingSubject, department: e.target.value });
+										}}
+										className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+										required
+									/>
+									{editErrors.department && <p className="mt-1 text-sm text-red-600">{editErrors.department}</p>}
+								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-gray-700 mb-2">Program</label>
+									<input
+										type="text"
+										value={editingSubject.program || ''}
+										onChange={(e) => {
+											if (editErrors.program) setEditErrors((prev) => ({ ...prev, program: undefined }));
+											setEditingSubject({ ...editingSubject, program: e.target.value });
+										}}
+										className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+										required
+									/>
+									{editErrors.program && <p className="mt-1 text-sm text-red-600">{editErrors.program}</p>}
+								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-gray-700 mb-2">Year Level</label>
+									<select
+										value={editingSubject.year_level || ''}
+										onChange={(e) => {
+											if (editErrors.year_level) setEditErrors((prev) => ({ ...prev, year_level: undefined }));
+											setEditingSubject({ ...editingSubject, year_level: e.target.value });
+										}}
+										className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+										required
+									>
+										<option value="">Select Year Level</option>
+										{yearLevels.map((year) => (
+											<option key={year} value={year}>{year}</option>
+										))}
+									</select>
+									{editErrors.year_level && <p className="mt-1 text-sm text-red-600">{editErrors.year_level}</p>}
+								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-gray-700 mb-2">Semester</label>
+									<select
+										value={editingSubject.semester || ''}
+										onChange={(e) => {
+											if (editErrors.semester) setEditErrors((prev) => ({ ...prev, semester: undefined }));
+											setEditingSubject({ ...editingSubject, semester: e.target.value });
+										}}
+										className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+										required
+									>
+										<option value="">Select Semester</option>
+										{semesters.map((sem) => (
+											<option key={sem} value={sem}>{sem}</option>
+										))}
+									</select>
+									{editErrors.semester && <p className="mt-1 text-sm text-red-600">{editErrors.semester}</p>}
+								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-gray-700 mb-2">Section</label>
+									<select
+										value={editingSubject.section_id || ''}
+										onChange={(e) => {
+											if (editErrors.section_id) setEditErrors((prev) => ({ ...prev, section_id: undefined }));
+											setEditingSubject({ ...editingSubject, section_id: e.target.value });
+										}}
+										className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+									>
+										<option value="">Select Section</option>
+										{sections.map((s) => (
+											<option key={s.id} value={s.id}>{s.name}</option>
+										))}
+									</select>
+									{editErrors.section_id && <p className="mt-1 text-sm text-red-600">{editErrors.section_id}</p>}
+								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-gray-700 mb-2">Adviser</label>
+									<select
+										value={editingSubject.adviser || ''}
+										onChange={(e) => {
+											if (editErrors.adviser) setEditErrors((prev) => ({ ...prev, adviser: undefined }));
+											setEditingSubject({ ...editingSubject, adviser: e.target.value });
+										}}
+										className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm shadow-sm focus:border-brand-primary focus:ring-brand-primary"
+									>
+										<option value="">Select Adviser</option>
+										{teachers.map((teacher) => (
+											<option key={teacher.id} value={teacher.name}>{teacher.name}</option>
+										))}
+									</select>
+									{editErrors.adviser && <p className="mt-1 text-sm text-red-600">{editErrors.adviser}</p>}
 								</div>
 							</div>
 						</div>
-					</div>
-				</div>
-			)}
+
+						<div className="flex items-center justify-end gap-3 border-t border-gray-100 bg-gray-50/50 px-6 py-4">
+							<button
+								type="button"
+								onClick={closeEditModal}
+								className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+							>
+								Cancel
+							</button>
+							<button
+								type="submit"
+								disabled={isLoading}
+								className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-primary/90 disabled:opacity-50"
+							>
+								{isLoading ? 'Saving…' : 'Save Changes'}
+							</button>
+						</div>
+					</form>
+				)}
+			</Modal>
 		</AuthenticatedLayout>
 	);
 }

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Link, usePage } from '@inertiajs/react';
+import { useEffect, useRef } from 'react';
+import { usePage } from '@inertiajs/react';
 
 const DropdownNav = ({ icon, children, label, isOpen, onToggle }) => {
 	const { url } = usePage();
@@ -10,17 +10,27 @@ const DropdownNav = ({ icon, children, label, isOpen, onToggle }) => {
 		return url.includes('/admin/sections') || 
 			   url.includes('/admin/subjects') || 
 			   url.includes('/admin/schedules') || 
+			   url.includes('/super/settings') ||
+			   url.includes('/super/teachers') ||
+			   url.includes('/super/sections') ||
+			   url.includes('/super/subjects') ||
+			   url.includes('/super/schedules') ||
 			   url.includes('/super/departments') || 
 			   url.includes('/super/users') ||
 			   url.includes('/super/system-admin');
 	};
+	
+	const anyActive = isAnyChildActive();
 
-	// Auto-open dropdown if any child is active
+	// Auto-open only when entering a child route (prevents "re-opening" glitches)
+	const prevAnyActiveRef = useRef(false);
 	useEffect(() => {
-		if (isAnyChildActive() && !isOpen) {
+		const wasActive = prevAnyActiveRef.current;
+		if (!wasActive && anyActive && !isOpen) {
 			onToggle();
 		}
-	}, [url]);
+		prevAnyActiveRef.current = anyActive;
+	}, [anyActive, isOpen, onToggle]);
 
 	return (
 		<div className="relative">
@@ -31,7 +41,7 @@ const DropdownNav = ({ icon, children, label, isOpen, onToggle }) => {
 					onToggle();
 				}}
 				className={`flex items-center gap-4 rounded-lg px-6 py-4 text-lg font-semibold transition-colors w-full ${
-					isOpen || isAnyChildActive()
+					isOpen || anyActive
 						? 'bg-brand-primary text-white'
 						: 'text-gray-700 hover:bg-brand-primary/10'
 				}`}
@@ -42,7 +52,7 @@ const DropdownNav = ({ icon, children, label, isOpen, onToggle }) => {
 				<span className="flex-1 text-left">{label}</span>
 				<svg
 					className={`h-5 w-5 transition-transform duration-200 ${
-						isOpen || isAnyChildActive() ? 'rotate-180' : ''
+						isOpen ? 'rotate-180' : ''
 					}`}
 					fill="none"
 					stroke="currentColor"
@@ -57,7 +67,7 @@ const DropdownNav = ({ icon, children, label, isOpen, onToggle }) => {
 				</svg>
 			</button>
 			
-			{(isOpen || isAnyChildActive()) && (
+			{isOpen && (
 				<div 
 					className="ml-4 mt-2 space-y-1 border-l-2 border-brand-primary/20 pl-4"
 					onClick={(e) => e.stopPropagation()}

@@ -2,13 +2,14 @@ import ApplicationLogo from '@/Components/ApplicationLogo';
 import Dropdown from '@/Components/Dropdown';
 import DropdownNav from '@/Components/DropdownNav';
 import { Link, usePage } from '@inertiajs/react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 export default function AuthenticatedLayout({ header, children }) {
 	const user = usePage().props.auth.user;
 	const roles = usePage().props.auth.roles || [];
 	const [sidebarOpen, setSidebarOpen] = useState(true);
 	const [settingsOpen, setSettingsOpen] = useState(false);
+	const toggleSettings = useCallback(() => setSettingsOpen((prev) => !prev), []);
 
 	const NavItem = ({ href, active, icon, children }) => (
 		<Link
@@ -38,7 +39,7 @@ export default function AuthenticatedLayout({ header, children }) {
 			{/* Sidebar */}
 			<div className={`fixed inset-y-0 z-[200] flex w-72 flex-col bg-white transition-transform duration-300 ${
 				sidebarOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none'
-			} border-r border-gray-200`}>
+			} border-r border-gray-200 min-h-0`}>
 				{/* Logo */}
 				<div className="flex h-20 items-center justify-between px-6">
 					<Link href={route('admin.admin-page')} className="flex items-center gap-3">
@@ -52,7 +53,7 @@ export default function AuthenticatedLayout({ header, children }) {
 				</div>
 
 				{/* Navigation */}
-				<div className="flex-1 space-y-2 px-4 py-6">
+				<div className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-2 px-4 py-6">
 					{roles.includes('Admin') && !roles.includes('Super Admin') && (
 						<>
 							<NavItem
@@ -143,7 +144,7 @@ export default function AuthenticatedLayout({ header, children }) {
 								}
 								label="Settings"
 								isOpen={settingsOpen}
-								onToggle={() => setSettingsOpen(!settingsOpen)}
+								onToggle={toggleSettings}
 							>
 								<NavItem
 									href={route('super.settings') + '#students'}

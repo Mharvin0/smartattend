@@ -42,7 +42,8 @@ class UserController extends Controller
 		return Inertia::render('Super/Users', [
 			'users' => $users,
 			'deactivatedCount' => $deactivatedCount,
-			'roles' => ['Admin','CSDL','Super Admin'],
+			// Do not allow creating/promoting Super Admin from this screen.
+			'roles' => ['Admin','CSDL'],
 			'departments' => \App\Models\Department::orderBy('name')->get(['id', 'name']),
 		]);
 	}
@@ -106,7 +107,8 @@ class UserController extends Controller
 		$validated = $request->validate([
 			'name' => ['required','string','max:255'],
 			'email' => ['required','email','max:255','unique:users,email'],
-			'role' => ['required','in:Admin,CSDL,Super Admin'],
+			// Super Admin ownership is transferred via Profile flow only.
+			'role' => ['required','in:Admin,CSDL'],
 			'department_id' => ['nullable','exists:departments,id'],
 			'optional_department_id' => ['nullable','exists:departments,id','different:department_id'],
 		]);

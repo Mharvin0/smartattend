@@ -27,7 +27,7 @@ export default function Users({ users, deactivatedCount = 0, roles, departments 
 	const [deactivatedUsers, setDeactivatedUsers] = useState([]);
 	const [isLoadingDeactivated, setIsLoadingDeactivated] = useState(false);
 
-	const allowedCreateRoleOptions = (roles || []).filter((r) => ['Admin', 'CSDL', 'Super Admin'].includes(r));
+	const allowedCreateRoleOptions = (roles || []).filter((r) => ['Admin', 'CSDL'].includes(r));
 	const allowedEditRoleOptions = (roles || []).filter((r) => ['Admin', 'CSDL'].includes(r));
 	const normalizeEmail = (value) => (value ?? '').toString().trim().toLowerCase();
 	const knownUsers = [...(users || []), ...(deactivatedUsers || [])];

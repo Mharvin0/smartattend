@@ -3,12 +3,14 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Services\BrevoEmailService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Auth\Notifications\ResetPassword;
 
 class User extends Authenticatable
 {
@@ -105,5 +107,37 @@ class User extends Authenticatable
     public function program()
     {
         return $this->belongsTo(Program::class);
+    }
+
+    /**
+     * Send the password reset notification (via Brevo API).
+     *
+     * This keeps password reset working in production environments where SMTP ports are blocked.
+     */
+    public function sendPasswordResetNotification($token): void
+    {
+        try {
+            $resetUrl = url(route('password.reset', ['token' => $token, 'email' => $this->email], false));
+            $subject = 'Reset your SmartAttend password';
+            $body = "We received a request to reset your SmartAttend password.\n\n"
+                . "Reset link:\n{$resetUrl}\n\n"
+                . "If you did not request a password reset, you can ignore this email.";
+
+            $sentViaBrevo = BrevoEmailService::sendTextEmail(
+                (string) $this->email,
+                (string) ($this->name ?? $this->email),
+                $subject,
+                $body
+            );
+
+            if ($sentViaBrevo) {
+                return;
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        // Fallback to Laravel's default notification (may rely on SMTP).
+        $this->notify(new ResetPassword($token));
     }
 }
