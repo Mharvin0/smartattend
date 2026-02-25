@@ -110,6 +110,11 @@ export default function SystemAdmin({
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
                 },
             });
+
+            if (response.status === 419) {
+                window.location.reload();
+                return;
+            }
             
             if (response.ok) {
                 const data = await response.json();
@@ -140,6 +145,11 @@ export default function SystemAdmin({
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
                 },
             });
+            
+            if (response.status === 419) {
+                window.location.reload();
+                return;
+            }
             
             if (response.ok) {
                 const data = await response.json();
@@ -174,6 +184,11 @@ export default function SystemAdmin({
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
                 },
             });
+
+            if (response.status === 419) {
+                window.location.reload();
+                return;
+            }
 
             if (response.ok) {
                 const data = await response.json();
@@ -334,7 +349,13 @@ export default function SystemAdmin({
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
                 },
             })
-            .then(response => response.json())
+            .then(response => {
+                if (response.status === 419) {
+                    window.location.reload();
+                    return;
+                }
+                return response.json();
+            })
             .then(data => {
                 if (data.success) {
                     setSectionTeachers(data.teachers || []);
@@ -517,6 +538,11 @@ export default function SystemAdmin({
                 body: JSON.stringify(interventionForm)
             });
 
+            if (response.status === 419) {
+                window.location.reload();
+                return;
+            }
+
             if (response.ok) {
                 const result = await response.json();
                 setInterventionsData([...interventionsData, result.intervention]);
@@ -558,6 +584,11 @@ export default function SystemAdmin({
                 },
                 body: JSON.stringify(interventionForm)
             });
+
+            if (response.status === 419) {
+                window.location.reload();
+                return;
+            }
 
             if (response.ok) {
                 const result = await response.json();
@@ -746,6 +777,11 @@ export default function SystemAdmin({
                 body: JSON.stringify(payload)
             });
 
+            if (response.status === 419) {
+                window.location.reload();
+                return;
+            }
+
             const result = await response.json();
 
             if (response.ok && result.success) {
@@ -830,6 +866,12 @@ export default function SystemAdmin({
                 body: JSON.stringify(payload)
             });
 
+            // If the session/CSRF token has expired, force a full reload to get a fresh token
+            if (response.status === 419) {
+                window.location.reload();
+                return;
+            }
+
             const result = await response.json();
 
             if (response.ok && result.success) {
@@ -874,6 +916,11 @@ export default function SystemAdmin({
                     'Accept': 'application/json',
                 }
             });
+
+            if (response.status === 419) {
+                window.location.reload();
+                return;
+            }
 
             if (response.ok) {
                 setSectionsData(sectionsData.filter(s => s.id !== sectionId));
@@ -970,6 +1017,10 @@ export default function SystemAdmin({
                             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
                         }
                     });
+                    if (response.status === 419) {
+                        window.location.reload();
+                        return;
+                    }
                     data = await response.json();
                     
                     if (data.success) {
@@ -988,6 +1039,10 @@ export default function SystemAdmin({
                             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
                         }
                     });
+                    if (response.status === 419) {
+                        window.location.reload();
+                        return;
+                    }
                     data = await response.json();
                     
                     if (data.success) {
@@ -1006,6 +1061,10 @@ export default function SystemAdmin({
                             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
                         }
                     });
+                    if (response.status === 419) {
+                        window.location.reload();
+                        return;
+                    }
                     data = await response.json();
                     
                     if (data.success) {
@@ -1024,6 +1083,10 @@ export default function SystemAdmin({
                             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
                         }
                     });
+                    if (response.status === 419) {
+                        window.location.reload();
+                        return;
+                    }
                     data = await response.json();
                     
                     if (data.success) {
@@ -1042,6 +1105,10 @@ export default function SystemAdmin({
                             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
                         }
                     });
+                    if (response.status === 419) {
+                        window.location.reload();
+                        return;
+                    }
                     data = await response.json();
                     
                     if (data.logs) {
@@ -1352,7 +1419,13 @@ export default function SystemAdmin({
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
             },
         })
-        .then(response => response.json())
+        .then(response => {
+            if (response.status === 419) {
+                window.location.reload();
+                return;
+            }
+            return response.json();
+        })
         .then(data => {
             if (data.success) {
                 if (trackingTab === 'archived') {
@@ -2138,7 +2211,13 @@ export default function SystemAdmin({
                                                                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
                                                             },
                                                         })
-                                                        .then(response => response.json())
+                                                        .then(response => {
+                                                            if (response.status === 419) {
+                                                                window.location.reload();
+                                                                return;
+                                                            }
+                                                            return response.json();
+                                                        })
                                                         .then(data => {
                                                             if (data.success) {
                                                                 setViewingTracking({...data.tracking, id: tracking.id, can_edit: tracking.can_edit});
