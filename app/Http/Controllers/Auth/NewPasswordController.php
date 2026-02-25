@@ -49,6 +49,9 @@ class NewPasswordController extends Controller
                 $user->forceFill([
                     'password' => Hash::make($request->password),
                     'remember_token' => Str::random(60),
+                    // Mark password as changed so RequirePasswordChange middleware
+                    // does not force an extra first-time change after a reset.
+                    'password_changed_at' => now(),
                 ])->save();
 
                 event(new PasswordReset($user));

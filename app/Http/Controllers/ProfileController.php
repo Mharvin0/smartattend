@@ -47,7 +47,12 @@ class ProfileController extends Controller
     }
 
     /**
-     * Send a one-time verification code to the current Super Admin email to confirm ownership transfer.
+     * Send a one-time verification code to the CURRENT Super Admin email
+     * to confirm transferring full account ownership (email + password access)
+     * to a new email address.
+     *
+     * Unlike role transfer, this does NOT require the target email to already
+     * exist as a user in the system.
      */
     public function sendSuperAdminTransferCode(Request $request): RedirectResponse
     {
@@ -66,26 +71,7 @@ class ProfileController extends Controller
 
         if ($targetEmail === '' || $targetEmail === $currentEmail) {
             throw ValidationException::withMessages([
-                'new_superadmin_email' => 'Please enter a different, valid email address.',
-            ]);
-        }
-
-        $targetUser = User::whereRaw('LOWER(email) = ?', [$targetEmail])->first();
-        if (! $targetUser) {
-            throw ValidationException::withMessages([
-                'new_superadmin_email' => 'No user was found with that email.',
-            ]);
-        }
-
-        if (method_exists($targetUser, 'trashed') && $targetUser->trashed()) {
-            throw ValidationException::withMessages([
-                'new_superadmin_email' => 'That user account is deactivated. Reactivate it first, then try again.',
-            ]);
-        }
-
-        if ($targetUser->hasRole('Super Admin')) {
-            throw ValidationException::withMessages([
-                'new_superadmin_email' => 'That user is already a Super Admin.',
+                'new_superadmin_email' => 'Please enter a different email address than the current Super Admin.',
             ]);
         }
 
@@ -140,6 +126,13 @@ class ProfileController extends Controller
 
     /**
      * Confirm and execute Super Admin ownership transfer.
+     *
+     * In this flow we are NOT passing the role to a different user record.
+     * Instead, we treat this as a full account ownership handoff:
+     * - The CURRENT Super Admin account keeps its roles.
+     * - The account's email is changed to the new owner email.
+     * - A password reset link is sent to the NEW email so the new owner
+     *   can set a password and log in to this same account.
      */
     public function confirmSuperAdminTransfer(Request $request): RedirectResponse
     {
@@ -160,49 +153,29 @@ class ProfileController extends Controller
         $this->assertSuperAdminTransferCodeIsValid($request, $currentEmail, $targetEmail);
         $request->session()->forget(self::SUPERADMIN_TRANSFER_CODE_SESSION_KEY);
 
-        /** @var User|null $targetUser */
-        $targetUser = User::whereRaw('LOWER(email) = ?', [$targetEmail])->first();
-        if (! $targetUser) {
-            throw ValidationException::withMessages([
-                'new_superadmin_email' => 'No user was found with that email.',
-            ]);
-        }
+        DB::transaction(function () use ($user, $targetEmail): void {
+            $userId       = (int) $user->id;
+            $previousEmail = (string) $user->email;
 
-        DB::transaction(function () use ($user, $targetUser, $request): void {
-            $userId = (int) $user->id;
-            $targetId = (int) $targetUser->id;
+            // Hand off ownership by changing the Super Admin account's email
+            // to the new owner email. Roles stay on this same account.
+            $user->forceFill([
+                'email' => $targetEmail,
+                'email_verified_at' => null,
+            ])->save();
 
-            // Give Super Admin to the new owner.
-            $targetUser->assignRole('Super Admin');
-
-            // Remove Super Admin from the current owner.
-            $user->removeRole('Super Admin');
-            if ($user->roles()->count() === 0) {
-                $user->assignRole('Admin');
-            }
-
-            AuditLogService::logUserManagement(
-                AuditLog::TYPE_DATA_UPDATE,
-                'Super Admin ownership transferred',
-                [
-                    'event' => 'superadmin_ownership_transferred',
-                    'from_user_id' => $userId,
-                    'to_user_id' => $targetId,
-                ]
-            );
-
-            // Send new owner an email + password reset link (no old password required).
+            // Send the new owner a password reset link for THIS account.
             try {
-                $token = Password::broker()->createToken($targetUser);
-                $resetUrl = url(route('password.reset', ['token' => $token, 'email' => $targetUser->email], false));
+                $token    = Password::broker()->createToken($user);
+                $resetUrl = url(route('password.reset', ['token' => $token, 'email' => $user->email], false));
 
                 $subject = 'You are now the SmartAttend Super Admin';
-                $body = "Your SmartAttend account has been granted Super Admin ownership.\n\n"
-                    . "To secure the account, please reset your password using this link:\n{$resetUrl}\n\n"
-                    . "This reset does not require your current password — you will set a new one.\n\n"
+                $body    = "You now control the SmartAttend Super Admin account.\n\n"
+                    . "To secure the account, please set a new password using this link:\n{$resetUrl}\n\n"
+                    . "This reset does not require the previous password — you will set a new one.\n\n"
                     . "If you did not expect this, contact support immediately.";
 
-                BrevoEmailService::sendTextEmail((string) $targetUser->email, (string) $targetUser->name, $subject, $body);
+                BrevoEmailService::sendTextEmail((string) $user->email, (string) $user->name, $subject, $body);
             } catch (Throwable $e) {
                 report($e);
             }
@@ -212,11 +185,12 @@ class ProfileController extends Controller
                 SecurityAlertService::notifyUserAndAdmins(
                     'SmartAttend security alert: Super Admin ownership transferred',
                     "Super Admin ownership was transferred.\n\nIf you did not authorize this action, contact support immediately.",
-                    $targetUser,
+                    $user,
                     [
-                        'event' => 'superadmin_ownership_transferred',
+                        'event'        => 'superadmin_ownership_transferred',
                         'from_user_id' => $userId,
-                        'to_user_id' => $targetId,
+                        'previous_email' => $previousEmail,
+                        'new_email'      => $targetEmail,
                     ],
                     AuditLog::SEVERITY_CRITICAL
                 );
