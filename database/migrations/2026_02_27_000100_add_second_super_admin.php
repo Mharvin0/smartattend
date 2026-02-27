@@ -17,14 +17,27 @@ return new class extends Migration
         $name = env('SECOND_SUPERADMIN_NAME', 'Second Super Admin');
         $password = env('SECOND_SUPERADMIN_PASSWORD', 'Chryse1802');
 
-        $user = User::firstOrCreate(
-            ['email' => $email],
-            [
+        // Handle the case where a user with this email might already exist,
+        // including soft-deleted rows, to avoid unique constraint violations.
+        $user = User::withTrashed()->where('email', $email)->first();
+
+        if ($user) {
+            if (method_exists($user, 'restore') && $user->trashed()) {
+                $user->restore();
+            }
+
+            $user->name = $name;
+            $user->password = Hash::make($password);
+            $user->password_changed_at = null;
+            $user->save();
+        } else {
+            $user = User::create([
+                'email' => $email,
                 'name' => $name,
                 'password' => Hash::make($password),
                 'password_changed_at' => null,
-            ]
-        );
+            ]);
+        }
 
         // Make sure this user has the Super Admin role
         $user->syncRoles([$superAdminRole]);
